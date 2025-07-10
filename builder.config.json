@@ -1,4 +1,8 @@
 {
+  "repo": {
+    "enable": true,
+    "url": "https://github.com/xOS/gallery-assets"
+  },
   "options": {
     "defaultConcurrency": 8,
     "maxPhotos": 5000,
