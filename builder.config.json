@@ -1,0 +1,22 @@
+{
+  "options": {
+    "defaultConcurrency": 8,
+    "maxPhotos": 5000,
+    "enableLivePhotoDetection": true,
+    "showProgress": true,
+    "showDetailedStats": true
+  },
+  "logging": {
+    "verbose": true,
+    "level": "info",
+    "outputToFile": false
+  },
+  "performance": {
+    "worker": {
+      "workerCount": 8,
+      "timeout": 30000,
+      "useClusterMode": true,
+      "workerConcurrency": 2
+    }
+  }
+}
