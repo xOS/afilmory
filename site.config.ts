@@ -45,7 +45,7 @@ const defaultConfig: SiteConfig = {
   description:
     'Capturing beautiful moments in life, documenting daily warmth and emotions through my lens.',
   url: 'https://afilmory.innei.in',
-  accentColor: '#007bff',
+  accentColor: '#ffc9c9',
   author: {
     name: 'Innei',
     url: 'https://innei.in/',
