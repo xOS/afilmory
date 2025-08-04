@@ -1,15 +1,21 @@
-import type { PhotoManifestItem } from '@afilmory/builder'
+import type { CameraInfo, LensInfo, PhotoManifestItem } from '@afilmory/builder'
 
 class PhotoLoader {
   private photos: PhotoManifestItem[] = []
   private photoMap: Record<string, PhotoManifestItem> = {}
+  private cameras: CameraInfo[] = []
+  private lenses: LensInfo[] = []
 
   constructor() {
     this.getAllTags = this.getAllTags.bind(this)
+    this.getAllCameras = this.getAllCameras.bind(this)
+    this.getAllLenses = this.getAllLenses.bind(this)
     this.getPhotos = this.getPhotos.bind(this)
     this.getPhoto = this.getPhoto.bind(this)
 
     this.photos = __MANIFEST__.data as unknown as PhotoManifestItem[]
+    this.cameras = __MANIFEST__.cameras as unknown as CameraInfo[]
+    this.lenses = __MANIFEST__.lenses as unknown as LensInfo[]
 
     this.photos.forEach((photo) => {
       this.photoMap[photo.id] = photo
@@ -32,26 +38,12 @@ class PhotoLoader {
     return Array.from(tagSet).sort()
   }
 
-  getAllEquipmentTags() {
-    const tagSet = new Set<string>()
-    this.photos.forEach((photo) => {
-      if (photo.equipmentTags) {
-        photo.equipmentTags.forEach((tag) => tagSet.add(tag))
-      }
-    })
-    return Array.from(tagSet).sort()
+  getAllCameras() {
+    return this.cameras
   }
 
-  // 获取所有标签（包括显示标签和设备标签，用于筛选）
-  getAllTagsForFiltering() {
-    const tagSet = new Set<string>()
-    this.photos.forEach((photo) => {
-      photo.tags.forEach((tag) => tagSet.add(tag))
-      if (photo.equipmentTags) {
-        photo.equipmentTags.forEach((tag) => tagSet.add(tag))
-      }
-    })
-    return Array.from(tagSet).sort()
+  getAllLenses() {
+    return this.lenses
   }
 }
 export const photoLoader = new PhotoLoader()
