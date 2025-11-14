@@ -14,14 +14,6 @@
     "github": "xOS",
     "rss": false
   },
-  "feed": {
-    "folo": {
-      "challenge": {
-        "feedId": "",
-        "userId": ""
-      }
-    }
-  },
   "map": [
     "maplibre"
   ],
