@@ -5,14 +5,22 @@
   "url": "https://photos.nange.cn/",
   "accentColor": "#ffc9c9",
   "author": {
-    "name": "翠花",
+    "name": "春夏",
     "url": "https://www.nange.cn",
     "avatar": "https://static.nange.cn/images/photo.jpeg"
   },
   "social": {
-    "twitter": "@OneTip",
     "github": "xOS",
+    "twitter": "@OneTip",
     "rss": false
+  },
+  "feed": {
+    "folo": {
+      "challenge": {
+        "feedId": "",
+        "userId": ""
+      }
+    }
   },
   "map": [
     "maplibre"
