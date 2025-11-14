@@ -12,7 +12,7 @@
   "social": {
     "twitter": "@OneTip",
     "github": "xOS",
-    "rss": true
+    "rss": false
   },
   "feed": {
     "folo": {
