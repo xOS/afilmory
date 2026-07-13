@@ -10,7 +10,7 @@ import { BizException, ErrorCode } from '@core/errors'
 import { RoleBit, Roles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
-import { Body, ContextParam, Controller, Get, HttpContext, Post } from '@tsuki-hono/common'
+import { Body, ContextParam, Controller, createLogger, Get, HttpContext, Post } from '@tsuki-hono/common'
 import { freshSessionMiddleware } from 'better-auth/api'
 import { eq } from 'drizzle-orm'
 import type { Context } from 'hono'
@@ -22,23 +22,30 @@ import type { SocialProvidersConfig } from './auth.config'
 import { AuthProvider } from './auth.provider'
 import { AuthRegistrationService } from './auth-registration.service'
 
-const SOCIAL_PROVIDER_METADATA: Record<string, { name: string; icon: string }> = {
+const logger = createLogger('AuthController')
+
+const SOCIAL_PROVIDER_METADATA: Record<string, { name: string, icon: string }> = {
   google: {
     name: 'Google',
-    icon: 'i-simple-icons-google',
+    icon: 'i-logos-google-icon',
   },
   github: {
     name: 'GitHub',
-    icon: 'i-simple-icons-github',
+    icon: 'i-logos-github-icon',
   },
 }
 
-function resolveSocialProviderMetadata(id: string): { name: string; icon: string } {
+const PROVIDER_ID_SEPARATOR_PATTERN = /[-_]/g
+const PROVIDER_ID_WORD_START_PATTERN = /\b\w/g
+
+function resolveSocialProviderMetadata(id: string): { name: string, icon: string } {
   const metadata = SOCIAL_PROVIDER_METADATA[id]
   if (metadata) {
     return metadata
   }
-  const formattedId = id.replaceAll(/[-_]/g, ' ').replaceAll(/\b\w/g, (match) => match.toUpperCase())
+  const formattedId = id
+    .replaceAll(PROVIDER_ID_SEPARATOR_PATTERN, ' ')
+    .replaceAll(PROVIDER_ID_WORD_START_PATTERN, match => match.toUpperCase())
   return {
     name: formattedId.trim() || id,
     icon: 'i-mingcute-earth-2-line',
@@ -69,7 +76,7 @@ type TenantSignUpRequest = {
     name?: string
     slug?: string | null
   }
-  settings?: Array<{ key?: string; value?: unknown }>
+  settings?: Array<{ key?: string, value?: unknown }>
   useSessionAccount?: boolean
 }
 
@@ -114,6 +121,7 @@ export class AuthController {
     private readonly registration: AuthRegistrationService,
     private readonly tenantService: TenantService,
   ) {}
+
   private readonly gatewayStateSecret = env.AUTH_GATEWAY_STATE_SECRET ?? env.CONFIG_ENCRYPTION_KEY
 
   @AllowPlaceholderTenant()
@@ -140,7 +148,8 @@ export class AuthController {
             isPlaceholder,
             requestedSlug: derivedRequestedSlug,
           }
-        } catch {
+        }
+        catch {
           // ignore; fallback to placeholder context if resolution fails
         }
       }
@@ -189,8 +198,8 @@ export class AuthController {
     const enabledProviders = new Set(Object.keys(socialProviders))
     return {
       accounts: accounts
-        .filter((account) => account.providerId !== 'credential' && enabledProviders.has(account.providerId))
-        .map((account) => this.serializeSocialAccount(account)),
+        .filter(account => account.providerId !== 'credential' && enabledProviders.has(account.providerId))
+        .map(account => this.serializeSocialAccount(account)),
     }
   }
 
@@ -258,9 +267,9 @@ export class AuthController {
     const enabledProviders = new Set(Object.keys(socialProviders))
     const allAccounts = await auth.api.listUserAccounts({ headers })
     const linkedProviderAccounts = allAccounts.filter(
-      (account) => account.providerId !== 'credential' && enabledProviders.has(account.providerId),
+      account => account.providerId !== 'credential' && enabledProviders.has(account.providerId),
     )
-    const hasTargetAccount = linkedProviderAccounts.some((account) => account.providerId === providerId)
+    const hasTargetAccount = linkedProviderAccounts.some(account => account.providerId === providerId)
     if (hasTargetAccount && linkedProviderAccounts.length <= 1) {
       throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '至少需要保留一个已绑定的 OAuth Provider' })
     }
@@ -292,7 +301,7 @@ export class AuthController {
 
   @AllowPlaceholderTenant()
   @Post('/sign-in/email')
-  async signInEmail(@ContextParam() context: Context, @Body() body: { email: string; password: string }) {
+  async signInEmail(@ContextParam() context: Context, @Body() body: { email: string, password: string }) {
     const email = body.email.trim()
     if (email.length === 0) {
       throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '邮箱不能为空' })
@@ -410,7 +419,7 @@ export class AuthController {
             }
           : undefined,
         settings: body.settings?.filter(
-          (s): s is { key: string; value: unknown } => typeof s.key === 'string' && s.key.length > 0,
+          (s): s is { key: string, value: unknown } => typeof s.key === 'string' && s.key.length > 0,
         ),
         useSessionAccount,
       },
@@ -503,7 +512,8 @@ export class AuthController {
         throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '回调地址必须使用 http 或 https 协议' })
       }
       return parsed.toString()
-    } catch (error) {
+    }
+    catch (error) {
       if (error instanceof BizException) {
         throw error
       }
@@ -550,7 +560,8 @@ export class AuthController {
       if (buffer.byteLength > 0) {
         text = new TextDecoder().decode(buffer)
       }
-    } catch {
+    }
+    catch {
       text = null
     }
 
@@ -558,7 +569,8 @@ export class AuthController {
       try {
         payload = JSON.parse(text)
         isJson = true
-      } catch {
+      }
+      catch {
         payload = text
       }
     }
@@ -569,8 +581,8 @@ export class AuthController {
       name: tenant.name,
     }
 
-    const responseBody =
-      isJson && payload && typeof payload === 'object' && !Array.isArray(payload)
+    const responseBody
+      = isJson && payload && typeof payload === 'object' && !Array.isArray(payload)
         ? {
             ...(payload as Record<string, unknown>),
             tenant: tenantPayload,
@@ -625,7 +637,8 @@ export class AuthController {
     let payload: unknown
     try {
       payload = await clone.json()
-    } catch {
+    }
+    catch {
       return response
     }
 
@@ -671,6 +684,7 @@ export class AuthController {
       const parsed = new URL(url)
       const state = parsed.searchParams.get('state')
       if (!state) {
+        logger.error(`[AuthController] No state param found on OAuth redirect url=${url}, skipping gateway wrap`)
         return url
       }
 
@@ -681,7 +695,9 @@ export class AuthController {
       })
       parsed.searchParams.set('state', wrapped)
       return parsed.toString()
-    } catch {
+    }
+    catch (error) {
+      logger.error(`[AuthController] Failed to wrap OAuth gateway state for url=${url}`, error)
       return url
     }
   }
