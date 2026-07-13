@@ -270,8 +270,8 @@ body {
   }
 }
 
-@source inline('i-simple-icons-github');
-@source inline('i-simple-icons-google');
+@source inline('i-logos-github-icon');
+@source inline('i-logos-google-icon');
 
 .shape-squircle {
   corner-shape: squircle;
