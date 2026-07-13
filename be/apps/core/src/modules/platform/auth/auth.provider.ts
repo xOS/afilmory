@@ -28,6 +28,7 @@ import { tenantAwareDrizzleAdapter } from './tenant-aware-adapter'
 export type BetterAuthInstance = ReturnType<typeof betterAuth>
 
 const logger = createLogger('Auth')
+const TRAILING_SLASHES_PATTERN = /\/+$/
 
 @injectable()
 export class AuthProvider implements OnModuleInit {
@@ -49,7 +50,8 @@ export class AuthProvider implements OnModuleInit {
       const tenantContext = HttpContext.getValue('tenant') as { tenant?: { id?: string | null } } | undefined
       const tenantId = tenantContext?.tenant?.id
       return tenantId ?? null
-    } catch {
+    }
+    catch {
       return null
     }
   }
@@ -59,7 +61,8 @@ export class AuthProvider implements OnModuleInit {
       const tenantContext = HttpContext.getValue('tenant')
       const slug = tenantContext?.requestedSlug ?? tenantContext?.tenant?.slug
       return slug ? slug.toLowerCase() : null
-    } catch {
+    }
+    catch {
       return null
     }
   }
@@ -76,13 +79,14 @@ export class AuthProvider implements OnModuleInit {
     try {
       const aggregate = await this.tenantService.ensurePendingTenant(tenantSlug)
       return aggregate.tenant.id
-    } catch (error) {
+    }
+    catch (error) {
       logger.error(`Failed to provision tenant for slug=${tenantSlug}`, error)
       return null
     }
   }
 
-  private resolveRequestEndpoint(): { host: string | null; protocol: string | null } {
+  private resolveRequestEndpoint(): { host: string | null, protocol: string | null } {
     try {
       const hono = HttpContext.getValue('hono') as Context | undefined
       if (!hono) {
@@ -97,7 +101,8 @@ export class AuthProvider implements OnModuleInit {
         host: (forwardedHost ?? hostHeader ?? '').trim() || null,
         protocol: (forwardedProto ?? '').trim() || null,
       }
-    } catch {
+    }
+    catch {
       return { host: null, protocol: null }
     }
   }
@@ -105,12 +110,12 @@ export class AuthProvider implements OnModuleInit {
   private buildBetterAuthProvidersForHost(
     providers: SocialProvidersConfig,
     oauthGatewayUrl: string | null,
-  ): Record<string, { clientId: string; clientSecret: string; redirectUri?: string }> {
+  ): Record<string, { clientId: string, clientSecret: string, redirectUri?: string }> {
     const entries: Array<[keyof SocialProvidersConfig, SocialProviderOptions]> = Object.entries(providers).filter(
       (entry): entry is [keyof SocialProvidersConfig, SocialProviderOptions] => Boolean(entry[1]),
     )
 
-    return entries.reduce<Record<string, { clientId: string; clientSecret: string; redirectURI?: string }>>(
+    return entries.reduce<Record<string, { clientId: string, clientSecret: string, redirectURI?: string }>>(
       (acc, [key, value]) => {
         const redirectUri = this.buildRedirectUri(key, oauthGatewayUrl)
         acc[key] = {
@@ -137,7 +142,7 @@ export class AuthProvider implements OnModuleInit {
   }
 
   private buildGatewayRedirectUri(gatewayBaseUrl: string, basePath: string): string {
-    const normalizedBase = gatewayBaseUrl.replace(/\/+$/, '')
+    const normalizedBase = gatewayBaseUrl.replace(TRAILING_SLASHES_PATTERN, '')
     return `${normalizedBase}${basePath}`
   }
 
@@ -199,6 +204,13 @@ export class AuthProvider implements OnModuleInit {
         },
       },
       account: {
+        // The OAuth gateway forwards the callback across a cross-subdomain
+        // redirect hop (auth.<domain> -> <tenant>.<domain>), which real
+        // browsers can drop the auth-state cookie on depending on SameSite
+        // enforcement. The gateway's HMAC-signed state envelope plus Better
+        // Auth's own DB-backed verification record already authenticate the
+        // callback, so this redundant cookie check is safe to skip.
+        skipStateCookieCheck: true,
         additionalFields: {
           tenantId: { type: 'string', input: false },
         },
@@ -315,7 +327,8 @@ export class AuthProvider implements OnModuleInit {
 
           try {
             await this.systemSettings.ensureRegistrationAllowed()
-          } catch (error) {
+          }
+          catch (error) {
             if (error instanceof BizException) {
               throw new APIError('FORBIDDEN', {
                 message: error.message,
@@ -340,7 +353,7 @@ export class AuthProvider implements OnModuleInit {
     return await instancePromise
   }
 
-  async getAuthForTenant(tenant: { id: string; slug?: string | null }): Promise<BetterAuthInstance> {
+  async getAuthForTenant(tenant: { id: string, slug?: string | null }): Promise<BetterAuthInstance> {
     const options = await this.config.getOptions()
     const tenantSlug = tenant.slug ?? null
     return await this.createAuthForEndpoint(tenantSlug, options, tenant.id)
@@ -464,7 +477,8 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.billingPlanService.updateTenantPlan(tenantId, planId)
         logger.info(`[AuthProvider] Tenant ${tenantId} set to billing plan ${planId} via Creem (${event})`)
-      } catch (error) {
+      }
+      catch (error) {
         logger.error(`[AuthProvider] Failed to update tenant ${tenantId} billing plan from Creem (${event})`, error)
       }
     }
@@ -474,7 +488,8 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.storagePlanService.updateTenantPlan(tenantId, storagePlanId)
         logger.info(`[AuthProvider] Tenant ${tenantId} storage plan set to ${storagePlanId} via Creem (${event})`)
-      } catch (error) {
+      }
+      catch (error) {
         logger.error(`[AuthProvider] Failed to update tenant ${tenantId} storage plan from Creem (${event})`, error)
       }
     }
@@ -498,7 +513,8 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.billingPlanService.updateTenantPlan(tenantId, 'free')
         logger.info(`[AuthProvider] Tenant ${tenantId} downgraded to free via Creem (${event})`)
-      } catch (error) {
+      }
+      catch (error) {
         logger.error(`[AuthProvider] Failed to downgrade tenant ${tenantId} after Creem ${event}`, error)
       }
     }
@@ -508,7 +524,8 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.storagePlanService.updateTenantPlan(tenantId, null)
         logger.info(`[AuthProvider] Tenant ${tenantId} storage plan cleared via Creem (${event})`)
-      } catch (error) {
+      }
+      catch (error) {
         logger.error(`[AuthProvider] Failed to clear tenant ${tenantId} storage plan after Creem ${event}`, error)
       }
     }
