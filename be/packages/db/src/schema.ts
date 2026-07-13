@@ -86,7 +86,7 @@ export const tenants = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [unique('uq_tenant_slug').on(t.slug)],
+  t => [unique('uq_tenant_slug').on(t.slug)],
 )
 
 export const tenantDomains = pgTable(
@@ -103,7 +103,7 @@ export const tenantDomains = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [unique('uq_tenant_domain_domain').on(t.domain), index('idx_tenant_domain_tenant').on(t.tenantId)],
+  t => [unique('uq_tenant_domain_domain').on(t.domain), index('idx_tenant_domain_tenant').on(t.tenantId)],
 )
 
 // Custom users table (Better Auth: user)
@@ -117,6 +117,7 @@ export const authUsers = pgTable(
     emailVerified: boolean('email_verified').default(false).notNull(),
     image: text('image'),
     creemCustomerId: text('creem_customer_id'),
+    hadTrial: boolean('had_trial').default(false).notNull(),
     role: userRoleEnum('role').notNull().default('user'),
     tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
@@ -128,7 +129,7 @@ export const authUsers = pgTable(
     banReason: text('ban_reason'),
     banExpires: timestamp('ban_expires_at', { mode: 'string' }),
   },
-  (t) => [
+  t => [
     // Multi-tenant: same email can exist in different tenants
     unique('uq_auth_user_tenant_email').on(t.tenantId, t.email),
     index('idx_auth_user_email').on(t.email),
@@ -173,7 +174,7 @@ export const authAccounts = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     // Multi-tenant: same social account can exist in different tenants
     unique('uq_auth_account_tenant_provider').on(t.tenantId, t.providerId, t.accountId),
     index('idx_auth_account_user').on(t.userId),
@@ -221,7 +222,7 @@ export const settings = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [unique('uq_settings_tenant_key').on(t.tenantId, t.key)],
+  t => [unique('uq_settings_tenant_key').on(t.tenantId, t.key)],
 )
 
 export const systemSettings = pgTable(
@@ -235,7 +236,7 @@ export const systemSettings = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [unique('uq_system_setting_key').on(t.key)],
+  t => [unique('uq_system_setting_key').on(t.key)],
 )
 
 export const reactions = pgTable(
@@ -249,7 +250,7 @@ export const reactions = pgTable(
     refKey: text('ref_key').notNull(),
     reaction: text('reaction').notNull(),
   },
-  (t) => [index('idx_reactions_tenant_ref_key').on(t.tenantId, t.refKey)],
+  t => [index('idx_reactions_tenant_ref_key').on(t.tenantId, t.refKey)],
 )
 
 export const comments = pgTable(
@@ -272,7 +273,7 @@ export const comments = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { mode: 'string' }),
   },
-  (t) => [
+  t => [
     index('idx_comment_tenant_photo').on(t.tenantId, t.photoId),
     index('idx_comment_parent').on(t.parentId),
     index('idx_comment_user').on(t.userId),
@@ -303,7 +304,7 @@ export const commentReactions = pgTable(
     reaction: text('reaction').notNull(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     unique('uq_comment_reaction_user').on(t.tenantId, t.commentId, t.userId, t.reaction),
     index('idx_comment_reaction_comment').on(t.tenantId, t.commentId),
   ],
@@ -326,7 +327,7 @@ export const managedStorageUsages = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     index('idx_managed_storage_usage_tenant_recorded').on(t.tenantId, t.recordedAt),
     index('idx_managed_storage_usage_provider').on(t.providerKey),
   ],
@@ -351,7 +352,7 @@ export const managedStorageFileReferences = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     unique('uq_managed_storage_file_ref_tenant_key').on(t.tenantId, t.storageKey),
     index('idx_managed_storage_file_ref_provider').on(t.providerKey),
     index('idx_managed_storage_file_ref_reference').on(t.referenceType, t.referenceId),
@@ -381,7 +382,7 @@ export const photoAssets = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     unique('uq_photo_asset_tenant_storage_key').on(t.tenantId, t.storageKey),
     unique('uq_photo_asset_tenant_photo_id').on(t.tenantId, t.photoId),
   ],
@@ -411,7 +412,7 @@ export const photoAccessLogs = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     index('idx_photo_access_log_tenant').on(t.tenantId),
     index('idx_photo_access_log_asset').on(t.photoAssetId),
     index('idx_photo_access_log_token').on(t.tokenId),
@@ -433,7 +434,7 @@ export const photoAccessStats = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     primaryKey({ name: 'pk_photo_access_stat', columns: [t.tenantId, t.photoAssetId] }),
     index('idx_photo_access_stat_photo').on(t.tenantId, t.photoId),
   ],
@@ -454,7 +455,7 @@ export const photoSyncRuns = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [index('idx_photo_sync_run_tenant').on(t.tenantId)],
+  t => [index('idx_photo_sync_run_tenant').on(t.tenantId)],
 )
 
 export type BillingUsageMetadata = Record<string, unknown>
@@ -474,7 +475,7 @@ export const billingUsageEvents = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  (t) => [
+  t => [
     index('idx_billing_usage_event_tenant').on(t.tenantId),
     index('idx_billing_usage_event_type').on(t.eventType),
   ],
