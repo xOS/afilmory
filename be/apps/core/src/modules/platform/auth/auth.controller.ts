@@ -611,64 +611,57 @@ export class AuthController {
       return response
     }
 
-    const location = response.headers.get('location')
-    if (location) {
-      const wrappedLocation = this.wrapGatewayState(location, tenantSlug)
-      if (wrappedLocation !== location) {
-        const headers = new Headers()
-        response.headers.forEach((value, key) => {
-          headers.append(key, value)
-        })
-        headers.set('location', wrappedLocation)
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-        })
-      }
-    }
-
-    const contentType = response.headers.get('content-type') ?? ''
-    if (!contentType.includes('application/json')) {
-      return response
-    }
-
-    const clone = response.clone()
-    let payload: unknown
-    try {
-      payload = await clone.json()
-    }
-    catch {
-      return response
-    }
-
-    if (!payload || typeof payload !== 'object') {
-      return response
-    }
-
-    const payloadRecord = payload as Record<string, unknown>
-    const url = typeof payloadRecord.url === 'string' ? payloadRecord.url : null
-    if (!url) {
-      return response
-    }
-
-    const wrappedUrl = this.wrapGatewayState(url, tenantSlug)
-    if (wrappedUrl === url) {
-      return response
-    }
-
+    // Better Auth's signInSocial can return a `location` header and a JSON body
+    // with a `url` field on the *same* response (e.g. when the client doesn't
+    // pass disableRedirect). Both carry the OAuth authorize URL independently,
+    // so both need the state wrapped or the client SDK falls back to whichever
+    // one didn't get rewritten.
     const headers = new Headers()
     response.headers.forEach((value, key) => {
       headers.append(key, value)
     })
-    headers.set('content-type', 'application/json; charset=utf-8')
 
-    const nextPayload = {
-      ...payloadRecord,
-      url: wrappedUrl,
+    let bodyChanged = false
+    let body: BodyInit | null = response.body
+
+    const location = response.headers.get('location')
+    if (location) {
+      const wrappedLocation = this.wrapGatewayState(location, tenantSlug)
+      if (wrappedLocation !== location) {
+        headers.set('location', wrappedLocation)
+      }
     }
 
-    return new Response(JSON.stringify(nextPayload), {
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      const clone = response.clone()
+      let payload: unknown
+      try {
+        payload = await clone.json()
+      }
+      catch {
+        payload = null
+      }
+
+      if (payload && typeof payload === 'object') {
+        const payloadRecord = payload as Record<string, unknown>
+        const url = typeof payloadRecord.url === 'string' ? payloadRecord.url : null
+        if (url) {
+          const wrappedUrl = this.wrapGatewayState(url, tenantSlug)
+          if (wrappedUrl !== url) {
+            headers.set('content-type', 'application/json; charset=utf-8')
+            body = JSON.stringify({ ...payloadRecord, url: wrappedUrl })
+            bodyChanged = true
+          }
+        }
+      }
+    }
+
+    if (!bodyChanged && headers.get('location') === location) {
+      return response
+    }
+
+    return new Response(body, {
       status: response.status,
       statusText: response.statusText,
       headers,
