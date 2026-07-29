@@ -44,6 +44,9 @@ final class PhotoMasonryView: ExpoView {
   private var transitionLayout: UICollectionViewTransitionLayout?
   private var transitionTargetColumns: Int?
   private var pinchBaseScale: CGFloat = 1
+  private var pinchArmScale: CGFloat = 1
+  private var lastPinchScale: CGFloat = 1
+  private var isChainSettling = false
   private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
@@ -101,7 +104,7 @@ final class PhotoMasonryView: ExpoView {
   }
 
   func setPhotos(_ newPhotos: [MasonryPhoto]) {
-    if transitionLayout != nil {
+    if transitionLayout != nil, !isChainSettling {
       collectionView.cancelInteractiveTransition()
     }
     photos = newPhotos
@@ -146,13 +149,13 @@ final class PhotoMasonryView: ExpoView {
   }
 
   @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+    lastPinchScale = gesture.scale
     switch gesture.state {
-    case .began, .changed:
-      if transitionLayout == nil {
-        startTransition(gesture: gesture)
-      }
-      guard let transitionLayout, let target = transitionTargetColumns else { return }
-      transitionLayout.transitionProgress = transitionProgress(scale: gesture.scale, target: target)
+    case .began:
+      pinchArmScale = gesture.scale
+      driveTransition(gesture: gesture)
+    case .changed:
+      driveTransition(gesture: gesture)
     case .ended, .cancelled, .failed:
       endTransition(gesture: gesture)
     default:
@@ -160,9 +163,41 @@ final class PhotoMasonryView: ExpoView {
     }
   }
 
+  // Only one transition layout can run at a time; a chained step settles through its
+  // completion block before the next one arms, so mid-settle pinch events are dropped.
+  private func driveTransition(gesture: UIPinchGestureRecognizer) {
+    guard !isChainSettling else { return }
+    if transitionLayout == nil {
+      startTransition(gesture: gesture)
+    }
+    guard let transitionLayout, let target = transitionTargetColumns else { return }
+    let raw = rawTransitionProgress(scale: gesture.scale, target: target)
+    if raw >= 1 {
+      settleChainStep(finish: true)
+    } else if raw <= 0 {
+      settleChainStep(finish: false)
+    } else {
+      // Progress 1.0 mid-gesture makes UIKit consider the transition settled; keep it interactive.
+      transitionLayout.transitionProgress = min(max(raw, 0.001), 0.99)
+    }
+  }
+
+  private func settleChainStep(finish: Bool) {
+    guard transitionLayout != nil else { return }
+    isChainSettling = true
+    if finish {
+      transitionLayout?.transitionProgress = 0.99
+      collectionView.finishInteractiveTransition()
+    } else {
+      collectionView.cancelInteractiveTransition()
+    }
+  }
+
   private func startTransition(gesture: UIPinchGestureRecognizer) {
-    guard !photos.isEmpty, abs(gesture.scale - 1) > 0.02 else { return }
-    let target = gesture.scale > 1 ? columnCount - 1 : columnCount + 1
+    guard !photos.isEmpty else { return }
+    let normalized = gesture.scale / pinchArmScale
+    guard abs(normalized - 1) > 0.02 else { return }
+    let target = normalized > 1 ? columnCount - 1 : columnCount + 1
     guard target >= minColumnCount, target <= maxColumnCount else { return }
 
     let newLayout = MasonryLayout()
@@ -177,7 +212,7 @@ final class PhotoMasonryView: ExpoView {
       newLayout.anchorViewportOffset = frame.midY - collectionView.contentOffset.y
     }
 
-    pinchBaseScale = gesture.scale
+    pinchBaseScale = pinchArmScale
     transitionTargetColumns = target
     haptics.prepare()
     transitionLayout = collectionView.startInteractiveTransition(to: newLayout) { [weak self] _, _ in
@@ -192,25 +227,23 @@ final class PhotoMasonryView: ExpoView {
       newLayout.anchorItem = nil
       self.transitionLayout = nil
       self.transitionTargetColumns = nil
+      self.isChainSettling = false
+      self.pinchArmScale = self.lastPinchScale
       self.emitVisibleRange()
     }
   }
 
-  private func transitionProgress(scale: CGFloat, target: Int) -> CGFloat {
+  private func rawTransitionProgress(scale: CGFloat, target: Int) -> CGFloat {
     let normalized = scale / pinchBaseScale
     let ratio = CGFloat(columnCount) / CGFloat(target)
-    let raw: CGFloat
     if ratio > 1 {
-      raw = (normalized - 1) / (ratio - 1)
-    } else {
-      raw = (1 - normalized) / (1 - ratio)
+      return (normalized - 1) / (ratio - 1)
     }
-    // Progress 1.0 mid-gesture makes UIKit consider the transition settled; keep it interactive.
-    return min(max(raw, 0.001), 0.99)
+    return (1 - normalized) / (1 - ratio)
   }
 
   private func endTransition(gesture: UIPinchGestureRecognizer) {
-    guard let transitionLayout, let target = transitionTargetColumns else { return }
+    guard !isChainSettling, let transitionLayout, let target = transitionTargetColumns else { return }
     let zoomingIn = target < columnCount
     let velocity = gesture.velocity
     let fastCommit = zoomingIn ? velocity > 1.5 : velocity < -1.5
