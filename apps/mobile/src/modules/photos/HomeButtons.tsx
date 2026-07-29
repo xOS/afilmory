@@ -35,6 +35,7 @@ export function HomeButtons() {
             name="line.3.horizontal.decrease"
             size={15}
             tintColor={active ? palette.accent : palette.textPrimary}
+            weight="semibold"
           />
         </GlassSurface>
         {active ? (

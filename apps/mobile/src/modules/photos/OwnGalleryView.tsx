@@ -161,9 +161,10 @@ function NativeGallery({ slug }: { slug: string }) {
         />
       )}
       <LinearGradient
-        colors={['rgba(0, 0, 0, 0.55)', 'rgba(0, 0, 0, 0)']}
+        colors={['rgba(0, 0, 0, 0.75)', 'rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
+        locations={[0, 0.68, 1]}
         pointerEvents="none"
-        style={[styles.scrim, { height: insets.top + 24 }]}
+        style={[styles.scrim, { height: insets.top + 96 }]}
       />
       <DateRangePill
         label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}
