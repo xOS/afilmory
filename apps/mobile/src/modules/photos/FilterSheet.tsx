@@ -32,6 +32,7 @@ const TAG_MODES: { label: string, value: TagMode }[] = [
   { label: 'All', value: 'all' },
 ]
 const RATINGS = [1, 2, 3, 4, 5]
+const HEADER_H = 60
 
 export function FilterSheet() {
   const { palette } = useTheme()
@@ -43,7 +44,12 @@ export function FilterSheet() {
   const matchCount = useMemo(() => applyFilters(photos, filters).length, [filters, photos])
 
   return (
-    <View style={styles.root}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      stickyHeaderIndices={[0]}
+      style={styles.root}
+    >
       <View style={styles.header}>
         <View style={styles.headerSides}>
           {hasActiveFilters(filters) ? (
@@ -75,103 +81,97 @@ export function FilterSheet() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scroll}>
-        <FilterSection title="Date">
+      <FilterSection title="Date">
+        <View style={styles.chipWrap}>
+          {DATE_PRESETS.map(preset => (
+            <FilterChip
+              key={preset}
+              label={DATE_PRESET_LABELS[preset]}
+              selected={filters.datePreset === preset}
+              onPress={() => setDatePreset(filters.datePreset === preset ? null : preset)}
+            />
+          ))}
+        </View>
+        <DateBoundRow label="From" value={filters.dateFrom} onChange={next => setCustomRange(next, filters.dateTo)} />
+        <DateBoundRow label="To" value={filters.dateTo} onChange={next => setCustomRange(filters.dateFrom, next)} />
+      </FilterSection>
+
+      {options.tags.length > 0 ? (
+        <FilterSection title="Tags">
           <View style={styles.chipWrap}>
-            {DATE_PRESETS.map(preset => (
+            {options.tags.map(option => (
               <FilterChip
-                key={preset}
-                label={DATE_PRESET_LABELS[preset]}
-                selected={filters.datePreset === preset}
-                onPress={() => setDatePreset(filters.datePreset === preset ? null : preset)}
+                count={option.count}
+                key={option.value}
+                label={option.value}
+                selected={filters.tags.includes(option.value)}
+                onPress={() => toggleTag(option.value)}
               />
             ))}
           </View>
-          <DateBoundRow
-            label="From"
-            value={filters.dateFrom}
-            onChange={next => setCustomRange(next, filters.dateTo)}
+          <SegmentedControl
+            disabled={filters.tags.length < 2}
+            options={TAG_MODES}
+            value={filters.tagMode}
+            onChange={setTagMode}
           />
-          <DateBoundRow label="To" value={filters.dateTo} onChange={next => setCustomRange(filters.dateFrom, next)} />
         </FilterSection>
+      ) : null}
 
-        {options.tags.length > 0 ? (
-          <FilterSection title="Tags">
-            <View style={styles.chipWrap}>
-              {options.tags.map(option => (
-                <FilterChip
-                  count={option.count}
-                  key={option.value}
-                  label={option.value}
-                  selected={filters.tags.includes(option.value)}
-                  onPress={() => toggleTag(option.value)}
-                />
-              ))}
-            </View>
-            <SegmentedControl
-              disabled={filters.tags.length < 2}
-              options={TAG_MODES}
-              value={filters.tagMode}
-              onChange={setTagMode}
+      {options.cameras.length > 0 ? (
+        <FilterSection title="Camera">
+          {options.cameras.map(option => (
+            <FilterOptionRow
+              count={option.count}
+              key={option.value}
+              label={option.value}
+              selected={filters.cameras.includes(option.value)}
+              onPress={() => toggleCamera(option.value)}
             />
-          </FilterSection>
-        ) : null}
+          ))}
+        </FilterSection>
+      ) : null}
 
-        {options.cameras.length > 0 ? (
-          <FilterSection title="Camera">
-            {options.cameras.map(option => (
-              <FilterOptionRow
-                count={option.count}
-                key={option.value}
-                label={option.value}
-                selected={filters.cameras.includes(option.value)}
-                onPress={() => toggleCamera(option.value)}
-              />
-            ))}
-          </FilterSection>
-        ) : null}
+      {options.lenses.length > 0 ? (
+        <FilterSection title="Lens">
+          {options.lenses.map(option => (
+            <FilterOptionRow
+              count={option.count}
+              key={option.value}
+              label={option.value}
+              selected={filters.lenses.includes(option.value)}
+              onPress={() => toggleLens(option.value)}
+            />
+          ))}
+        </FilterSection>
+      ) : null}
 
-        {options.lenses.length > 0 ? (
-          <FilterSection title="Lens">
-            {options.lenses.map(option => (
-              <FilterOptionRow
-                count={option.count}
-                key={option.value}
-                label={option.value}
-                selected={filters.lenses.includes(option.value)}
-                onPress={() => toggleLens(option.value)}
-              />
-            ))}
-          </FilterSection>
-        ) : null}
-
-        {options.ratedCount > 0 ? (
-          <FilterSection title="Rating">
-            <View style={styles.starRow}>
-              {RATINGS.map((rating) => {
-                const filled = filters.minRating !== null && rating <= filters.minRating
-                return (
-                  <Pressable
-                    accessibilityLabel={`At least ${rating} stars`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: filled }}
-                    key={rating}
-                    style={({ pressed }) => [styles.star, pressed && styles.pressed]}
-                    onPress={() => setMinRating(filters.minRating === rating ? null : rating)}
-                  >
-                    <SymbolView
-                      name={filled ? 'star.fill' : 'star'}
-                      size={22}
-                      tintColor={filled ? palette.accent : palette.textMuted}
-                    />
-                  </Pressable>
-                )
-              })}
-            </View>
-          </FilterSection>
-        ) : null}
-      </ScrollView>
-    </View>
+      {options.ratedCount > 0 ? (
+        <FilterSection title="Rating">
+          <View style={styles.starRow}>
+            {RATINGS.map((rating) => {
+              const filled = filters.minRating !== null && rating <= filters.minRating
+              return (
+                <Pressable
+                  accessibilityLabel={`At least ${rating} stars`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: filled }}
+                  key={rating}
+                  style={({ pressed }) => [styles.star, pressed && styles.pressed]}
+                  onPress={() => setMinRating(filters.minRating === rating ? null : rating)}
+                >
+                  <SymbolView
+                    name={filled ? 'star.fill' : 'star'}
+                    size={22}
+                    tintColor={filled ? palette.accent : palette.textMuted}
+                  />
+                </Pressable>
+              )
+            })}
+          </View>
+        </FilterSection>
+      ) : null}
+    </ScrollView>
   )
 }
 
@@ -210,16 +210,19 @@ function useSheetStyles() {
 function createStyles(palette: Palette) {
   return StyleSheet.create({
     root: { flex: 1 },
-    scroll: { flex: 1 },
     content: {
       gap: 24,
       paddingBottom: 48,
       paddingHorizontal: 20,
-      paddingTop: 4,
     },
+    // Sticky first row of the scroll view rather than a sibling above it, so the scroll
+    // view can stay the screen's immediate child. The negative margin cancels the content
+    // container's padding so the header spans the full sheet width.
     header: {
-      height: 60,
+      backgroundColor: palette.bgSurface,
+      height: HEADER_H,
       justifyContent: 'center',
+      marginHorizontal: -20,
       paddingHorizontal: 20,
     },
     headerSides: {

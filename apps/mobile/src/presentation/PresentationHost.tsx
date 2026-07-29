@@ -73,11 +73,13 @@ function PresentationSheet({ session }: { session: PresentationSession }) {
   }, [cancel, dismissible])
 
   return (
-    <ScreenStack style={styles.sheetStack}>
+    <ScreenStack pointerEvents="box-none" style={styles.sheetStack}>
       {/* react-native-screens always treats the first ScreenStackItem in a stack as the
           base "push" screen — only later siblings get natively presented as modals — so
-          a formSheet needs an empty screen underneath it to present over. */}
-      <ScreenStackItem screenId={`sheet-host-${session.id}`} />
+          a formSheet needs an empty screen underneath it to present over. It has to be
+          transparent and full-size: a zero-sized stack presents nothing at all, and an
+          opaque host would hide the gallery the sheet is meant to filter live. */}
+      <ScreenStackItem contentStyle={styles.transparent} screenId={`sheet-host-${session.id}`} />
       <ScreenStackItem
         contentStyle={{ backgroundColor: palette.bgSurface }}
         headerConfig={{ hidden: true }}
@@ -90,7 +92,14 @@ function PresentationSheet({ session }: { session: PresentationSession }) {
         onDismissed={onDismissed}
       >
         <PageRuntimeProvider value={runtime}>
-          <SessionBody backgroundColor={palette.bgSurface} cancel={cancel} session={session} />
+          {/* Sheets without our own header mount the page directly: react-native-screens
+              looks for a scroll view immediately inside the screen to size it against the
+              detent, and intermediate wrapper views leave that scroll view unsized. */}
+          {session.presentation.headerShown ? (
+            <SessionBody backgroundColor={palette.bgSurface} cancel={cancel} session={session} />
+          ) : (
+            <session.page.Component />
+          )}
         </PageRuntimeProvider>
       </ScreenStackItem>
     </ScreenStack>
@@ -147,7 +156,14 @@ function SessionBody({
 const styles = StyleSheet.create({
   modal: { flex: 1 },
   content: { flex: 1 },
-  sheetStack: { height: 0, width: 0 },
+  sheetStack: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  transparent: { backgroundColor: 'transparent' },
   headerSurface: { borderBottomWidth: StyleSheet.hairlineWidth },
   header: {
     alignItems: 'center',
