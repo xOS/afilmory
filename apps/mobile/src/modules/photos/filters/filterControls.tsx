@@ -4,8 +4,12 @@ import { useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import type { Palette } from '@/theme/palette'
-import { font, radiusPill } from '@/theme/tokens'
+import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
+
+// Matches the height the compact DateTimePicker renders at, so the custom chips and the
+// native date pills in the Date group line up instead of sitting at two different sizes.
+const CONTROL_H = 36
 
 export function FilterSection({ children, title }: { children: ReactNode, title: string }) {
   const styles = useControlStyles()
@@ -137,20 +141,20 @@ function createControlStyles(palette: Palette) {
       alignItems: 'center',
       backgroundColor: palette.bgElement,
       borderCurve: 'continuous',
-      borderRadius: radiusPill,
+      borderRadius: CONTROL_H / 2,
       flexDirection: 'row',
       gap: 6,
+      height: CONTROL_H,
       maxWidth: '100%',
-      paddingHorizontal: 12,
-      paddingVertical: 7,
+      paddingHorizontal: 14,
     },
     chipSelected: { backgroundColor: palette.accent },
     chipLabel: {
       color: palette.textPrimary,
       flexShrink: 1,
       fontFamily: font.ui,
-      fontSize: 13,
-      fontWeight: '500',
+      fontSize: 17,
+      fontWeight: '400',
     },
     chipLabelSelected: { color: palette.accentContrast },
     chipCount: {
@@ -182,25 +186,26 @@ function createControlStyles(palette: Palette) {
       alignSelf: 'flex-start',
       backgroundColor: palette.bgElement,
       borderCurve: 'continuous',
-      borderRadius: 9,
+      borderRadius: 10,
       flexDirection: 'row',
+      height: CONTROL_H,
       padding: 2,
     },
     segmentDisabled: { opacity: 0.4 },
     segmentItem: {
       alignItems: 'center',
       borderCurve: 'continuous',
-      borderRadius: 7,
-      minWidth: 68,
+      borderRadius: 8,
+      justifyContent: 'center',
+      minWidth: 72,
       paddingHorizontal: 14,
-      paddingVertical: 6,
     },
     segmentItemActive: { backgroundColor: palette.bgHover },
     segmentLabel: {
       color: palette.textSecondary,
       fontFamily: font.ui,
-      fontSize: 13,
-      fontWeight: '500',
+      fontSize: 17,
+      fontWeight: '400',
     },
     segmentLabelActive: { color: palette.textPrimary, fontWeight: '600' },
     pressed: { opacity: 0.6 },

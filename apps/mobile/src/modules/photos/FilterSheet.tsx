@@ -3,6 +3,7 @@ import { SymbolView } from 'expo-symbols'
 import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
+import { usePageRuntime } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -35,119 +36,142 @@ const RATINGS = [1, 2, 3, 4, 5]
 export function FilterSheet() {
   const { palette } = useTheme()
   const styles = useSheetStyles()
+  const { cancel } = usePageRuntime()
   const { photos } = useHomeFeed()
   const filters = useFilters()
   const options = useMemo(() => buildFilterOptions(photos), [photos])
   const matchCount = useMemo(() => applyFilters(photos, filters).length, [filters, photos])
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.root}>
-      <View style={styles.headerRow}>
-        <Text style={styles.matchCount}>{`${matchCount} of ${photos.length}`}</Text>
-        {hasActiveFilters(filters) ? (
+    <View style={styles.root}>
+      <View style={styles.header}>
+        <View style={styles.headerSides}>
+          {hasActiveFilters(filters) ? (
+            <Pressable
+              accessibilityLabel="Clear all filters"
+              accessibilityRole="button"
+              hitSlop={8}
+              style={({ pressed }) => pressed && styles.pressed}
+              onPress={clearFilters}
+            >
+              <Text style={styles.clearAll}>Clear All</Text>
+            </Pressable>
+          ) : (
+            <View />
+          )}
           <Pressable
-            accessibilityLabel="Clear all filters"
+            accessibilityLabel="Close filters"
             accessibilityRole="button"
             hitSlop={8}
-            style={({ pressed }) => pressed && styles.pressed}
-            onPress={clearFilters}
+            style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]}
+            onPress={cancel}
           >
-            <Text style={styles.clearAll}>Clear all</Text>
+            <SymbolView name="xmark" size={13} tintColor={palette.textSecondary} weight="semibold" />
           </Pressable>
-        ) : null}
+        </View>
+        <View pointerEvents="none" style={styles.headerCenter}>
+          <Text style={styles.title}>Filters</Text>
+          <Text style={styles.subtitle}>{`${matchCount} of ${photos.length}`}</Text>
+        </View>
       </View>
 
-      <FilterSection title="Date">
-        <View style={styles.chipWrap}>
-          {DATE_PRESETS.map(preset => (
-            <FilterChip
-              key={preset}
-              label={DATE_PRESET_LABELS[preset]}
-              selected={filters.datePreset === preset}
-              onPress={() => setDatePreset(filters.datePreset === preset ? null : preset)}
-            />
-          ))}
-        </View>
-        <DateBoundRow label="From" value={filters.dateFrom} onChange={next => setCustomRange(next, filters.dateTo)} />
-        <DateBoundRow label="To" value={filters.dateTo} onChange={next => setCustomRange(filters.dateFrom, next)} />
-      </FilterSection>
-
-      {options.tags.length > 0 ? (
-        <FilterSection title="Tags">
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scroll}>
+        <FilterSection title="Date">
           <View style={styles.chipWrap}>
-            {options.tags.map(option => (
+            {DATE_PRESETS.map(preset => (
               <FilterChip
-                count={option.count}
-                key={option.value}
-                label={option.value}
-                selected={filters.tags.includes(option.value)}
-                onPress={() => toggleTag(option.value)}
+                key={preset}
+                label={DATE_PRESET_LABELS[preset]}
+                selected={filters.datePreset === preset}
+                onPress={() => setDatePreset(filters.datePreset === preset ? null : preset)}
               />
             ))}
           </View>
-          <SegmentedControl
-            disabled={filters.tags.length < 2}
-            options={TAG_MODES}
-            value={filters.tagMode}
-            onChange={setTagMode}
+          <DateBoundRow
+            label="From"
+            value={filters.dateFrom}
+            onChange={next => setCustomRange(next, filters.dateTo)}
           />
+          <DateBoundRow label="To" value={filters.dateTo} onChange={next => setCustomRange(filters.dateFrom, next)} />
         </FilterSection>
-      ) : null}
 
-      {options.cameras.length > 0 ? (
-        <FilterSection title="Camera">
-          {options.cameras.map(option => (
-            <FilterOptionRow
-              count={option.count}
-              key={option.value}
-              label={option.value}
-              selected={filters.cameras.includes(option.value)}
-              onPress={() => toggleCamera(option.value)}
+        {options.tags.length > 0 ? (
+          <FilterSection title="Tags">
+            <View style={styles.chipWrap}>
+              {options.tags.map(option => (
+                <FilterChip
+                  count={option.count}
+                  key={option.value}
+                  label={option.value}
+                  selected={filters.tags.includes(option.value)}
+                  onPress={() => toggleTag(option.value)}
+                />
+              ))}
+            </View>
+            <SegmentedControl
+              disabled={filters.tags.length < 2}
+              options={TAG_MODES}
+              value={filters.tagMode}
+              onChange={setTagMode}
             />
-          ))}
-        </FilterSection>
-      ) : null}
+          </FilterSection>
+        ) : null}
 
-      {options.lenses.length > 0 ? (
-        <FilterSection title="Lens">
-          {options.lenses.map(option => (
-            <FilterOptionRow
-              count={option.count}
-              key={option.value}
-              label={option.value}
-              selected={filters.lenses.includes(option.value)}
-              onPress={() => toggleLens(option.value)}
-            />
-          ))}
-        </FilterSection>
-      ) : null}
+        {options.cameras.length > 0 ? (
+          <FilterSection title="Camera">
+            {options.cameras.map(option => (
+              <FilterOptionRow
+                count={option.count}
+                key={option.value}
+                label={option.value}
+                selected={filters.cameras.includes(option.value)}
+                onPress={() => toggleCamera(option.value)}
+              />
+            ))}
+          </FilterSection>
+        ) : null}
 
-      {options.ratedCount > 0 ? (
-        <FilterSection title="Rating">
-          <View style={styles.starRow}>
-            {RATINGS.map((rating) => {
-              const filled = filters.minRating !== null && rating <= filters.minRating
-              return (
-                <Pressable
-                  accessibilityLabel={`At least ${rating} stars`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: filled }}
-                  key={rating}
-                  style={({ pressed }) => [styles.star, pressed && styles.pressed]}
-                  onPress={() => setMinRating(filters.minRating === rating ? null : rating)}
-                >
-                  <SymbolView
-                    name={filled ? 'star.fill' : 'star'}
-                    size={22}
-                    tintColor={filled ? palette.accent : palette.textMuted}
-                  />
-                </Pressable>
-              )
-            })}
-          </View>
-        </FilterSection>
-      ) : null}
-    </ScrollView>
+        {options.lenses.length > 0 ? (
+          <FilterSection title="Lens">
+            {options.lenses.map(option => (
+              <FilterOptionRow
+                count={option.count}
+                key={option.value}
+                label={option.value}
+                selected={filters.lenses.includes(option.value)}
+                onPress={() => toggleLens(option.value)}
+              />
+            ))}
+          </FilterSection>
+        ) : null}
+
+        {options.ratedCount > 0 ? (
+          <FilterSection title="Rating">
+            <View style={styles.starRow}>
+              {RATINGS.map((rating) => {
+                const filled = filters.minRating !== null && rating <= filters.minRating
+                return (
+                  <Pressable
+                    accessibilityLabel={`At least ${rating} stars`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: filled }}
+                    key={rating}
+                    style={({ pressed }) => [styles.star, pressed && styles.pressed]}
+                    onPress={() => setMinRating(filters.minRating === rating ? null : rating)}
+                  >
+                    <SymbolView
+                      name={filled ? 'star.fill' : 'star'}
+                      size={22}
+                      tintColor={filled ? palette.accent : palette.textMuted}
+                    />
+                  </Pressable>
+                )
+              })}
+            </View>
+          </FilterSection>
+        ) : null}
+      </ScrollView>
+    </View>
   )
 }
 
@@ -186,29 +210,55 @@ function useSheetStyles() {
 function createStyles(palette: Palette) {
   return StyleSheet.create({
     root: { flex: 1 },
+    scroll: { flex: 1 },
     content: {
       gap: 24,
       paddingBottom: 48,
       paddingHorizontal: 20,
-      paddingTop: 8,
+      paddingTop: 4,
     },
-    headerRow: {
+    header: {
+      height: 60,
+      justifyContent: 'center',
+      paddingHorizontal: 20,
+    },
+    headerSides: {
       alignItems: 'center',
       flexDirection: 'row',
       justifyContent: 'space-between',
-      minHeight: 24,
     },
-    matchCount: {
+    headerCenter: {
+      alignItems: 'center',
+      bottom: 0,
+      justifyContent: 'center',
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    title: {
       color: palette.textPrimary,
       fontFamily: font.ui,
-      fontSize: 15,
+      fontSize: 17,
       fontWeight: '600',
+    },
+    subtitle: {
+      color: palette.textSecondary,
+      fontFamily: font.ui,
+      fontSize: 13,
+    },
+    dismiss: {
+      alignItems: 'center',
+      backgroundColor: palette.bgElement,
+      borderRadius: 15,
+      height: 30,
+      justifyContent: 'center',
+      width: 30,
     },
     clearAll: {
       color: palette.danger,
       fontFamily: font.ui,
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: 17,
     },
     chipWrap: {
       flexDirection: 'row',
