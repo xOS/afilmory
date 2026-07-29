@@ -23,6 +23,8 @@ const TOP_OFFSET = 8
 
 export const HOME_BUTTONS_CLEARANCE = EDGE + CIRCLE + GAP + CIRCLE + EDGE
 export const HOME_CHROME_HEIGHT = TOP_OFFSET + CIRCLE + 8
+export const HOME_CHROME_TOP = TOP_OFFSET
+export const HOME_CHROME_CONTROL = CIRCLE
 
 export function HomeButtons() {
   const { palette } = useTheme()

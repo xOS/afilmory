@@ -131,7 +131,14 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func updateInsets() {
+    // The props land after the first layout has already parked the offset at the old inset,
+    // and UIKit does not re-pin it, so a grown top inset would otherwise hide content
+    // behind the chrome instead of reserving room for it.
+    let wasPinnedToTop = collectionView.contentOffset.y <= -collectionView.adjustedContentInset.top + 1
     collectionView.contentInset = UIEdgeInsets(top: extraTopInset, left: 0, bottom: extraBottomInset, right: 0)
+    if wasPinnedToTop {
+      collectionView.setContentOffset(CGPoint(x: 0, y: -collectionView.adjustedContentInset.top), animated: false)
+    }
   }
 
   @objc private func handleRefresh() {

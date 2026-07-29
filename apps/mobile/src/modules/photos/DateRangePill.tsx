@@ -1,11 +1,11 @@
 import { Pressable, StyleSheet, Text } from 'react-native'
-import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated'
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { font } from '@/theme/tokens'
 
 import { GlassSurface, supportsLiquidGlass } from './GlassSurface'
-import { HOME_BUTTONS_CLEARANCE } from './HomeButtons'
+import { HOME_BUTTONS_CLEARANCE, HOME_CHROME_CONTROL, HOME_CHROME_TOP } from './HomeButtons'
 
 export function DateRangePill({
   label,
@@ -17,8 +17,17 @@ export function DateRangePill({
   visible: boolean
 }) {
   const insets = useSafeAreaInsets()
+  const shown = visible && label !== null
 
-  if (!visible || !label) {
+  // GlassView latches its effect on the first layout pass, so an entering animation would
+  // configure the glass before the pill has its real size and leave it permanently blank.
+  // Mounting stays tied to the label and only opacity animates.
+  const fade = useAnimatedStyle(() => ({
+    opacity: withTiming(shown ? 1 : 0, { duration: shown ? 200 : 150 }),
+    transform: [{ translateY: withTiming(shown ? 0 : -6, { duration: shown ? 200 : 150 }) }],
+  }))
+
+  if (!label) {
     return null
   }
 
@@ -32,10 +41,8 @@ export function DateRangePill({
 
   return (
     <Animated.View
-      entering={FadeInUp.duration(200)}
-      exiting={FadeOut.duration(150)}
-      pointerEvents={onPress ? 'box-none' : 'none'}
-      style={[styles.container, { top: insets.top + 8 }]}
+      pointerEvents={onPress && shown ? 'box-none' : 'none'}
+      style={[styles.container, { top: insets.top + HOME_CHROME_TOP }, fade]}
     >
       {onPress ? (
         <Pressable
@@ -65,10 +72,12 @@ const styles = StyleSheet.create({
   pressable: { maxWidth: '100%' },
   pressed: { opacity: 0.6 },
   pill: {
+    alignItems: 'center',
     borderCurve: 'continuous',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: HOME_CHROME_CONTROL / 2,
+    flexDirection: 'row',
+    height: HOME_CHROME_CONTROL,
+    paddingHorizontal: 14,
   },
   label: {
     color: '#f5f5f7',
@@ -76,5 +85,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: -0.1,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowRadius: 3,
   },
 })

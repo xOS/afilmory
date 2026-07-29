@@ -7,7 +7,7 @@ import { StyleSheet } from 'react-native'
 // Glass adapts to whatever photo sits behind it, but our overlay labels and icons are a fixed
 // near-white, so an untinted surface disappears over bright frames. The tint pins the surface
 // dark enough that white content always reads, on both the glass and the blur path.
-const legibilityTint = 'rgba(0, 0, 0, 0.3)'
+const legibilityTint = 'rgba(0, 0, 0, 0.42)'
 
 export function supportsLiquidGlass(): boolean {
   return isLiquidGlassAvailable()
