@@ -93,6 +93,9 @@ final class PhotoMasonryView: ExpoView {
   private let avatarImageView = UIImageView()
   private let filterButton = UIButton()
   private let filterBadge = UILabel()
+  private let controlCluster = UIVisualEffectView()
+  private let profileGlass = UIVisualEffectView()
+  private let filterGlass = UIVisualEffectView()
 
   private var columnCount = 2
   private var hasAppliedDefaultColumnCount = false
@@ -193,11 +196,31 @@ final class PhotoMasonryView: ExpoView {
     dateButton.isHidden = true
     overlayView.addSubview(dateButton)
 
+    // Apple's floating control clusters are a glass container holding individual glass
+    // elements, which is what makes adjacent controls merge as they near each other and
+    // deform under touch. Two standalone .glass() button configurations render neither.
+    if #available(iOS 26.0, *) {
+      let clusterEffect = UIGlassContainerEffect()
+      clusterEffect.spacing = chromeControlGap
+      controlCluster.effect = clusterEffect
+      overlayView.addSubview(controlCluster)
+
+      for glass in [profileGlass, filterGlass] {
+        // The glass element is the surface only; its own interactive behaviour would
+        // swallow touches before they reach the button hosted in its content view.
+        let effect = UIGlassEffect(style: .regular)
+        glass.effect = effect
+        glass.clipsToBounds = true
+        glass.layer.cornerCurve = .circular
+        controlCluster.contentView.addSubview(glass)
+      }
+    }
+
     profileButton.addTarget(self, action: #selector(handleProfilePress), for: .touchUpInside)
     profileButton.accessibilityIdentifier = "photo-masonry-profile"
     profileButton.accessibilityLabel = "Profile"
-    profileButton.configuration = makeChromeConfiguration()
-    overlayView.addSubview(profileButton)
+    profileButton.configuration = makeControlConfiguration()
+    glassHost(for: profileGlass).addSubview(profileButton)
 
     profileInitialLabel.font = .systemFont(ofSize: 14, weight: .bold)
     profileInitialLabel.textAlignment = .center
@@ -212,7 +235,7 @@ final class PhotoMasonryView: ExpoView {
 
     filterButton.addTarget(self, action: #selector(handleFilterPress), for: .touchUpInside)
     filterButton.accessibilityIdentifier = "photo-masonry-filters"
-    overlayView.addSubview(filterButton)
+    glassHost(for: filterGlass).addSubview(filterButton)
 
     filterBadge.backgroundColor = .systemBlue
     filterBadge.clipsToBounds = true
@@ -226,6 +249,28 @@ final class PhotoMasonryView: ExpoView {
     updateDateInteraction()
     updateProfile()
     updateFilterButton()
+  }
+
+  private func glassHost(for glass: UIVisualEffectView) -> UIView {
+    if #available(iOS 26.0, *) {
+      return glass.contentView
+    }
+    return overlayView
+  }
+
+  // The circular controls draw no background of their own — the glass element behind them
+  // is the surface. Pre-26 they fall back to carrying their own opaque capsule.
+  private func makeControlConfiguration() -> UIButton.Configuration {
+    if #available(iOS 26.0, *) {
+      var configuration = UIButton.Configuration.plain()
+      configuration.background.backgroundColor = .clear
+      configuration.baseForegroundColor = .white
+      return configuration
+    }
+    var configuration = UIButton.Configuration.gray()
+    configuration.buttonSize = .medium
+    configuration.cornerStyle = .capsule
+    return configuration
   }
 
   private func makeChromeConfiguration(prominent: Bool = false) -> UIButton.Configuration {
@@ -315,7 +360,7 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func updateFilterButton() {
-    var configuration = makeChromeConfiguration()
+    var configuration = makeControlConfiguration()
     configuration.contentInsets = .zero
     configuration.image = UIImage(systemName: "line.3.horizontal.decrease")
     configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
@@ -336,8 +381,24 @@ final class PhotoMasonryView: ExpoView {
     let filterX = bounds.width - chromeEdgeInset - chromeControlSize
     let profileX = filterX - chromeControlGap - chromeControlSize
 
-    filterButton.frame = CGRect(x: filterX, y: controlY, width: chromeControlSize, height: chromeControlSize)
-    profileButton.frame = CGRect(x: profileX, y: controlY, width: chromeControlSize, height: chromeControlSize)
+    if #available(iOS 26.0, *) {
+      controlCluster.frame = CGRect(
+        x: profileX,
+        y: controlY,
+        width: chromeControlSize * 2 + chromeControlGap,
+        height: chromeControlSize
+      )
+      let circle = CGRect(x: 0, y: 0, width: chromeControlSize, height: chromeControlSize)
+      profileGlass.frame = circle
+      filterGlass.frame = circle.offsetBy(dx: chromeControlSize + chromeControlGap, dy: 0)
+      profileGlass.layer.cornerRadius = chromeControlSize / 2
+      filterGlass.layer.cornerRadius = chromeControlSize / 2
+      profileButton.frame = profileGlass.contentView.bounds
+      filterButton.frame = filterGlass.contentView.bounds
+    } else {
+      filterButton.frame = CGRect(x: filterX, y: controlY, width: chromeControlSize, height: chromeControlSize)
+      profileButton.frame = CGRect(x: profileX, y: controlY, width: chromeControlSize, height: chromeControlSize)
+    }
 
     let avatarInset = (chromeControlSize - avatarImageSize) / 2
     let avatarFrame = profileButton.bounds.insetBy(dx: avatarInset, dy: avatarInset)
@@ -356,9 +417,11 @@ final class PhotoMasonryView: ExpoView {
       height: chromeControlSize
     )
 
+    // The badge stays in the overlay rather than the glass element, so it is not refracted
+    // by the very surface it labels.
     filterBadge.frame = CGRect(
-      x: filterButton.frame.maxX - filterBadgeSize + 4,
-      y: filterButton.frame.minY - 4,
+      x: filterX + chromeControlSize - filterBadgeSize + 4,
+      y: controlY - 4,
       width: filterBadgeSize,
       height: filterBadgeSize
     )
