@@ -15,6 +15,7 @@ export function useGalleryManifest(slug: string) {
     error: null,
     loading: true,
   })
+  const [refreshing, setRefreshing] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
 
   const load = useCallback(async () => {
@@ -52,5 +53,19 @@ export function useGalleryManifest(slug: string) {
 
   const retry = useCallback(() => void load(), [load])
 
-  return { ...state, retry }
+  const refresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const photos = await fetchGalleryManifest(slug)
+      setState(prev => ({ ...prev, photos, error: null }))
+    }
+    catch {
+      // keep showing the current photos on a failed refresh
+    }
+    finally {
+      setRefreshing(false)
+    }
+  }, [slug])
+
+  return { ...state, refresh, refreshing, retry }
 }

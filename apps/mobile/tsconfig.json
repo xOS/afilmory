@@ -3,7 +3,8 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
-      "@/assets/*": ["./assets/*"]
+      "@/assets/*": ["./assets/*"],
+      "photo-masonry": ["./modules/photo-masonry/index.ts"]
     },
     "strict": true
   },

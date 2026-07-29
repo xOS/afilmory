@@ -17,6 +17,7 @@ interface ManifestPhoto {
   height?: number
   aspectRatio?: number
   dateTaken?: string | null
+  video?: { type?: string } | null
 }
 
 function photoAspectRatio(photo: ManifestPhoto): number {
@@ -37,6 +38,8 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
       aspectRatio: photoAspectRatio(photo),
       width: photo.width ?? 0,
       height: photo.height ?? 0,
+      dateTaken: photo.dateTaken ?? null,
+      isLive: Boolean(photo.video),
     }))
 }
 
@@ -49,6 +52,22 @@ export function getCachedGalleryCovers(slug: string): GalleryCoverPhoto[] | unde
   return coverCache.get(slug)
 }
 
+export async function fetchGalleryPreviewPhotos(slug: string, limit: number): Promise<GalleryCoverPhoto[]> {
+  const res = await ofetch<{ data: ManifestPhoto[] }>(
+    `https://${slug}.${SAAS_BASE_DOMAIN}/api/manifest/photos/search`,
+    {
+      method: 'POST',
+      body: { limit, sort: 'desc' },
+    },
+  )
+  return res.data.map(photo => ({
+    id: photo.id,
+    thumbnailUrl: photo.thumbnailUrl,
+    thumbHash: photo.thumbHash ?? null,
+    aspectRatio: photoAspectRatio(photo),
+  }))
+}
+
 export function fetchGalleryCovers(gallery: FeaturedGallery): Promise<GalleryCoverPhoto[]> {
   const cached = coverCache.get(gallery.slug)
   if (cached) {
@@ -59,20 +78,8 @@ export function fetchGalleryCovers(gallery: FeaturedGallery): Promise<GalleryCov
     return pending
   }
 
-  const request = ofetch<{ data: ManifestPhoto[] }>(
-    `https://${gallery.slug}.${SAAS_BASE_DOMAIN}/api/manifest/photos/search`,
-    {
-      method: 'POST',
-      body: { limit: COVER_COUNT, sort: 'desc' },
-    },
-  )
-    .then((res) => {
-      const covers = res.data.map(photo => ({
-        id: photo.id,
-        thumbnailUrl: photo.thumbnailUrl,
-        thumbHash: photo.thumbHash ?? null,
-        aspectRatio: photoAspectRatio(photo),
-      }))
+  const request = fetchGalleryPreviewPhotos(gallery.slug, COVER_COUNT)
+    .then((covers) => {
       coverCache.set(gallery.slug, covers)
       return covers
     })

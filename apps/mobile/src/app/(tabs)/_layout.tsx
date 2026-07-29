@@ -6,7 +6,11 @@ export default function TabLayout() {
   const { palette } = useTheme()
 
   return (
-    <NativeTabs iconColor={{ default: palette.textSecondary, selected: palette.accent }} tintColor={palette.accent}>
+    <NativeTabs
+      iconColor={{ default: palette.textSecondary, selected: palette.accent }}
+      minimizeBehavior="onScrollDown"
+      tintColor={palette.accent}
+    >
       <NativeTabs.Trigger name="photos">
         <NativeTabs.Trigger.Icon
           md="photo_library"

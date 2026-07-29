@@ -1,18 +1,19 @@
-import { useRouter } from 'expo-router'
 import { useMemo } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { useAuth } from '@/modules/auth/sessionStore'
-import { GalleryMasonry } from '@/modules/galleries/GalleryMasonry'
+import { signInPage } from '@/modules/auth/signInPage'
+import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
+
+import { OwnGalleryView } from './OwnGalleryView'
 
 export function PhotosHomeScreen() {
   const { palette } = useTheme()
   const styles = useMemo(() => createStyles(palette), [palette])
   const auth = useAuth()
-  const router = useRouter()
 
   if (auth.status === 'loading') {
     return (
@@ -32,7 +33,7 @@ export function PhotosHomeScreen() {
           accessibilityRole="button"
           hitSlop={8}
           style={({ pressed }) => [styles.heroButton, pressed && styles.pressed]}
-          onPress={() => router.navigate('/settings')}
+          onPress={() => void present(signInPage)}
         >
           <Text style={styles.heroButtonLabel}>Sign in</Text>
         </Pressable>
@@ -54,7 +55,7 @@ export function PhotosHomeScreen() {
 
   return (
     <View style={styles.root}>
-      <GalleryMasonry slug={tenant.slug} />
+      <OwnGalleryView slug={tenant.slug} />
     </View>
   )
 }

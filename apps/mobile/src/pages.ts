@@ -1,3 +1,4 @@
+import { signInPage } from '@/modules/auth/signInPage'
 import { galleriesPage } from '@/modules/galleries/galleriesPage'
 import { galleryDetailPage } from '@/modules/galleries/galleryDetailPage'
 import { photosPage } from '@/modules/photos/photosPage'
@@ -8,4 +9,5 @@ export const Pages = {
   galleryDetail: galleryDetailPage,
   photos: photosPage,
   settings: settingsPage,
+  signIn: signInPage,
 } as const

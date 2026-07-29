@@ -4,8 +4,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 
 import { SAAS_BASE_DOMAIN } from '@/api/client'
 import { signOut, useAuth } from '@/modules/auth/sessionStore'
-import { SignInSection } from '@/modules/auth/SignInSection'
+import { signInPage } from '@/modules/auth/signInPage'
 import { AppHeader } from '@/modules/shell/AppHeader'
+import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { controlH, font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -38,12 +39,19 @@ export function SettingsScreen() {
         </View>
       ) : auth.status === 'signedOut' ? (
         <ScrollView
+          contentContainerStyle={styles.content}
           contentInsetAdjustmentBehavior="automatic"
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           style={styles.root}
         >
-          <SignInSection />
+          <Pressable
+            accessibilityLabel="Sign in"
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.signInButton, pressed && styles.pressed]}
+            onPress={() => void present(signInPage)}
+          >
+            <Text style={styles.signInLabel}>Sign in</Text>
+          </Pressable>
         </ScrollView>
       ) : (
         <ScrollView
@@ -167,6 +175,20 @@ function createStyles(palette: Palette) {
       color: palette.textMuted,
       fontFamily: font.mono,
       fontSize: 12,
+    },
+    signInButton: {
+      alignItems: 'center',
+      backgroundColor: palette.accent,
+      borderCurve: 'continuous',
+      borderRadius: radiusLg,
+      height: controlH,
+      justifyContent: 'center',
+    },
+    signInLabel: {
+      color: palette.accentContrast,
+      fontFamily: font.ui,
+      fontSize: 15,
+      fontWeight: '600',
     },
     signOutButton: {
       alignItems: 'center',

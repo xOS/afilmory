@@ -30,4 +30,6 @@ export interface GalleryPhoto {
   aspectRatio: number
   width: number
   height: number
+  dateTaken: string | null
+  isLive: boolean
 }
