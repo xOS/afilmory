@@ -62,6 +62,12 @@ final class PhotoMasonryView: ExpoView {
     collectionView.contentInsetAdjustmentBehavior = .always
     collectionView.showsVerticalScrollIndicator = false
     collectionView.alwaysBounceVertical = true
+    // No navigation bar sits above this grid, so the automatic style resolves to nothing.
+    // Forcing .soft draws the same progressive blur UIKit puts under a navigation bar,
+    // sized to the top inset (safe area + extraTopInset).
+    if #available(iOS 26.0, *) {
+      collectionView.topEdgeEffect.style = .soft
+    }
     collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: PhotoCell.reuseIdentifier)
 
     refreshControl.tintColor = .white
