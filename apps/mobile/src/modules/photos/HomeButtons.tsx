@@ -1,4 +1,3 @@
-import { BlurView } from 'expo-blur'
 import { SymbolView } from 'expo-symbols'
 import { useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -12,6 +11,7 @@ import { useTheme } from '@/theme/useTheme'
 import { useFilters } from './filters/filterStore'
 import { countActiveDimensions, hasActiveFilters } from './filters/filterTypes'
 import { filterSheetPage } from './filterSheetPage'
+import { GlassSurface, supportsLiquidGlass } from './GlassSurface'
 
 export function HomeButtons() {
   const { palette } = useTheme()
@@ -27,16 +27,16 @@ export function HomeButtons() {
         accessibilityRole="button"
         accessibilityState={{ selected: active }}
         hitSlop={8}
-        style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.button, pressed && !supportsLiquidGlass() && styles.pressed]}
         onPress={() => void present(filterSheetPage)}
       >
-        <BlurView intensity={100} style={styles.circle} tint="systemChromeMaterialDark">
+        <GlassSurface interactive style={styles.circle}>
           <SymbolView
             name="line.3.horizontal.decrease"
             size={15}
             tintColor={active ? palette.accent : palette.textPrimary}
           />
-        </BlurView>
+        </GlassSurface>
         {active ? (
           <View style={styles.badge}>
             <Text style={styles.badgeLabel}>{countActiveDimensions(filters)}</Text>
@@ -59,13 +59,10 @@ function createStyles(palette: Palette) {
     button: { height: 36, width: 36 },
     circle: {
       alignItems: 'center',
-      borderColor: 'rgba(255, 255, 255, 0.12)',
       borderCurve: 'continuous',
       borderRadius: 18,
-      borderWidth: StyleSheet.hairlineWidth,
       height: 36,
       justifyContent: 'center',
-      overflow: 'hidden',
       width: 36,
     },
     badge: {

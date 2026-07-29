@@ -1,9 +1,10 @@
-import { BlurView } from 'expo-blur'
 import { Pressable, StyleSheet, Text } from 'react-native'
 import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { font } from '@/theme/tokens'
+
+import { GlassSurface, supportsLiquidGlass } from './GlassSurface'
 
 export function DateRangePill({
   label,
@@ -21,11 +22,11 @@ export function DateRangePill({
   }
 
   const pill = (
-    <BlurView intensity={100} style={styles.pill} tint="systemChromeMaterialDark">
+    <GlassSurface interactive={onPress !== undefined} style={styles.pill}>
       <Text numberOfLines={1} style={styles.label}>
         {label}
       </Text>
-    </BlurView>
+    </GlassSurface>
   )
 
   return (
@@ -40,7 +41,7 @@ export function DateRangePill({
           accessibilityLabel={label}
           accessibilityRole="button"
           hitSlop={8}
-          style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.pressable, pressed && !supportsLiquidGlass() && styles.pressed]}
           onPress={onPress}
         >
           {pill}
@@ -63,11 +64,8 @@ const styles = StyleSheet.create({
   pressable: { maxWidth: '100%' },
   pressed: { opacity: 0.6 },
   pill: {
-    borderColor: 'rgba(255, 255, 255, 0.12)',
     borderCurve: 'continuous',
     borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
