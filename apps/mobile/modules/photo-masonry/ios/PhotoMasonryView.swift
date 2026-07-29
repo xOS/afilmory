@@ -9,6 +9,8 @@ private let chromeControlSize: CGFloat = 44
 private let chromeControlGap: CGFloat = 12
 private let chromeTopOffset: CGFloat = 8
 private let chromeDateRightGap: CGFloat = 12
+private let chromeDateFontSize: CGFloat = 17
+private let chromeDateHorizontalInset: CGFloat = 16
 private let avatarImageSize: CGFloat = 34
 private let filterBadgeSize: CGFloat = 16
 
@@ -54,6 +56,12 @@ final class PhotoMasonryView: ExpoView {
   var scrollThreshold: CGFloat = 400
 
   var chromeDateLabel = "" {
+    didSet { updateDateButton() }
+  }
+
+  // Secondary half of the pill (the resolved city). It is dropped whole rather than
+  // truncated, so a narrow pill shows a complete date range instead of "range · ci…".
+  var chromeDateDetail = "" {
     didSet { updateDateButton() }
   }
 
@@ -104,6 +112,7 @@ final class PhotoMasonryView: ExpoView {
   private var pinchAnchorViewportOffset: CGFloat = 0
   private var lastPinchDetent = 2
   private var settleGeneration = 0
+  private var dateAvailableWidth: CGFloat = 0
   private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
@@ -292,18 +301,36 @@ final class PhotoMasonryView: ExpoView {
     return configuration
   }
 
+  private func dateTitleWidth(_ title: String) -> CGFloat {
+    let font = UIFont.systemFont(ofSize: chromeDateFontSize, weight: .semibold)
+    let text = ceil((title as NSString).size(withAttributes: [.font: font]).width)
+    return text + chromeDateHorizontalInset * 2
+  }
+
+  private func fittedDateTitle() -> String {
+    guard !chromeDateLabel.isEmpty, !chromeDateDetail.isEmpty else { return chromeDateLabel }
+    let combined = "\(chromeDateLabel) · \(chromeDateDetail)"
+    return dateTitleWidth(combined) <= dateAvailableWidth ? combined : chromeDateLabel
+  }
+
   private func updateDateButton() {
+    let title = fittedDateTitle()
     var configuration = makeChromeConfiguration(prominent: true)
-    configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
-    configuration.title = chromeDateLabel
+    configuration.contentInsets = NSDirectionalEdgeInsets(
+      top: 0,
+      leading: chromeDateHorizontalInset,
+      bottom: 0,
+      trailing: chromeDateHorizontalInset
+    )
+    configuration.title = title
     configuration.titleLineBreakMode = .byTruncatingTail
     configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
       var outgoing = incoming
-      outgoing.font = .systemFont(ofSize: 17, weight: .semibold)
+      outgoing.font = .systemFont(ofSize: chromeDateFontSize, weight: .semibold)
       return outgoing
     }
     dateButton.configuration = configuration
-    dateButton.accessibilityLabel = chromeDateLabel
+    dateButton.accessibilityLabel = title
     updateDateVisibility(animated: false)
     setNeedsLayout()
   }
@@ -407,6 +434,11 @@ final class PhotoMasonryView: ExpoView {
     profileInitialLabel.frame = avatarFrame
 
     let dateMaxWidth = max(profileX - chromeDateRightGap - chromeEdgeInset, 0)
+    // Recomposing the title needs the width the pill actually gets, which only exists here.
+    if dateMaxWidth != dateAvailableWidth {
+      dateAvailableWidth = dateMaxWidth
+      updateDateButton()
+    }
     let fittingWidth = dateButton.sizeThatFits(
       CGSize(width: dateMaxWidth, height: chromeControlSize)
     ).width

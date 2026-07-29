@@ -39,6 +39,7 @@ export interface PhotoMasonryViewProps extends ViewProps {
   scrollThreshold?: number
   refreshing?: boolean
   chromeDateLabel?: string
+  chromeDateDetail?: string
   chromeDateVisible?: boolean
   chromeDateInteractive?: boolean
   profileImageURL?: string

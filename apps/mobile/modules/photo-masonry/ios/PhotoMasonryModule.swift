@@ -56,6 +56,10 @@ public class PhotoMasonryModule: Module {
         view.chromeDateLabel = label
       }
 
+      Prop("chromeDateDetail") { (view: PhotoMasonryView, detail: String) in
+        view.chromeDateDetail = detail
+      }
+
       Prop("chromeDateVisible") { (view: PhotoMasonryView, visible: Bool) in
         view.chromeDateVisible = visible
       }

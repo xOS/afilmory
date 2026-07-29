@@ -78,13 +78,16 @@ function NativeGallery({ slug }: { slug: string }) {
     if (!visibleRange) {
       return null
     }
-    const range = formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end)
-    if (!range) {
-      return null
-    }
-    const city = cityForRange(filtered, visibleRange.start, visibleRange.end)
-    return city ? `${range} · ${city}` : range
+    return formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end)
   }, [filtered, visibleRange])
+
+  // Kept separate from the range so the native pill can drop it whole when it does not fit.
+  const dateDetail = useMemo(() => {
+    if (!visibleRange || !dateLabel) {
+      return ''
+    }
+    return cityForRange(filtered, visibleRange.start, visibleRange.end) ?? ''
+  }, [dateLabel, filtered, visibleRange])
 
   const filtersActive = hasActiveFilters(filters)
   const filterCount = countActiveDimensions(filters)
@@ -167,6 +170,7 @@ function NativeGallery({ slug }: { slug: string }) {
     <View style={styles.root}>
       {columnsReady ? (
         <PhotoMasonryView
+          chromeDateDetail={filtersActive ? '' : dateDetail}
           chromeDateInteractive={filtersActive}
           chromeDateLabel={chromeDateLabel}
           chromeDateVisible={hasFeed && chromeDateLabel.length > 0}
