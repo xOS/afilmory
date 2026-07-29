@@ -80,6 +80,18 @@ final class MasonryLayout: UICollectionViewLayout {
     return lerp(lowerFrames.frames[index], upperFrames.frames[index], zoomPosition - CGFloat(lower))
   }
 
+  func interpolatedContentHeight() -> CGFloat {
+    guard let collectionView else { return 0 }
+    let width = collectionView.bounds.width
+    guard width > 0, !aspectRatios.isEmpty else { return 0 }
+    let lower = Int(zoomPosition.rounded(.down))
+    let upper = Int(zoomPosition.rounded(.up))
+    let lowerHeight = frames(for: lower, width: width).height
+    guard upper != lower else { return lowerHeight }
+    let upperHeight = frames(for: upper, width: width).height
+    return lowerHeight + (upperHeight - lowerHeight) * (zoomPosition - CGFloat(lower))
+  }
+
   override func prepare() {
     super.prepare()
     attributesCache.removeAll(keepingCapacity: true)

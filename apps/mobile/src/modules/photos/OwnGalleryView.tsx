@@ -1,4 +1,4 @@
-import type { ColumnCountChangeEvent, ScrollBeyondThresholdEvent, VisibleRangeEvent } from 'photo-masonry'
+import type { ColumnCountChangeEvent, VisibleRangeEvent } from 'photo-masonry'
 import { isPhotoMasonryAvailable, PhotoMasonryView } from 'photo-masonry'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
@@ -38,7 +38,6 @@ function NativeGallery({ slug }: { slug: string }) {
 
   const filters = useFilters()
 
-  const [pillVisible, setPillVisible] = useState(false)
   const [visibleRange, setVisibleRange] = useState<{ start: number, end: number } | null>(null)
   const [columnsReady, setColumnsReady] = useState(false)
 
@@ -96,17 +95,13 @@ function NativeGallery({ slug }: { slug: string }) {
     setVisibleRange({ start: event.nativeEvent.startIndex, end: event.nativeEvent.endIndex })
   }, [])
 
-  const handleScrollBeyondThreshold = useCallback((event: { nativeEvent: ScrollBeyondThresholdEvent }) => {
-    setPillVisible(event.nativeEvent.beyond)
-  }, [])
-
   const handleColumnCountChange = useCallback((event: { nativeEvent: ColumnCountChangeEvent }) => {
     setPreferredColumnCount(event.nativeEvent.columnCount)
   }, [])
 
   const handleRefresh = useCallback(() => void refresh(), [refresh])
 
-  const hasFeed = !loading && error === null && photos.length > 0
+  const hasFeed = columnsReady && !loading && error === null && photos.length > 0
   const chromeDateLabel = filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : (dateLabel ?? '')
   const profileInitial = Array.from((auth.session?.user.name ?? '?').trim())[0]?.toUpperCase() ?? '?'
 
@@ -174,7 +169,7 @@ function NativeGallery({ slug }: { slug: string }) {
         <PhotoMasonryView
           chromeDateInteractive={filtersActive}
           chromeDateLabel={chromeDateLabel}
-          chromeDateVisible={hasFeed && (filtersActive || pillVisible)}
+          chromeDateVisible={hasFeed && chromeDateLabel.length > 0}
           defaultColumnCount={getPreferredColumnCount()}
           extraBottomInset={24}
           extraTopInset={NATIVE_CHROME_HEIGHT}
@@ -192,7 +187,6 @@ function NativeGallery({ slug }: { slug: string }) {
           onFilterPress={openFilters}
           onProfilePress={openProfile}
           onRefresh={handleRefresh}
-          onScrollBeyondThreshold={handleScrollBeyondThreshold}
           onVisibleRangeChange={handleVisibleRangeChange}
         />
       ) : null}

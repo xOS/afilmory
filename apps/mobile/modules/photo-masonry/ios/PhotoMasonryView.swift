@@ -41,7 +41,10 @@ final class PhotoMasonryView: ExpoView {
   }
 
   var extraTopInset: CGFloat = 0 {
-    didSet { updateInsets() }
+    didSet {
+      updateInsets()
+      setNeedsLayout()
+    }
   }
 
   var extraBottomInset: CGFloat = 0 {
@@ -97,6 +100,7 @@ final class PhotoMasonryView: ExpoView {
   private var pinchAnchorItem: Int?
   private var pinchAnchorViewportOffset: CGFloat = 0
   private var lastPinchDetent = 2
+  private var settleGeneration = 0
   private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
@@ -396,6 +400,7 @@ final class PhotoMasonryView: ExpoView {
     switch gesture.state {
     case .began:
       guard !photos.isEmpty else { return }
+      settleGeneration += 1
       pinchStartPosition = layout.zoomPosition
       lastPinchDetent = Int(layout.zoomPosition.rounded())
       let location = gesture.location(in: collectionView)
@@ -434,11 +439,20 @@ final class PhotoMasonryView: ExpoView {
     guard let anchorItem = pinchAnchorItem else { return }
     let frame = layout.interpolatedFrame(at: anchorItem)
     let minOffset = -collectionView.adjustedContentInset.top
-    collectionView.contentOffset.y = max(frame.midY - pinchAnchorViewportOffset, minOffset)
+    // Without the upper bound, pinching to more columns near the end of the list shortens
+    // the content while the anchor keeps its viewport slot, parking blank space below the
+    // last row.
+    let contentBottom = layout.interpolatedContentHeight() + collectionView.adjustedContentInset.bottom
+    let maxOffset = max(minOffset, contentBottom - collectionView.bounds.height)
+    collectionView.contentOffset.y = min(max(frame.midY - pinchAnchorViewportOffset, minOffset), maxOffset)
   }
 
   private func settlePinch(velocity: CGFloat) {
     guard !photos.isEmpty else { return }
+    // A pinch starting inside the 0.25s settle cancels this animation but still runs its
+    // completion, which would nil the new gesture's anchor and emit a stale column count.
+    settleGeneration += 1
+    let generation = settleGeneration
     let current = layout.zoomPosition
     var target = current.rounded()
     if abs(velocity) > 1.5, current != current.rounded() {
@@ -455,6 +469,7 @@ final class PhotoMasonryView: ExpoView {
         self.collectionView.layoutIfNeeded()
       },
       completion: { _ in
+        guard generation == self.settleGeneration else { return }
         self.pinchAnchorItem = nil
         if settled != self.columnCount {
           self.columnCount = settled
