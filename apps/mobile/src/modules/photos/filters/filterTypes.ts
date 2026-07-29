@@ -101,9 +101,6 @@ export function summarizeFilters(filters: PhotoFilters): string {
   if (filters.tags.length > 0) {
     parts.push(filters.tags.length === 1 ? filters.tags[0] : `${filters.tags.length} tags`)
   }
-  if (filters.dateFrom !== null || filters.dateTo !== null) {
-    parts.push(filters.datePreset ? DATE_PRESET_LABELS[filters.datePreset] : 'Dates')
-  }
   if (filters.cameras.length > 0) {
     parts.push(filters.cameras.length === 1 ? filters.cameras[0] : `${filters.cameras.length} cameras`)
   }
@@ -112,6 +109,9 @@ export function summarizeFilters(filters: PhotoFilters): string {
   }
   if (filters.minRating !== null) {
     parts.push(`≥${filters.minRating}★`)
+  }
+  if (filters.dateFrom !== null || filters.dateTo !== null) {
+    parts.push(filters.datePreset ? DATE_PRESET_LABELS[filters.datePreset] : 'Dates')
   }
 
   return parts.join(' · ')
