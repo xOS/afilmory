@@ -12,6 +12,7 @@ import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
+import { getPreferredColumnCount, setPreferredColumnCount, waitForColumnPreference } from './columnPreference'
 import { formatVisibleDateRange } from './dateRange'
 import { DateRangePill } from './DateRangePill'
 import { applyFilters } from './filters/applyFilters'
@@ -19,10 +20,9 @@ import { clearFilters, useFilters } from './filters/filterStore'
 import { hasActiveFilters, summarizeFilters } from './filters/filterTypes'
 import { cityForRange } from './filters/locationHint'
 import { filterSheetPage } from './filterSheetPage'
+import { supportsLiquidGlass } from './GlassSurface'
 import { HOME_CHROME_HEIGHT, HomeButtons } from './HomeButtons'
 import { setHomeFeed } from './homeFeedStore'
-
-let rememberedColumnCount = 2
 
 export function OwnGalleryView({ slug }: { slug: string }) {
   if (!isPhotoMasonryAvailable) {
@@ -41,6 +41,19 @@ function NativeGallery({ slug }: { slug: string }) {
 
   const [pillVisible, setPillVisible] = useState(false)
   const [visibleRange, setVisibleRange] = useState<{ start: number, end: number } | null>(null)
+  const [columnsReady, setColumnsReady] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void waitForColumnPreference().then(() => {
+      if (!cancelled) {
+        setColumnsReady(true)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (error) {
@@ -87,15 +100,33 @@ function NativeGallery({ slug }: { slug: string }) {
   }, [])
 
   const handleColumnCountChange = useCallback((event: { nativeEvent: ColumnCountChangeEvent }) => {
-    rememberedColumnCount = event.nativeEvent.columnCount
+    setPreferredColumnCount(event.nativeEvent.columnCount)
   }, [])
 
   const handleRefresh = useCallback(() => void refresh(), [refresh])
 
   const hasFeed = !loading && error === null && photos.length > 0
+  const hasMasonry = hasFeed && filtered.length > 0
+  const chrome = (
+    <>
+      {!supportsLiquidGlass() ? (
+        <LinearGradient
+          colors={['rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
+          pointerEvents="none"
+          style={[styles.scrim, { height: insets.top + 8 }]}
+        />
+      ) : null}
+      <DateRangePill
+        label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}
+        visible={hasFeed && (filtersActive || pillVisible)}
+        onPress={filtersActive ? openFilters : undefined}
+      />
+      <HomeButtons />
+    </>
+  )
 
   function renderFeed() {
-    if (loading) {
+    if (loading || !columnsReady) {
       return (
         <View style={styles.center}>
           <ActivityIndicator color={palette.textSecondary} />
@@ -151,7 +182,7 @@ function NativeGallery({ slug }: { slug: string }) {
 
     return (
       <PhotoMasonryView
-        defaultColumnCount={rememberedColumnCount}
+        defaultColumnCount={getPreferredColumnCount()}
         extraBottomInset={24}
         extraTopInset={HOME_CHROME_HEIGHT}
         gap={4}
@@ -163,24 +194,16 @@ function NativeGallery({ slug }: { slug: string }) {
         onRefresh={handleRefresh}
         onScrollBeyondThreshold={handleScrollBeyondThreshold}
         onVisibleRangeChange={handleVisibleRangeChange}
-      />
+      >
+        {chrome}
+      </PhotoMasonryView>
     )
   }
 
   return (
     <View style={styles.root}>
       {renderFeed()}
-      <LinearGradient
-        colors={['rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
-        pointerEvents="none"
-        style={[styles.scrim, { height: insets.top + 8 }]}
-      />
-      <DateRangePill
-        label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}
-        visible={hasFeed && (filtersActive || pillVisible)}
-        onPress={filtersActive ? openFilters : undefined}
-      />
-      <HomeButtons />
+      {!hasMasonry ? chrome : null}
     </View>
   )
 }
