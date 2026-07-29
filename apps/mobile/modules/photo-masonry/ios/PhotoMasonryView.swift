@@ -228,12 +228,19 @@ final class PhotoMasonryView: ExpoView {
     updateFilterButton()
   }
 
-  private func makeChromeConfiguration() -> UIButton.Configuration {
+  private func makeChromeConfiguration(prominent: Bool = false) -> UIButton.Configuration {
     var configuration: UIButton.Configuration
     if #available(iOS 26.0, *) {
-      configuration = .glass()
+      configuration = prominent ? .prominentGlass() : .glass()
     } else {
       configuration = .gray()
+    }
+    if prominent {
+      // Prominent glass takes its fill from the tint, which would otherwise resolve to the
+      // system accent. A neutral translucent black keeps it glass while giving the fixed
+      // near-white title a floor to read against on bright photos.
+      configuration.baseBackgroundColor = UIColor(white: 0, alpha: 0.4)
+      configuration.baseForegroundColor = .white
     }
     configuration.buttonSize = .medium
     configuration.cornerStyle = .capsule
@@ -241,13 +248,13 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func updateDateButton() {
-    var configuration = makeChromeConfiguration()
-    configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14)
+    var configuration = makeChromeConfiguration(prominent: true)
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
     configuration.title = chromeDateLabel
     configuration.titleLineBreakMode = .byTruncatingTail
     configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
       var outgoing = incoming
-      outgoing.font = .systemFont(ofSize: 15, weight: .semibold)
+      outgoing.font = .systemFont(ofSize: 17, weight: .semibold)
       return outgoing
     }
     dateButton.configuration = configuration
@@ -311,7 +318,7 @@ final class PhotoMasonryView: ExpoView {
     var configuration = makeChromeConfiguration()
     configuration.contentInsets = .zero
     configuration.image = UIImage(systemName: "line.3.horizontal.decrease")
-    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(weight: .semibold)
+    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
     if filterActive {
       configuration.baseForegroundColor = .systemBlue
     }
