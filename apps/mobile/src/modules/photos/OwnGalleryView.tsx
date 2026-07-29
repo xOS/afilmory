@@ -19,7 +19,7 @@ import { clearFilters, useFilters } from './filters/filterStore'
 import { hasActiveFilters, summarizeFilters } from './filters/filterTypes'
 import { cityForRange } from './filters/locationHint'
 import { filterSheetPage } from './filterSheetPage'
-import { HomeButtons } from './HomeButtons'
+import { HOME_CHROME_HEIGHT, HomeButtons } from './HomeButtons'
 import { setHomeFeed } from './homeFeedStore'
 
 let rememberedColumnCount = 2
@@ -148,7 +148,7 @@ function NativeGallery({ slug }: { slug: string }) {
         <PhotoMasonryView
           defaultColumnCount={rememberedColumnCount}
           extraBottomInset={24}
-          extraTopInset={4}
+          extraTopInset={HOME_CHROME_HEIGHT}
           gap={4}
           photos={items}
           refreshing={refreshing}
@@ -161,10 +161,9 @@ function NativeGallery({ slug }: { slug: string }) {
         />
       )}
       <LinearGradient
-        colors={['rgba(0, 0, 0, 0.75)', 'rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
-        locations={[0, 0.68, 1]}
+        colors={['rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
         pointerEvents="none"
-        style={[styles.scrim, { height: insets.top + 96 }]}
+        style={[styles.scrim, { height: insets.top + 8 }]}
       />
       <DateRangePill
         label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}

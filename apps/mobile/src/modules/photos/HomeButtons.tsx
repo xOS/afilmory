@@ -19,8 +19,10 @@ import { profileSheetPage } from './profileSheetPage'
 const EDGE = 12
 const CIRCLE = 36
 const GAP = 10
+const TOP_OFFSET = 8
 
 export const HOME_BUTTONS_CLEARANCE = EDGE + CIRCLE + GAP + CIRCLE + EDGE
+export const HOME_CHROME_HEIGHT = TOP_OFFSET + CIRCLE + 8
 
 export function HomeButtons() {
   const { palette } = useTheme()
@@ -31,7 +33,7 @@ export function HomeButtons() {
   const auth = useAuth()
 
   return (
-    <View style={[styles.container, { top: insets.top + 8 }]}>
+    <View style={[styles.container, { top: insets.top + TOP_OFFSET }]}>
       <Pressable
         accessibilityLabel="Profile"
         accessibilityRole="button"
