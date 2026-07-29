@@ -38,11 +38,21 @@ export interface PhotoMasonryViewProps extends ViewProps {
   extraBottomInset?: number
   scrollThreshold?: number
   refreshing?: boolean
+  chromeDateLabel?: string
+  chromeDateVisible?: boolean
+  chromeDateInteractive?: boolean
+  profileImageURL?: string
+  profileInitial?: string
+  filterActive?: boolean
+  filterCount?: number
   onPhotoPress?: (event: { nativeEvent: PhotoPressEvent }) => void
   onVisibleRangeChange?: (event: { nativeEvent: VisibleRangeEvent }) => void
   onScrollBeyondThreshold?: (event: { nativeEvent: ScrollBeyondThresholdEvent }) => void
   onColumnCountChange?: (event: { nativeEvent: ColumnCountChangeEvent }) => void
   onRefresh?: () => void
+  onDatePress?: () => void
+  onProfilePress?: () => void
+  onFilterPress?: () => void
 }
 
 export const isPhotoMasonryAvailable = Platform.OS === 'ios'

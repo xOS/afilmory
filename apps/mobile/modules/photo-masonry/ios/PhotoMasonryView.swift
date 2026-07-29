@@ -4,6 +4,20 @@ import UIKit
 
 private let minColumnCount = 1
 private let maxColumnCount = 4
+private let chromeEdgeInset: CGFloat = 12
+private let chromeControlSize: CGFloat = 44
+private let chromeControlGap: CGFloat = 12
+private let chromeTopOffset: CGFloat = 8
+private let chromeDateRightGap: CGFloat = 12
+private let avatarImageSize: CGFloat = 34
+private let filterBadgeSize: CGFloat = 16
+
+private final class PassthroughOverlayView: UIView {
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let hitView = super.hitTest(point, with: event)
+    return hitView === self ? nil : hitView
+  }
+}
 
 final class PhotoMasonryView: ExpoView {
   let onPhotoPress = EventDispatcher()
@@ -11,6 +25,9 @@ final class PhotoMasonryView: ExpoView {
   let onScrollBeyondThreshold = EventDispatcher()
   let onColumnCountChange = EventDispatcher()
   let onRefresh = EventDispatcher()
+  let onDatePress = EventDispatcher()
+  let onProfilePress = EventDispatcher()
+  let onFilterPress = EventDispatcher()
 
   var defaultColumnCount = 2 {
     didSet { applyDefaultColumnCountIfNeeded() }
@@ -33,12 +50,46 @@ final class PhotoMasonryView: ExpoView {
 
   var scrollThreshold: CGFloat = 400
 
+  var chromeDateLabel = "" {
+    didSet { updateDateButton() }
+  }
+
+  var chromeDateVisible = false {
+    didSet { updateDateVisibility(animated: window != nil) }
+  }
+
+  var chromeDateInteractive = false {
+    didSet { updateDateInteraction() }
+  }
+
+  var profileImageURL = "" {
+    didSet { updateProfile() }
+  }
+
+  var profileInitial = "?" {
+    didSet { updateProfile() }
+  }
+
+  var filterActive = false {
+    didSet { updateFilterButton() }
+  }
+
+  var filterCount = 0 {
+    didSet { updateFilterButton() }
+  }
+
   private var photos: [MasonryPhoto] = []
   private var layout = MasonryLayout()
   private var collectionView: UICollectionView!
   private let refreshControl = UIRefreshControl()
   private let haptics = UIImpactFeedbackGenerator(style: .light)
-  private var topEdgeEffectHost: UIView?
+  private let overlayView = PassthroughOverlayView()
+  private let dateButton = UIButton()
+  private let profileButton = UIButton()
+  private let profileInitialLabel = UILabel()
+  private let avatarImageView = UIImageView()
+  private let filterButton = UIButton()
+  private let filterBadge = UILabel()
 
   private var columnCount = 2
   private var hasAppliedDefaultColumnCount = false
@@ -66,6 +117,11 @@ final class PhotoMasonryView: ExpoView {
     collectionView.alwaysBounceVertical = true
     if #available(iOS 26.0, *) {
       collectionView.topEdgeEffect.style = .soft
+
+      let interaction = UIScrollEdgeElementContainerInteraction()
+      interaction.scrollView = collectionView
+      interaction.edge = .top
+      overlayView.addInteraction(interaction)
     }
     collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: PhotoCell.reuseIdentifier)
 
@@ -77,31 +133,21 @@ final class PhotoMasonryView: ExpoView {
     collectionView.addGestureRecognizer(pinch)
 
     addSubview(collectionView)
+    addSubview(overlayView)
 
-    if #available(iOS 26.0, *) {
-      let host = UIView()
-      host.backgroundColor = .clear
-      host.isUserInteractionEnabled = false
-
-      let interaction = UIScrollEdgeElementContainerInteraction()
-      interaction.scrollView = collectionView
-      interaction.edge = .top
-      host.addInteraction(interaction)
-
-      topEdgeEffectHost = host
-      addSubview(host)
-    }
+    configureChrome()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     collectionView.frame = bounds
-    topEdgeEffectHost?.frame = CGRect(
-      x: 0,
-      y: 0,
-      width: bounds.width,
-      height: safeAreaInsets.top + extraTopInset
-    )
+    overlayView.frame = bounds
+    layoutChrome()
+  }
+
+  override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    setNeedsLayout()
   }
 
   // Registers the collection view as the screen's content scroll view so UIKit drives
@@ -136,6 +182,178 @@ final class PhotoMasonryView: ExpoView {
     }
   }
 
+  private func configureChrome() {
+    dateButton.addTarget(self, action: #selector(handleDatePress), for: .touchUpInside)
+    dateButton.accessibilityIdentifier = "photo-masonry-date"
+    dateButton.alpha = 0
+    dateButton.isHidden = true
+    overlayView.addSubview(dateButton)
+
+    profileButton.addTarget(self, action: #selector(handleProfilePress), for: .touchUpInside)
+    profileButton.accessibilityIdentifier = "photo-masonry-profile"
+    profileButton.accessibilityLabel = "Profile"
+    profileButton.configuration = makeChromeConfiguration()
+    overlayView.addSubview(profileButton)
+
+    profileInitialLabel.font = .systemFont(ofSize: 14, weight: .bold)
+    profileInitialLabel.textAlignment = .center
+    profileInitialLabel.textColor = .label
+    profileInitialLabel.isUserInteractionEnabled = false
+    profileButton.addSubview(profileInitialLabel)
+
+    avatarImageView.clipsToBounds = true
+    avatarImageView.contentMode = .scaleAspectFill
+    avatarImageView.isUserInteractionEnabled = false
+    profileButton.addSubview(avatarImageView)
+
+    filterButton.addTarget(self, action: #selector(handleFilterPress), for: .touchUpInside)
+    filterButton.accessibilityIdentifier = "photo-masonry-filters"
+    overlayView.addSubview(filterButton)
+
+    filterBadge.backgroundColor = .systemBlue
+    filterBadge.clipsToBounds = true
+    filterBadge.font = .systemFont(ofSize: 10, weight: .bold)
+    filterBadge.isAccessibilityElement = false
+    filterBadge.textAlignment = .center
+    filterBadge.textColor = .white
+    overlayView.addSubview(filterBadge)
+
+    updateDateButton()
+    updateDateInteraction()
+    updateProfile()
+    updateFilterButton()
+  }
+
+  private func makeChromeConfiguration() -> UIButton.Configuration {
+    var configuration: UIButton.Configuration
+    if #available(iOS 26.0, *) {
+      configuration = .glass()
+    } else {
+      configuration = .gray()
+    }
+    configuration.buttonSize = .medium
+    configuration.cornerStyle = .capsule
+    return configuration
+  }
+
+  private func updateDateButton() {
+    var configuration = makeChromeConfiguration()
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14)
+    configuration.title = chromeDateLabel
+    configuration.titleLineBreakMode = .byTruncatingTail
+    configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+      var outgoing = incoming
+      outgoing.font = .systemFont(ofSize: 15, weight: .semibold)
+      return outgoing
+    }
+    dateButton.configuration = configuration
+    dateButton.accessibilityLabel = chromeDateLabel
+    updateDateVisibility(animated: false)
+    setNeedsLayout()
+  }
+
+  private func updateDateInteraction() {
+    dateButton.isUserInteractionEnabled = chromeDateInteractive
+    dateButton.accessibilityTraits = chromeDateInteractive ? .button : .staticText
+  }
+
+  private func updateDateVisibility(animated: Bool) {
+    let shouldShow = chromeDateVisible && !chromeDateLabel.isEmpty
+    let changes = {
+      self.dateButton.alpha = shouldShow ? 1 : 0
+      self.dateButton.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: -6)
+    }
+
+    if shouldShow {
+      dateButton.isHidden = false
+    }
+
+    guard animated else {
+      changes()
+      dateButton.isHidden = !shouldShow
+      return
+    }
+
+    UIView.animate(
+      withDuration: shouldShow ? 0.2 : 0.15,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
+      animations: changes,
+      completion: { [weak self] finished in
+        if finished, !shouldShow {
+          self?.dateButton.isHidden = true
+        }
+      }
+    )
+  }
+
+  private func updateProfile() {
+    let initial = profileInitial.trimmingCharacters(in: .whitespacesAndNewlines).first.map(String.init) ?? "?"
+    profileInitialLabel.text = initial.uppercased()
+    profileButton.accessibilityLabel = "Profile, \(profileInitial.isEmpty ? "unknown user" : profileInitial)"
+
+    avatarImageView.sd_cancelCurrentImageLoad()
+    avatarImageView.image = nil
+    guard let url = URL(string: profileImageURL), !profileImageURL.isEmpty else {
+      avatarImageView.isHidden = true
+      return
+    }
+
+    avatarImageView.isHidden = false
+    avatarImageView.sd_setImage(with: url, placeholderImage: nil, options: [.retryFailed])
+  }
+
+  private func updateFilterButton() {
+    var configuration = makeChromeConfiguration()
+    configuration.contentInsets = .zero
+    configuration.image = UIImage(systemName: "line.3.horizontal.decrease")
+    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(weight: .semibold)
+    if filterActive {
+      configuration.baseForegroundColor = .systemBlue
+    }
+    filterButton.configuration = configuration
+
+    let count = max(filterCount, 0)
+    filterBadge.text = String(count)
+    filterBadge.isHidden = !filterActive || count == 0
+    filterButton.accessibilityLabel = filterActive ? "Filters, \(count) active" : "Filters"
+    filterButton.accessibilityTraits = filterActive ? [.button, .selected] : .button
+  }
+
+  private func layoutChrome() {
+    let controlY = safeAreaInsets.top + chromeTopOffset
+    let filterX = bounds.width - chromeEdgeInset - chromeControlSize
+    let profileX = filterX - chromeControlGap - chromeControlSize
+
+    filterButton.frame = CGRect(x: filterX, y: controlY, width: chromeControlSize, height: chromeControlSize)
+    profileButton.frame = CGRect(x: profileX, y: controlY, width: chromeControlSize, height: chromeControlSize)
+
+    let avatarInset = (chromeControlSize - avatarImageSize) / 2
+    let avatarFrame = profileButton.bounds.insetBy(dx: avatarInset, dy: avatarInset)
+    avatarImageView.frame = avatarFrame
+    avatarImageView.layer.cornerRadius = avatarImageSize / 2
+    profileInitialLabel.frame = avatarFrame
+
+    let dateMaxWidth = max(profileX - chromeDateRightGap - chromeEdgeInset, 0)
+    let fittingWidth = dateButton.sizeThatFits(
+      CGSize(width: dateMaxWidth, height: chromeControlSize)
+    ).width
+    dateButton.frame = CGRect(
+      x: chromeEdgeInset,
+      y: controlY,
+      width: min(fittingWidth, dateMaxWidth),
+      height: chromeControlSize
+    )
+
+    filterBadge.frame = CGRect(
+      x: filterButton.frame.maxX - filterBadgeSize + 4,
+      y: filterButton.frame.minY - 4,
+      width: filterBadgeSize,
+      height: filterBadgeSize
+    )
+    filterBadge.layer.cornerRadius = filterBadgeSize / 2
+  }
+
   private func applyDefaultColumnCountIfNeeded() {
     guard !hasAppliedDefaultColumnCount else { return }
     hasAppliedDefaultColumnCount = true
@@ -159,6 +377,19 @@ final class PhotoMasonryView: ExpoView {
 
   @objc private func handleRefresh() {
     onRefresh([:])
+  }
+
+  @objc private func handleDatePress() {
+    guard chromeDateInteractive else { return }
+    onDatePress([:])
+  }
+
+  @objc private func handleProfilePress() {
+    onProfilePress([:])
+  }
+
+  @objc private func handleFilterPress() {
+    onFilterPress([:])
   }
 
   @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {

@@ -13,7 +13,16 @@ public class PhotoMasonryModule: Module {
     Name("PhotoMasonry")
 
     View(PhotoMasonryView.self) {
-      Events("onPhotoPress", "onVisibleRangeChange", "onScrollBeyondThreshold", "onColumnCountChange", "onRefresh")
+      Events(
+        "onPhotoPress",
+        "onVisibleRangeChange",
+        "onScrollBeyondThreshold",
+        "onColumnCountChange",
+        "onRefresh",
+        "onDatePress",
+        "onProfilePress",
+        "onFilterPress"
+      )
 
       Prop("photos") { (view: PhotoMasonryView, photos: [MasonryPhoto]) in
         view.setPhotos(photos)
@@ -41,6 +50,34 @@ public class PhotoMasonryModule: Module {
 
       Prop("refreshing") { (view: PhotoMasonryView, refreshing: Bool) in
         view.setRefreshing(refreshing)
+      }
+
+      Prop("chromeDateLabel") { (view: PhotoMasonryView, label: String) in
+        view.chromeDateLabel = label
+      }
+
+      Prop("chromeDateVisible") { (view: PhotoMasonryView, visible: Bool) in
+        view.chromeDateVisible = visible
+      }
+
+      Prop("chromeDateInteractive") { (view: PhotoMasonryView, interactive: Bool) in
+        view.chromeDateInteractive = interactive
+      }
+
+      Prop("profileImageURL") { (view: PhotoMasonryView, url: String) in
+        view.profileImageURL = url
+      }
+
+      Prop("profileInitial") { (view: PhotoMasonryView, initial: String) in
+        view.profileInitial = initial
+      }
+
+      Prop("filterActive") { (view: PhotoMasonryView, active: Bool) in
+        view.filterActive = active
+      }
+
+      Prop("filterCount") { (view: PhotoMasonryView, count: Int) in
+        view.filterCount = count
       }
     }
   }
