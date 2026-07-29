@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { useAuth } from '@/modules/auth/sessionStore'
@@ -8,12 +8,22 @@ import type { Palette } from '@/theme/palette'
 import { font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
+import { clearFilters } from './filters/filterStore'
+import { clearHomeFeed } from './homeFeedStore'
 import { OwnGalleryView } from './OwnGalleryView'
 
 export function PhotosHomeScreen() {
   const { palette } = useTheme()
   const styles = useMemo(() => createStyles(palette), [palette])
   const auth = useAuth()
+  const signedOut = auth.status === 'signedOut'
+
+  useEffect(() => {
+    if (signedOut) {
+      clearFilters()
+      clearHomeFeed()
+    }
+  }, [signedOut])
 
   if (auth.status === 'loading') {
     return (

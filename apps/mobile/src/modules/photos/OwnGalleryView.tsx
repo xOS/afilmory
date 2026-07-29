@@ -92,46 +92,48 @@ function NativeGallery({ slug }: { slug: string }) {
 
   const handleRefresh = useCallback(() => void refresh(), [refresh])
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={palette.textSecondary} />
-      </View>
-    )
-  }
+  const hasFeed = !loading && error === null && photos.length > 0
 
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.stateTitle}>Failed to load photos</Text>
-        <Text numberOfLines={2} style={styles.stateDetail}>
-          {error.message}
-        </Text>
-        <Pressable
-          accessibilityLabel="Retry loading photos"
-          accessibilityRole="button"
-          hitSlop={8}
-          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-          onPress={retry}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </Pressable>
-      </View>
-    )
-  }
+  function renderFeed() {
+    if (loading) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator color={palette.textSecondary} />
+        </View>
+      )
+    }
 
-  if (photos.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.stateTitle}>No photos yet</Text>
-        <Text style={styles.stateDetail}>Upload photos from the web dashboard and they will show up here.</Text>
-      </View>
-    )
-  }
+    if (error) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.stateTitle}>Failed to load photos</Text>
+          <Text numberOfLines={2} style={styles.stateDetail}>
+            {error.message}
+          </Text>
+          <Pressable
+            accessibilityLabel="Retry loading photos"
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+            onPress={retry}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      )
+    }
 
-  return (
-    <View style={styles.root}>
-      {filtered.length === 0 ? (
+    if (photos.length === 0) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.stateTitle}>No photos yet</Text>
+          <Text style={styles.stateDetail}>Upload photos from the web dashboard and they will show up here.</Text>
+        </View>
+      )
+    }
+
+    if (filtered.length === 0) {
+      return (
         <View style={styles.center}>
           <Text style={styles.stateTitle}>No photos match the filters</Text>
           <Pressable
@@ -144,22 +146,30 @@ function NativeGallery({ slug }: { slug: string }) {
             <Text style={styles.retryText}>Clear filters</Text>
           </Pressable>
         </View>
-      ) : (
-        <PhotoMasonryView
-          defaultColumnCount={rememberedColumnCount}
-          extraBottomInset={24}
-          extraTopInset={HOME_CHROME_HEIGHT}
-          gap={4}
-          photos={items}
-          refreshing={refreshing}
-          scrollThreshold={400}
-          style={styles.masonry}
-          onColumnCountChange={handleColumnCountChange}
-          onRefresh={handleRefresh}
-          onScrollBeyondThreshold={handleScrollBeyondThreshold}
-          onVisibleRangeChange={handleVisibleRangeChange}
-        />
-      )}
+      )
+    }
+
+    return (
+      <PhotoMasonryView
+        defaultColumnCount={rememberedColumnCount}
+        extraBottomInset={24}
+        extraTopInset={HOME_CHROME_HEIGHT}
+        gap={4}
+        photos={items}
+        refreshing={refreshing}
+        scrollThreshold={400}
+        style={styles.masonry}
+        onColumnCountChange={handleColumnCountChange}
+        onRefresh={handleRefresh}
+        onScrollBeyondThreshold={handleScrollBeyondThreshold}
+        onVisibleRangeChange={handleVisibleRangeChange}
+      />
+    )
+  }
+
+  return (
+    <View style={styles.root}>
+      {renderFeed()}
       <LinearGradient
         colors={['rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0)']}
         pointerEvents="none"
@@ -167,7 +177,7 @@ function NativeGallery({ slug }: { slug: string }) {
       />
       <DateRangePill
         label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}
-        visible={filtersActive || pillVisible}
+        visible={hasFeed && (filtersActive || pillVisible)}
         onPress={filtersActive ? openFilters : undefined}
       />
       <HomeButtons />

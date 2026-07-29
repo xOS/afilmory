@@ -27,13 +27,25 @@ export function useHomeFeed(): HomeFeed {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+function emit(): void {
+  for (const listener of listeners) {
+    listener()
+  }
+}
+
 export function setHomeFeed(slug: string, photos: GalleryPhoto[]): void {
   const slugChanged = state.slug !== slug
   state = { slug, photos }
   if (slugChanged) {
     clearFilters()
   }
-  for (const listener of listeners) {
-    listener()
+  emit()
+}
+
+export function clearHomeFeed(): void {
+  if (state.slug === null && state.photos.length === 0) {
+    return
   }
+  state = { slug: null, photos: [] }
+  emit()
 }

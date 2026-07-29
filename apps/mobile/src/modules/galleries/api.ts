@@ -42,7 +42,7 @@ function photoLens(exif: ManifestPhoto['exif']): string | null {
 }
 
 function photoRating(exif: ManifestPhoto['exif']): number | null {
-  if (exif?.Rating == null) {
+  if (exif?.Rating == null || !Number.isFinite(exif.Rating)) {
     return null
   }
   return Math.min(5, Math.max(0, Math.round(exif.Rating)))
