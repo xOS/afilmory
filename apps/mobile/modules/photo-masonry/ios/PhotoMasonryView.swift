@@ -38,15 +38,14 @@ final class PhotoMasonryView: ExpoView {
   private var collectionView: UICollectionView!
   private let refreshControl = UIRefreshControl()
   private let haptics = UIImpactFeedbackGenerator(style: .light)
+  private var topEdgeEffectHost: UIView?
 
   private var columnCount = 2
   private var hasAppliedDefaultColumnCount = false
-  private var transitionLayout: UICollectionViewTransitionLayout?
-  private var transitionTargetColumns: Int?
-  private var pinchBaseScale: CGFloat = 1
-  private var pinchArmScale: CGFloat = 1
-  private var lastPinchScale: CGFloat = 1
-  private var isChainSettling = false
+  private var pinchStartPosition: CGFloat = 2
+  private var pinchAnchorItem: Int?
+  private var pinchAnchorViewportOffset: CGFloat = 0
+  private var lastPinchDetent = 2
   private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
@@ -54,7 +53,7 @@ final class PhotoMasonryView: ExpoView {
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
 
-    layout.columnCount = columnCount
+    layout.zoomPosition = CGFloat(columnCount)
     layout.gap = gap
 
     collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
@@ -65,9 +64,6 @@ final class PhotoMasonryView: ExpoView {
     collectionView.contentInsetAdjustmentBehavior = .always
     collectionView.showsVerticalScrollIndicator = false
     collectionView.alwaysBounceVertical = true
-    // No navigation bar sits above this grid, so the automatic style resolves to nothing.
-    // Forcing .soft draws the same progressive blur UIKit puts under a navigation bar,
-    // sized to the top inset (safe area + extraTopInset).
     if #available(iOS 26.0, *) {
       collectionView.topEdgeEffect.style = .soft
     }
@@ -81,11 +77,31 @@ final class PhotoMasonryView: ExpoView {
     collectionView.addGestureRecognizer(pinch)
 
     addSubview(collectionView)
+
+    if #available(iOS 26.0, *) {
+      let host = UIView()
+      host.backgroundColor = .clear
+      host.isUserInteractionEnabled = false
+
+      let interaction = UIScrollEdgeElementContainerInteraction()
+      interaction.scrollView = collectionView
+      interaction.edge = .top
+      host.addInteraction(interaction)
+
+      topEdgeEffectHost = host
+      addSubview(host)
+    }
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     collectionView.frame = bounds
+    topEdgeEffectHost?.frame = CGRect(
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: safeAreaInsets.top + extraTopInset
+    )
   }
 
   // Registers the collection view as the screen's content scroll view so UIKit drives
@@ -104,9 +120,6 @@ final class PhotoMasonryView: ExpoView {
   }
 
   func setPhotos(_ newPhotos: [MasonryPhoto]) {
-    if transitionLayout != nil, !isChainSettling {
-      collectionView.cancelInteractiveTransition()
-    }
     photos = newPhotos
     layout.aspectRatios = newPhotos.map { CGFloat($0.aspectRatio) }
     layout.invalidateLayout()
@@ -129,7 +142,7 @@ final class PhotoMasonryView: ExpoView {
     let clamped = min(max(defaultColumnCount, minColumnCount), maxColumnCount)
     guard clamped != columnCount else { return }
     columnCount = clamped
-    layout.columnCount = clamped
+    layout.zoomPosition = CGFloat(clamped)
     layout.invalidateLayout()
   }
 
@@ -149,109 +162,76 @@ final class PhotoMasonryView: ExpoView {
   }
 
   @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-    lastPinchScale = gesture.scale
     switch gesture.state {
     case .began:
-      pinchArmScale = gesture.scale
-      driveTransition(gesture: gesture)
+      guard !photos.isEmpty else { return }
+      pinchStartPosition = layout.zoomPosition
+      lastPinchDetent = Int(layout.zoomPosition.rounded())
+      let location = gesture.location(in: collectionView)
+      if let anchor = collectionView.indexPathForItem(at: location) {
+        pinchAnchorItem = anchor.item
+        pinchAnchorViewportOffset = layout.interpolatedFrame(at: anchor.item).midY - collectionView.contentOffset.y
+      } else {
+        pinchAnchorItem = nil
+      }
+      haptics.prepare()
     case .changed:
-      driveTransition(gesture: gesture)
+      guard !photos.isEmpty else { return }
+      // Cell width scales with 1/columns, so the finger's scale maps inversely onto
+      // the continuous column position — no per-step commits, no stalls.
+      let position = clampPosition(pinchStartPosition / gesture.scale)
+      applyZoomPosition(position)
+      let detent = Int(position.rounded())
+      if detent != lastPinchDetent {
+        lastPinchDetent = detent
+        haptics.impactOccurred()
+      }
     case .ended, .cancelled, .failed:
-      endTransition(gesture: gesture)
+      settlePinch(velocity: gesture.velocity)
     default:
       break
     }
   }
 
-  // Only one transition layout can run at a time; a chained step settles through its
-  // completion block before the next one arms, so mid-settle pinch events are dropped.
-  private func driveTransition(gesture: UIPinchGestureRecognizer) {
-    guard !isChainSettling else { return }
-    if transitionLayout == nil {
-      startTransition(gesture: gesture)
-    }
-    guard let transitionLayout, let target = transitionTargetColumns else { return }
-    let raw = rawTransitionProgress(scale: gesture.scale, target: target)
-    if raw >= 1 {
-      settleChainStep(finish: true)
-    } else if raw <= 0 {
-      settleChainStep(finish: false)
-    } else {
-      // Progress 1.0 mid-gesture makes UIKit consider the transition settled; keep it interactive.
-      transitionLayout.transitionProgress = min(max(raw, 0.001), 0.99)
-    }
+  private func clampPosition(_ position: CGFloat) -> CGFloat {
+    min(max(position, CGFloat(minColumnCount)), CGFloat(maxColumnCount))
   }
 
-  private func settleChainStep(finish: Bool) {
-    guard transitionLayout != nil else { return }
-    isChainSettling = true
-    if finish {
-      transitionLayout?.transitionProgress = 0.99
-      collectionView.finishInteractiveTransition()
-    } else {
-      collectionView.cancelInteractiveTransition()
-    }
+  private func applyZoomPosition(_ position: CGFloat) {
+    layout.zoomPosition = position
+    layout.invalidateLayout()
+    guard let anchorItem = pinchAnchorItem else { return }
+    let frame = layout.interpolatedFrame(at: anchorItem)
+    let minOffset = -collectionView.adjustedContentInset.top
+    collectionView.contentOffset.y = max(frame.midY - pinchAnchorViewportOffset, minOffset)
   }
 
-  private func startTransition(gesture: UIPinchGestureRecognizer) {
+  private func settlePinch(velocity: CGFloat) {
     guard !photos.isEmpty else { return }
-    let normalized = gesture.scale / pinchArmScale
-    guard abs(normalized - 1) > 0.02 else { return }
-    let target = normalized > 1 ? columnCount - 1 : columnCount + 1
-    guard target >= minColumnCount, target <= maxColumnCount else { return }
-
-    let newLayout = MasonryLayout()
-    newLayout.columnCount = target
-    newLayout.gap = gap
-    newLayout.aspectRatios = layout.aspectRatios
-
-    let location = gesture.location(in: collectionView)
-    if let anchor = collectionView.indexPathForItem(at: location),
-       let frame = collectionView.layoutAttributesForItem(at: anchor)?.frame {
-      newLayout.anchorItem = anchor.item
-      newLayout.anchorViewportOffset = frame.midY - collectionView.contentOffset.y
+    let current = layout.zoomPosition
+    var target = current.rounded()
+    if abs(velocity) > 1.5, current != current.rounded() {
+      target = velocity > 0 ? current.rounded(.down) : current.rounded(.up)
     }
-
-    pinchBaseScale = pinchArmScale
-    transitionTargetColumns = target
-    haptics.prepare()
-    transitionLayout = collectionView.startInteractiveTransition(to: newLayout) { [weak self] _, _ in
-      guard let self else { return }
-      let committed = self.collectionView.collectionViewLayout === newLayout
-      if committed {
-        self.columnCount = target
-        self.layout = newLayout
-        self.haptics.impactOccurred()
-        self.onColumnCountChange(["columnCount": target])
+    target = clampPosition(target)
+    let settled = Int(target)
+    UIView.animate(
+      withDuration: 0.25,
+      delay: 0,
+      options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState],
+      animations: {
+        self.applyZoomPosition(target)
+        self.collectionView.layoutIfNeeded()
+      },
+      completion: { _ in
+        self.pinchAnchorItem = nil
+        if settled != self.columnCount {
+          self.columnCount = settled
+          self.onColumnCountChange(["columnCount": settled])
+        }
+        self.emitVisibleRange()
       }
-      newLayout.anchorItem = nil
-      self.transitionLayout = nil
-      self.transitionTargetColumns = nil
-      self.isChainSettling = false
-      self.pinchArmScale = self.lastPinchScale
-      self.emitVisibleRange()
-    }
-  }
-
-  private func rawTransitionProgress(scale: CGFloat, target: Int) -> CGFloat {
-    let normalized = scale / pinchBaseScale
-    let ratio = CGFloat(columnCount) / CGFloat(target)
-    if ratio > 1 {
-      return (normalized - 1) / (ratio - 1)
-    }
-    return (1 - normalized) / (1 - ratio)
-  }
-
-  private func endTransition(gesture: UIPinchGestureRecognizer) {
-    guard !isChainSettling, let transitionLayout, let target = transitionTargetColumns else { return }
-    let zoomingIn = target < columnCount
-    let velocity = gesture.velocity
-    let fastCommit = zoomingIn ? velocity > 1.5 : velocity < -1.5
-    if transitionLayout.transitionProgress > 0.35 || fastCommit {
-      collectionView.finishInteractiveTransition()
-    } else {
-      collectionView.cancelInteractiveTransition()
-    }
+    )
   }
 
   private func emitVisibleRange() {
