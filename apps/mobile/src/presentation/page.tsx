@@ -10,6 +10,7 @@ export type PagePresentationStyle = 'formSheet' | 'fullScreen' | 'overFullScreen
 
 export interface PagePresentationOptions {
   animationType: 'fade' | 'none' | 'slide'
+  detents?: number[]
   dismissible: boolean
   headerShown: boolean
   style: PagePresentationStyle
