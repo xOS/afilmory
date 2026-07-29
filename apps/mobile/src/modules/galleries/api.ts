@@ -18,10 +18,34 @@ interface ManifestPhoto {
   aspectRatio?: number
   dateTaken?: string | null
   video?: { type?: string } | null
+  tags?: string[]
+  exif?: { Make?: string, Model?: string, LensModel?: string, Rating?: number } | null
+  location?: { city?: string | null, locationName?: string | null } | null
 }
 
 function photoAspectRatio(photo: ManifestPhoto): number {
   return photo.aspectRatio ?? (photo.width && photo.height ? photo.width / photo.height : 1)
+}
+
+function photoCamera(exif: ManifestPhoto['exif']): string | null {
+  const make = exif?.Make?.trim()
+  const model = exif?.Model?.trim()
+  if (make && model) {
+    return model.toLowerCase().startsWith(make.toLowerCase()) ? model : `${make} ${model}`
+  }
+  return make || model || null
+}
+
+function photoLens(exif: ManifestPhoto['exif']): string | null {
+  const lens = exif?.LensModel?.trim()
+  return lens || null
+}
+
+function photoRating(exif: ManifestPhoto['exif']): number | null {
+  if (exif?.Rating == null) {
+    return null
+  }
+  return Math.min(5, Math.max(0, Math.round(exif.Rating)))
 }
 
 export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): Promise<GalleryPhoto[]> {
@@ -40,6 +64,11 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
       height: photo.height ?? 0,
       dateTaken: photo.dateTaken ?? null,
       isLive: Boolean(photo.video),
+      tags: photo.tags ?? [],
+      camera: photoCamera(photo.exif),
+      lens: photoLens(photo.exif),
+      rating: photoRating(photo.exif),
+      city: photo.location?.city ?? photo.location?.locationName ?? null,
     }))
 }
 

@@ -32,4 +32,9 @@ export interface GalleryPhoto {
   height: number
   dateTaken: string | null
   isLive: boolean
+  tags: string[]
+  camera: string | null
+  lens: string | null
+  rating: number | null
+  city: string | null
 }
