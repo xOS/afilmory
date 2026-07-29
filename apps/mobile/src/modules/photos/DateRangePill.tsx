@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { font } from '@/theme/tokens'
 
 import { GlassSurface, supportsLiquidGlass } from './GlassSurface'
+import { HOME_BUTTONS_CLEARANCE } from './HomeButtons'
 
 export function DateRangePill({
   label,
@@ -58,7 +59,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     left: 12,
     position: 'absolute',
-    right: 60,
+    right: HOME_BUTTONS_CLEARANCE,
     zIndex: 10,
   },
   pressable: { maxWidth: '100%' },

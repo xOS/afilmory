@@ -1,8 +1,10 @@
+import { Image } from 'expo-image'
 import { SymbolView } from 'expo-symbols'
 import { useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { useAuth } from '@/modules/auth/sessionStore'
 import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
@@ -12,6 +14,13 @@ import { useFilters } from './filters/filterStore'
 import { countActiveDimensions, hasActiveFilters } from './filters/filterTypes'
 import { filterSheetPage } from './filterSheetPage'
 import { GlassSurface, supportsLiquidGlass } from './GlassSurface'
+import { profileSheetPage } from './profileSheetPage'
+
+const EDGE = 12
+const CIRCLE = 36
+const GAP = 10
+
+export const HOME_BUTTONS_CLEARANCE = EDGE + CIRCLE + GAP + CIRCLE + EDGE
 
 export function HomeButtons() {
   const { palette } = useTheme()
@@ -19,9 +28,25 @@ export function HomeButtons() {
   const insets = useSafeAreaInsets()
   const filters = useFilters()
   const active = hasActiveFilters(filters)
+  const auth = useAuth()
 
   return (
     <View style={[styles.container, { top: insets.top + 8 }]}>
+      <Pressable
+        accessibilityLabel="Profile"
+        accessibilityRole="button"
+        hitSlop={8}
+        style={({ pressed }) => [styles.button, pressed && !supportsLiquidGlass() && styles.pressed]}
+        onPress={() => void present(profileSheetPage)}
+      >
+        <GlassSurface interactive style={styles.circle}>
+          {auth.session?.user.image ? (
+            <Image source={{ uri: auth.session.user.image }} style={styles.avatarImage} transition={150} />
+          ) : (
+            <Text style={styles.avatarInitial}>{(auth.session?.user.name ?? '?').slice(0, 1).toUpperCase()}</Text>
+          )}
+        </GlassSurface>
+      </Pressable>
       <Pressable
         accessibilityLabel="Filters"
         accessibilityRole="button"
@@ -51,20 +76,32 @@ export function HomeButtons() {
 function createStyles(palette: Palette) {
   return StyleSheet.create({
     container: {
-      alignItems: 'flex-end',
-      gap: 8,
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: GAP,
       position: 'absolute',
-      right: 12,
+      right: EDGE,
       zIndex: 10,
     },
-    button: { height: 36, width: 36 },
+    button: { height: CIRCLE, width: CIRCLE },
     circle: {
       alignItems: 'center',
       borderCurve: 'continuous',
-      borderRadius: 18,
-      height: 36,
+      borderRadius: CIRCLE / 2,
+      height: CIRCLE,
       justifyContent: 'center',
-      width: 36,
+      overflow: 'hidden',
+      width: CIRCLE,
+    },
+    avatarImage: {
+      height: CIRCLE,
+      width: CIRCLE,
+    },
+    avatarInitial: {
+      color: palette.textPrimary,
+      fontFamily: font.ui,
+      fontSize: 14,
+      fontWeight: '700',
     },
     badge: {
       alignItems: 'center',
