@@ -156,12 +156,15 @@ function SessionBody({
 const styles = StyleSheet.create({
   modal: { flex: 1 },
   content: { flex: 1 },
+  // A zero-sized stack presents nothing at all, but a full-bleed one covers the window and
+  // UIKit stops sampling the backdrop of every glass surface underneath, blanking the home
+  // chrome while the sheet is up. One point is enough to anchor the presentation.
   sheetStack: {
-    bottom: 0,
+    height: 1,
     left: 0,
     position: 'absolute',
-    right: 0,
     top: 0,
+    width: 1,
   },
   transparent: { backgroundColor: 'transparent' },
   headerSurface: { borderBottomWidth: StyleSheet.hairlineWidth },
