@@ -60,8 +60,13 @@ function pad(value: number): string {
   return value < 10 ? `0${value}` : `${value}`
 }
 
-function toDateString(date: Date): string {
+export function toDateString(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+export function parseDateString(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
 }
 
 function addDays(date: Date, days: number): Date {
