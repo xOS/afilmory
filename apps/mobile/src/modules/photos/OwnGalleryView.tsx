@@ -1,18 +1,26 @@
 import { LinearGradient } from 'expo-linear-gradient'
 import type { ColumnCountChangeEvent, ScrollBeyondThresholdEvent, VisibleRangeEvent } from 'photo-masonry'
 import { isPhotoMasonryAvailable, PhotoMasonryView } from 'photo-masonry'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { GalleryMasonry } from '@/modules/galleries/GalleryMasonry'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
+import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
 import { formatVisibleDateRange } from './dateRange'
 import { DateRangePill } from './DateRangePill'
+import { applyFilters } from './filters/applyFilters'
+import { clearFilters, useFilters } from './filters/filterStore'
+import { hasActiveFilters, summarizeFilters } from './filters/filterTypes'
+import { cityForRange } from './filters/locationHint'
+import { filterSheetPage } from './filterSheetPage'
+import { HomeButtons } from './HomeButtons'
+import { setHomeFeed } from './homeFeedStore'
 
 let rememberedColumnCount = 2
 
@@ -29,25 +37,46 @@ function NativeGallery({ slug }: { slug: string }) {
   const insets = useSafeAreaInsets()
   const { error, loading, photos, refresh, refreshing, retry } = useGalleryManifest(slug)
 
+  const filters = useFilters()
+
   const [pillVisible, setPillVisible] = useState(false)
   const [visibleRange, setVisibleRange] = useState<{ start: number, end: number } | null>(null)
 
+  useEffect(() => {
+    if (error) {
+      return
+    }
+    setHomeFeed(slug, photos)
+  }, [error, photos, slug])
+
+  const filtered = useMemo(() => applyFilters(photos, filters), [filters, photos])
+
   const items = useMemo(
     () =>
-      photos.map(photo => ({
+      filtered.map(photo => ({
         id: photo.id,
         url: photo.thumbnailUrl,
         thumbHash: photo.thumbHash,
         aspectRatio: photo.aspectRatio,
         isLive: photo.isLive,
       })),
-    [photos],
+    [filtered],
   )
 
-  const dateLabel = useMemo(
-    () => (visibleRange ? formatVisibleDateRange(photos, visibleRange.start, visibleRange.end) : null),
-    [photos, visibleRange],
-  )
+  const dateLabel = useMemo(() => {
+    if (!visibleRange) {
+      return null
+    }
+    const range = formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end)
+    if (!range) {
+      return null
+    }
+    const city = cityForRange(filtered, visibleRange.start, visibleRange.end)
+    return city ? `${range} · ${city}` : range
+  }, [filtered, visibleRange])
+
+  const filtersActive = hasActiveFilters(filters)
+  const openFilters = useCallback(() => void present(filterSheetPage), [])
 
   const handleVisibleRangeChange = useCallback((event: { nativeEvent: VisibleRangeEvent }) => {
     setVisibleRange({ start: event.nativeEvent.startIndex, end: event.nativeEvent.endIndex })
@@ -102,26 +131,46 @@ function NativeGallery({ slug }: { slug: string }) {
 
   return (
     <View style={styles.root}>
-      <PhotoMasonryView
-        defaultColumnCount={rememberedColumnCount}
-        extraBottomInset={24}
-        extraTopInset={4}
-        gap={4}
-        photos={items}
-        refreshing={refreshing}
-        scrollThreshold={400}
-        style={styles.masonry}
-        onColumnCountChange={handleColumnCountChange}
-        onRefresh={handleRefresh}
-        onScrollBeyondThreshold={handleScrollBeyondThreshold}
-        onVisibleRangeChange={handleVisibleRangeChange}
-      />
+      {filtered.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={styles.stateTitle}>No photos match the filters</Text>
+          <Pressable
+            accessibilityLabel="Clear filters"
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+            onPress={clearFilters}
+          >
+            <Text style={styles.retryText}>Clear filters</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <PhotoMasonryView
+          defaultColumnCount={rememberedColumnCount}
+          extraBottomInset={24}
+          extraTopInset={4}
+          gap={4}
+          photos={items}
+          refreshing={refreshing}
+          scrollThreshold={400}
+          style={styles.masonry}
+          onColumnCountChange={handleColumnCountChange}
+          onRefresh={handleRefresh}
+          onScrollBeyondThreshold={handleScrollBeyondThreshold}
+          onVisibleRangeChange={handleVisibleRangeChange}
+        />
+      )}
       <LinearGradient
         colors={['rgba(0, 0, 0, 0.55)', 'rgba(0, 0, 0, 0)']}
         pointerEvents="none"
         style={[styles.scrim, { height: insets.top + 24 }]}
       />
-      <DateRangePill label={dateLabel} visible={pillVisible} />
+      <DateRangePill
+        label={filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : dateLabel}
+        visible={filtersActive || pillVisible}
+        onPress={filtersActive ? openFilters : undefined}
+      />
+      <HomeButtons />
     </View>
   )
 }

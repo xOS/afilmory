@@ -1,37 +1,67 @@
 import { BlurView } from 'expo-blur'
-import { StyleSheet, Text } from 'react-native'
+import { Pressable, StyleSheet, Text } from 'react-native'
 import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { font } from '@/theme/tokens'
 
-export function DateRangePill({ label, visible }: { label: string | null, visible: boolean }) {
+export function DateRangePill({
+  label,
+  onPress,
+  visible,
+}: {
+  label: string | null
+  onPress?: () => void
+  visible: boolean
+}) {
   const insets = useSafeAreaInsets()
 
   if (!visible || !label) {
     return null
   }
 
+  const pill = (
+    <BlurView intensity={100} style={styles.pill} tint="systemChromeMaterialDark">
+      <Text numberOfLines={1} style={styles.label}>
+        {label}
+      </Text>
+    </BlurView>
+  )
+
   return (
     <Animated.View
       entering={FadeInUp.duration(200)}
       exiting={FadeOut.duration(150)}
-      pointerEvents="none"
+      pointerEvents={onPress ? 'box-none' : 'none'}
       style={[styles.container, { top: insets.top + 8 }]}
     >
-      <BlurView intensity={100} style={styles.pill} tint="systemChromeMaterialDark">
-        <Text style={styles.label}>{label}</Text>
-      </BlurView>
+      {onPress ? (
+        <Pressable
+          accessibilityLabel={label}
+          accessibilityRole="button"
+          hitSlop={8}
+          style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
+          onPress={onPress}
+        >
+          {pill}
+        </Pressable>
+      ) : (
+        pill
+      )}
     </Animated.View>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
+    alignItems: 'flex-start',
     left: 12,
     position: 'absolute',
+    right: 60,
     zIndex: 10,
   },
+  pressable: { maxWidth: '100%' },
+  pressed: { opacity: 0.6 },
   pill: {
     borderColor: 'rgba(255, 255, 255, 0.12)',
     borderCurve: 'continuous',
