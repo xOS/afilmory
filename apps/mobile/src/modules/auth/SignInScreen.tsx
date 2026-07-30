@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 import appIcon from '@/assets/images/icon.png'
+import { useTranslation } from '@/i18n'
 import { usePageRuntime } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
@@ -18,6 +19,7 @@ const FADE_HEIGHT = 96
 export function SignInScreen() {
   const { finish } = usePageRuntime()
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const photos = useShowcasePhotos()
   const [showcaseSize, setShowcaseSize] = useState({ height: 0, width: 0 })
@@ -35,7 +37,7 @@ export function SignInScreen() {
       <View style={styles.bottom}>
         <Image source={appIcon} style={styles.appIcon} />
         <Text style={styles.title}>Afilmory</Text>
-        <Text style={styles.subtitle}>Sign in with the account that owns your gallery.</Text>
+        <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
         <SignInSection onSignedIn={() => finish()} />
       </View>
     </View>

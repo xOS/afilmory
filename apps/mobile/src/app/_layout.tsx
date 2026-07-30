@@ -1,9 +1,11 @@
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router'
 import { useEffect, useMemo } from 'react'
+import { I18nextProvider } from 'react-i18next'
 import { LogBox, StyleSheet } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
+import { i18n } from '@/i18n'
 import { hydrateAuth } from '@/modules/auth/sessionStore'
 import { PresentationHost } from '@/presentation'
 import { useTheme as useAppTheme } from '@/theme/useTheme'
@@ -32,18 +34,23 @@ export default function RootLayout() {
   )
 
   return (
-    <GestureHandlerRootView style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
-      <SafeAreaProvider>
-        <ThemeProvider value={navigationTheme}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="photo/[photoId]" options={{ contentStyle: styles.photoScreen, gestureEnabled: true }} />
-          </Stack>
-          <PresentationHost />
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <I18nextProvider i18n={i18n}>
+      <GestureHandlerRootView style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
+        <SafeAreaProvider>
+          <ThemeProvider value={navigationTheme}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="photo/[photoId]"
+                options={{ contentStyle: styles.photoScreen, gestureEnabled: true }}
+              />
+            </Stack>
+            <PresentationHost />
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </I18nextProvider>
   )
 }
 

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { SAAS_BASE_DOMAIN } from '@/api/client'
+import { useTranslation } from '@/i18n'
 import { signOut, useAuth } from '@/modules/auth/sessionStore'
 import { signInPage } from '@/modules/auth/signInPage'
 import { AppHeader } from '@/modules/shell/AppHeader'
@@ -13,6 +14,7 @@ import { useTheme } from '@/theme/useTheme'
 
 export function SettingsScreen() {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const auth = useAuth()
   const [signingOut, setSigningOut] = useState(false)
@@ -45,12 +47,12 @@ export function SettingsScreen() {
           style={styles.root}
         >
           <Pressable
-            accessibilityLabel="Sign in"
+            accessibilityLabel={t('common.signIn')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.signInButton, pressed && styles.pressed]}
             onPress={() => void present(signInPage)}
           >
-            <Text style={styles.signInLabel}>Sign in</Text>
+            <Text style={styles.signInLabel}>{t('common.signIn')}</Text>
           </Pressable>
         </ScrollView>
       ) : (
@@ -93,7 +95,7 @@ export function SettingsScreen() {
           </View>
 
           <Pressable
-            accessibilityLabel="Sign out"
+            accessibilityLabel={t('common.signOut')}
             accessibilityRole="button"
             disabled={signingOut}
             style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}
@@ -102,7 +104,7 @@ export function SettingsScreen() {
             {signingOut ? (
               <ActivityIndicator color={palette.danger} />
             ) : (
-              <Text style={styles.signOutLabel}>Sign out</Text>
+              <Text style={styles.signOutLabel}>{t('common.signOut')}</Text>
             )}
           </Pressable>
         </ScrollView>

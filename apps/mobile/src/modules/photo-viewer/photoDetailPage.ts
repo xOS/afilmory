@@ -1,3 +1,4 @@
+import { translate } from '@/i18n'
 import { definePage } from '@/presentation'
 
 import { PhotoDetailScreen } from './PhotoDetailScreen'
@@ -19,5 +20,5 @@ export const photoDetailPage = definePage<PhotoDetailRouteParams>({
     return { photoId, sessionId }
   },
   presentation: { animationType: 'none', headerShown: false, style: 'fullScreen' },
-  title: 'Photo',
+  title: translate('page.photo'),
 })

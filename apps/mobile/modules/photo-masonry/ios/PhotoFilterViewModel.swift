@@ -15,18 +15,26 @@ final class PhotoFilterViewModel: ObservableObject {
   @Published var minRating: Int?
 
   let options: PhotoFilterOptionsRecord
+  let localization: PhotoFilterLocalizationRecord
 
   init(request: PhotoFilterSheetRequest) {
     let filters = request.filters
     tags = Set(filters.tags)
     tagMode = filters.tagMode
-    dateSelection = filters.datePreset ?? ((filters.dateFrom != nil || filters.dateTo != nil) ? Self.customDate : Self.noDate)
+    if let datePreset = filters.datePreset {
+      dateSelection = datePreset
+    } else if filters.dateFrom != nil || filters.dateTo != nil {
+      dateSelection = Self.customDate
+    } else {
+      dateSelection = Self.noDate
+    }
     dateFrom = Self.date(from: filters.dateFrom) ?? Date()
     dateTo = Self.date(from: filters.dateTo) ?? Date()
     cameras = Set(filters.cameras)
     lenses = Set(filters.lenses)
     minRating = filters.minRating
     options = request.options
+    localization = request.localization
   }
 
   var hasActiveFilters: Bool {

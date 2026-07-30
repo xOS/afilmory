@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { SAAS_BASE_DOMAIN } from '@/api/client'
+import { useTranslation } from '@/i18n'
 import { signOut, useAuth } from '@/modules/auth/sessionStore'
 import { usePageRuntime } from '@/presentation'
 import type { Palette } from '@/theme/palette'
@@ -14,6 +15,7 @@ import { useHomeFeed } from './homeFeedStore'
 
 export function ProfileSheet() {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const auth = useAuth()
   const { photos } = useHomeFeed()
@@ -66,19 +68,19 @@ export function ProfileSheet() {
       <Text numberOfLines={1} style={styles.tenantLine}>
         {`${tenant.name} · ${tenant.slug}`}
       </Text>
-      <Text style={styles.photoCount}>{`${photos.length} photos`}</Text>
+      <Text style={styles.photoCount}>{t('gallery.photos', { count: photos.length })}</Text>
 
       <View style={styles.actions}>
         <Pressable
-          accessibilityLabel="Open gallery on web"
+          accessibilityLabel={t('common.openGalleryWeb')}
           accessibilityRole="button"
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}
           onPress={handleOpenOnWeb}
         >
-          <Text style={styles.rowLabel}>Open gallery on web</Text>
+          <Text style={styles.rowLabel}>{t('common.openGalleryWeb')}</Text>
         </Pressable>
         <Pressable
-          accessibilityLabel="Sign out"
+          accessibilityLabel={t('common.signOut')}
           accessibilityRole="button"
           disabled={signingOut}
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}
@@ -87,7 +89,7 @@ export function ProfileSheet() {
           {signingOut ? (
             <ActivityIndicator color={palette.danger} />
           ) : (
-            <Text style={[styles.rowLabel, styles.dangerLabel]}>Sign out</Text>
+            <Text style={[styles.rowLabel, styles.dangerLabel]}>{t('common.signOut')}</Text>
           )}
         </Pressable>
       </View>

@@ -10,7 +10,11 @@
     "backgroundColor": "#000000",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.afilmory"
+      "bundleIdentifier": "app.afilmory",
+      "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleLocalizations": ["en", "zh-Hans", "zh-HK", "zh-TW", "ja", "ko"]
+      }
     },
     "android": {
       "package": "app.afilmory",

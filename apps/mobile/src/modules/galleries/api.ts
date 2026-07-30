@@ -2,7 +2,14 @@ import { ofetch } from 'ofetch'
 
 import { apiClient, SAAS_BASE_DOMAIN } from '@/api/client'
 
-import type { FeaturedGallery, GalleryCoverPhoto, GalleryExif, GalleryLocation, GalleryPhoto } from './types'
+import type {
+  FeaturedGallery,
+  GalleryCoverPhoto,
+  GalleryExif,
+  GalleryLocation,
+  GalleryPhoto,
+  GalleryToneAnalysis,
+} from './types'
 
 export async function fetchFeaturedGalleries(signal?: AbortSignal): Promise<FeaturedGallery[]> {
   const res = await apiClient<{ galleries: FeaturedGallery[] }>('/featured-galleries', { signal })
@@ -25,6 +32,7 @@ interface ManifestPhoto {
   video?: { type?: string } | null
   tags?: string[]
   exif?: GalleryExif | null
+  toneAnalysis?: GalleryToneAnalysis | null
   location?: {
     latitude?: number
     longitude?: number
@@ -96,6 +104,7 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
       isLive: Boolean(photo.video),
       tags: photo.tags ?? [],
       exif: photo.exif ?? null,
+      toneAnalysis: photo.toneAnalysis ?? null,
       location: photoLocation(photo.location),
       camera: photoCamera(photo.exif),
       lens: photoLens(photo.exif),

@@ -85,7 +85,15 @@ final class PhotoMasonryView: ExpoView {
     didSet { updateProfile() }
   }
 
+  var profileAccessibilityLabel = "" {
+    didSet { updateProfile() }
+  }
+
   var filterActive = false {
+    didSet { updateFilterButton() }
+  }
+
+  var filterAccessibilityLabel = "" {
     didSet { updateFilterButton() }
   }
 
@@ -235,6 +243,7 @@ final class PhotoMasonryView: ExpoView {
         // The glass element is the surface only; its own interactive behaviour would
         // swallow touches before they reach the button hosted in its content view.
         let effect = UIGlassEffect(style: .regular)
+        effect.isInteractive = true
         glass.effect = effect
         glass.clipsToBounds = true
         glass.layer.cornerCurve = .circular
@@ -244,7 +253,7 @@ final class PhotoMasonryView: ExpoView {
 
     profileButton.addTarget(self, action: #selector(handleProfilePress), for: .touchUpInside)
     profileButton.accessibilityIdentifier = "photo-masonry-profile"
-    profileButton.accessibilityLabel = "Profile"
+    profileButton.accessibilityLabel = profileAccessibilityLabel
     profileButton.configuration = makeControlConfiguration()
     glassHost(for: profileGlass).addSubview(profileButton)
 
@@ -391,7 +400,7 @@ final class PhotoMasonryView: ExpoView {
   private func updateProfile() {
     let initial = profileInitial.trimmingCharacters(in: .whitespacesAndNewlines).first.map(String.init) ?? "?"
     profileInitialLabel.text = initial.uppercased()
-    profileButton.accessibilityLabel = "Profile, \(profileInitial.isEmpty ? "unknown user" : profileInitial)"
+    profileButton.accessibilityLabel = profileAccessibilityLabel
 
     avatarImageView.sd_cancelCurrentImageLoad()
     avatarImageView.image = nil
@@ -417,7 +426,7 @@ final class PhotoMasonryView: ExpoView {
     let count = max(filterCount, 0)
     filterBadge.text = String(count)
     filterBadge.isHidden = !chromeVisible || !filterActive || count == 0
-    filterButton.accessibilityLabel = filterActive ? "Filters, \(count) active" : "Filters"
+    filterButton.accessibilityLabel = filterAccessibilityLabel
     filterButton.accessibilityTraits = filterActive ? [.button, .selected] : .button
   }
 

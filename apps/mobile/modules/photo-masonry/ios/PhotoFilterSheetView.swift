@@ -3,38 +3,39 @@ import SwiftUI
 struct PhotoFilterSheetView: View {
   @ObservedObject var model: PhotoFilterViewModel
 
-  private let datePresets: [(value: String, label: String)] = [
-    ("last7", "Last 7 Days"),
-    ("last30", "Last 30 Days"),
-    ("last90", "Last 90 Days"),
-    ("thisMonth", "This Month"),
-    ("thisYear", "This Year"),
-    ("lastYear", "Last Year"),
-  ]
-
   var body: some View {
     Form {
-      Section("Date") {
-        Picker("Range", selection: $model.dateSelection) {
-          Text("Any Date").tag(PhotoFilterViewModel.noDate)
-          ForEach(datePresets, id: \.value) { preset in
+      Section(model.localization.date) {
+        Picker(model.localization.range, selection: $model.dateSelection) {
+          Text(model.localization.anyDate).tag(PhotoFilterViewModel.noDate)
+          ForEach(model.localization.datePresets) { preset in
             Text(preset.label).tag(preset.value)
           }
-          Text("Custom Range").tag(PhotoFilterViewModel.customDate)
+          Text(model.localization.customRange).tag(PhotoFilterViewModel.customDate)
         }
 
         if model.dateSelection == PhotoFilterViewModel.customDate {
-          DatePicker("From", selection: $model.dateFrom, in: ...model.dateTo, displayedComponents: .date)
-          DatePicker("To", selection: $model.dateTo, in: model.dateFrom..., displayedComponents: .date)
+          DatePicker(
+            model.localization.from,
+            selection: $model.dateFrom,
+            in: ...model.dateTo,
+            displayedComponents: .date
+          )
+          DatePicker(
+            model.localization.to,
+            selection: $model.dateTo,
+            in: model.dateFrom...,
+            displayedComponents: .date
+          )
         }
       }
 
       if !model.options.tags.isEmpty {
-        Section("Tags") {
+        Section(model.localization.tags) {
           if model.tags.count > 1 {
-            Picker("Match", selection: $model.tagMode) {
-              Text("Any").tag("any")
-              Text("All").tag("all")
+            Picker(model.localization.match, selection: $model.tagMode) {
+              Text(model.localization.any).tag("any")
+              Text(model.localization.all).tag("all")
             }
             .pickerStyle(.segmented)
           }
@@ -42,6 +43,8 @@ struct PhotoFilterSheetView: View {
             SelectionRow(
               count: option.count,
               isSelected: model.tags.contains(option.value),
+              notSelectedValue: model.localization.notSelected,
+              selectedValue: model.localization.selected,
               title: option.value,
               onSelect: { model.toggleTag(option.value) }
             )
@@ -50,11 +53,13 @@ struct PhotoFilterSheetView: View {
       }
 
       if !model.options.cameras.isEmpty {
-        Section("Camera") {
+        Section(model.localization.camera) {
           ForEach(model.options.cameras) { option in
             SelectionRow(
               count: option.count,
               isSelected: model.cameras.contains(option.value),
+              notSelectedValue: model.localization.notSelected,
+              selectedValue: model.localization.selected,
               title: option.value,
               onSelect: { model.toggleCamera(option.value) }
             )
@@ -63,11 +68,13 @@ struct PhotoFilterSheetView: View {
       }
 
       if !model.options.lenses.isEmpty {
-        Section("Lens") {
+        Section(model.localization.lens) {
           ForEach(model.options.lenses) { option in
             SelectionRow(
               count: option.count,
               isSelected: model.lenses.contains(option.value),
+              notSelectedValue: model.localization.notSelected,
+              selectedValue: model.localization.selected,
               title: option.value,
               onSelect: { model.toggleLens(option.value) }
             )
@@ -76,11 +83,11 @@ struct PhotoFilterSheetView: View {
       }
 
       if model.options.ratedCount > 0 {
-        Section("Rating") {
-          Picker("Minimum Rating", selection: $model.minRating) {
-            Text("Any Rating").tag(Int?.none)
+        Section(model.localization.rating) {
+          Picker(model.localization.minimumRating, selection: $model.minRating) {
+            Text(model.localization.anyRating).tag(Int?.none)
             ForEach(1...5, id: \.self) { rating in
-              Text("\(rating) Star\(rating == 1 ? "" : "s") or Better").tag(Int?.some(rating))
+              Text(model.localization.ratingOptions[rating - 1]).tag(Int?.some(rating))
             }
           }
         }
@@ -88,7 +95,7 @@ struct PhotoFilterSheetView: View {
 
       if model.hasActiveFilters {
         Section {
-          Button("Reset Filters", role: .destructive, action: model.reset)
+          Button(model.localization.reset, role: .destructive, action: model.reset)
             .frame(maxWidth: .infinity, alignment: .center)
         }
       }
@@ -99,6 +106,8 @@ struct PhotoFilterSheetView: View {
 private struct SelectionRow: View {
   let count: Int
   let isSelected: Bool
+  let notSelectedValue: String
+  let selectedValue: String
   let title: String
   let onSelect: () -> Void
 
@@ -125,6 +134,6 @@ private struct SelectionRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+    .accessibilityValue(isSelected ? selectedValue : notSelectedValue)
   }
 }

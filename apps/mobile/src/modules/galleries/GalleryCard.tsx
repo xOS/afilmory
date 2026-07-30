@@ -2,6 +2,7 @@ import { Image } from 'expo-image'
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { useTranslation } from '@/i18n'
 import type { Palette } from '@/theme/palette'
 import { font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -20,6 +21,7 @@ export function GalleryCard({
   onPress: (gallery: FeaturedGallery) => void
 }) {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const [covers, setCovers] = useState<GalleryCoverPhoto[] | null>(() => getCachedGalleryCovers(gallery.slug) ?? null)
 
@@ -44,7 +46,7 @@ export function GalleryCard({
 
   return (
     <Pressable
-      accessibilityLabel={`Open ${gallery.name}`}
+      accessibilityLabel={t('accessibility.openGallery', { name: gallery.name })}
       accessibilityRole="button"
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={() => onPress(gallery)}
@@ -81,11 +83,7 @@ export function GalleryCard({
         </View>
 
         <View style={styles.metaRow}>
-          <Text style={styles.metaText}>
-            {gallery.photoCount}
-            {' '}
-            photos
-          </Text>
+          <Text style={styles.metaText}>{t('gallery.photos', { count: gallery.photoCount })}</Text>
           {gallery.tags.slice(0, 3).map(tag => (
             <View key={tag} style={styles.tagChip}>
               <Text numberOfLines={1} style={styles.tagText}>

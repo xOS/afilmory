@@ -2,6 +2,7 @@ import { PhotoMasonryView } from 'photo-masonry'
 import { useMemo } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { useTranslation } from '@/i18n'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
@@ -11,12 +12,14 @@ import { useGalleryManifest } from './useGalleryManifest'
 
 export function GalleryMasonry({ slug }: { slug: string }) {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const { error, loading, photos, retry } = useGalleryManifest(slug)
   const openPhoto = useOpenPhotoViewer(photos)
   const items = useMemo(
     () =>
       photos.map(photo => ({
+        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
         id: photo.id,
         url: photo.thumbnailUrl,
         originalUrl: photo.originalUrl,
@@ -26,7 +29,7 @@ export function GalleryMasonry({ slug }: { slug: string }) {
         height: photo.height,
         isLive: photo.isLive,
       })),
-    [photos],
+    [photos, t],
   )
 
   if (loading) {
@@ -40,18 +43,18 @@ export function GalleryMasonry({ slug }: { slug: string }) {
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Failed to load photos</Text>
+        <Text style={styles.errorTitle}>{t('gallery.failed.photos')}</Text>
         <Text numberOfLines={2} style={styles.errorDetail}>
-          {error.message}
+          {t('gallery.failed.detail')}
         </Text>
         <Pressable
-          accessibilityLabel="Retry loading photos"
+          accessibilityLabel={t('accessibility.retryPhotos')}
           accessibilityRole="button"
           hitSlop={8}
           style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
           onPress={retry}
         >
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={styles.retryText}>{t('common.retry')}</Text>
         </Pressable>
       </View>
     )

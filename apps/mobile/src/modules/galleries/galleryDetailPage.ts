@@ -1,3 +1,4 @@
+import { translate } from '@/i18n'
 import { definePage } from '@/presentation'
 
 import { GalleryDetailScreen } from './GalleryDetailScreen'
@@ -18,5 +19,5 @@ export const galleryDetailPage = definePage<FeaturedGallery>({
     return gallery
   },
   presentation: { style: 'fullScreen' },
-  title: 'Gallery',
+  title: translate('page.gallery'),
 })

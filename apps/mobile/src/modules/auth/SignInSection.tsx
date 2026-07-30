@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import githubMark from '@/assets/images/github-mark.svg'
 import googleG from '@/assets/images/google-g.png'
+import { useTranslation } from '@/i18n'
 import type { Palette } from '@/theme/palette'
 import { controlH, font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -11,15 +12,16 @@ import { useTheme } from '@/theme/useTheme'
 import { signInWithProvider } from './sessionStore'
 import type { AuthProviderId } from './types'
 
-const PROVIDERS: Array<{ id: AuthProviderId, label: string, logo: number, tinted: boolean }> = [
-  { id: 'github', label: 'Continue with GitHub', logo: githubMark, tinted: true },
-  { id: 'google', label: 'Continue with Google', logo: googleG, tinted: false },
+const PROVIDERS: Array<{ id: AuthProviderId, labelKey: string, logo: number, tinted: boolean }> = [
+  { id: 'github', labelKey: 'auth.continue.github', logo: githubMark, tinted: true },
+  { id: 'google', labelKey: 'auth.continue.google', logo: googleG, tinted: false },
 ]
 
 const USER_CANCELLED_PATTERN = /cancel|dismiss/i
 
 export function SignInSection({ onSignedIn }: { onSignedIn?: () => void }) {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const [busyProvider, setBusyProvider] = useState<AuthProviderId | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +39,7 @@ export function SignInSection({ onSignedIn }: { onSignedIn?: () => void }) {
     catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (!USER_CANCELLED_PATTERN.test(message)) {
-        setError(message)
+        setError(t('auth.failed'))
       }
     }
     finally {
@@ -47,33 +49,36 @@ export function SignInSection({ onSignedIn }: { onSignedIn?: () => void }) {
 
   return (
     <View style={styles.root}>
-      {PROVIDERS.map(provider => (
-        <Pressable
-          key={provider.id}
-          accessibilityLabel={provider.label}
-          accessibilityRole="button"
-          disabled={busyProvider !== null}
-          style={({ pressed }) => [
-            styles.providerButton,
-            busyProvider !== null && busyProvider !== provider.id && styles.providerButtonDisabled,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => void handleSignIn(provider.id)}
-        >
-          {busyProvider === provider.id ? (
-            <ActivityIndicator color={palette.textPrimary} />
-          ) : (
-            <View style={styles.providerContent}>
-              <Image
-                source={provider.logo}
-                style={styles.providerLogo}
-                tintColor={provider.tinted ? palette.textPrimary : undefined}
-              />
-              <Text style={styles.providerLabel}>{provider.label}</Text>
-            </View>
-          )}
-        </Pressable>
-      ))}
+      {PROVIDERS.map((provider) => {
+        const label = t(provider.labelKey)
+        return (
+          <Pressable
+            key={provider.id}
+            accessibilityLabel={label}
+            accessibilityRole="button"
+            disabled={busyProvider !== null}
+            style={({ pressed }) => [
+              styles.providerButton,
+              busyProvider !== null && busyProvider !== provider.id && styles.providerButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+            onPress={() => void handleSignIn(provider.id)}
+          >
+            {busyProvider === provider.id ? (
+              <ActivityIndicator color={palette.textPrimary} />
+            ) : (
+              <View style={styles.providerContent}>
+                <Image
+                  source={provider.logo}
+                  style={styles.providerLogo}
+                  tintColor={provider.tinted ? palette.textPrimary : undefined}
+                />
+                <Text style={styles.providerLabel}>{label}</Text>
+              </View>
+            )}
+          </Pressable>
+        )
+      })}
       <View style={styles.errorSlot}>
         {error ? (
           <Text numberOfLines={3} style={styles.error}>

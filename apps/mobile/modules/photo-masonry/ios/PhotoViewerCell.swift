@@ -129,7 +129,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIScrollViewDelegate {
   func configure(with photo: MasonryPhoto, viewportSize: CGSize) {
     guard self.photo?.id != photo.id else { return }
     self.photo = photo
-    imageContainerView.accessibilityLabel = "Photo \(photo.id)"
+    imageContainerView.accessibilityLabel = photo.accessibilityLabel
     loadedTier = 0
     displayedTier = 0
     lastViewportSize = .zero

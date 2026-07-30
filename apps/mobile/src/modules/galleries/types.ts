@@ -31,6 +31,16 @@ export interface GalleryLocation {
   locationName: string | null
 }
 
+export type GalleryToneType = 'low-key' | 'high-key' | 'normal' | 'high-contrast'
+
+export interface GalleryToneAnalysis {
+  toneType: GalleryToneType
+  brightness: number
+  contrast: number
+  shadowRatio: number
+  highlightRatio: number
+}
+
 export interface GalleryFujiRecipe {
   FilmMode?: string
   GrainEffectRoughness?: string
@@ -121,6 +131,7 @@ export interface GalleryPhoto {
   isLive: boolean
   tags: string[]
   exif: GalleryExif | null
+  toneAnalysis: GalleryToneAnalysis | null
   location: GalleryLocation | null
   camera: string | null
   lens: string | null

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router'
 import { useCallback, useMemo } from 'react'
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
+import { useTranslation } from '@/i18n'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -13,6 +14,7 @@ import { useFeaturedGalleries } from './useFeaturedGalleries'
 
 export function GalleriesScreen() {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const { error, galleries, loading, refresh, refreshing, retry } = useFeaturedGalleries()
   const router = useRouter()
@@ -34,18 +36,18 @@ export function GalleriesScreen() {
         </View>
       ) : error && galleries.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Failed to load galleries</Text>
+          <Text style={styles.errorTitle}>{t('gallery.failed.galleries')}</Text>
           <Text numberOfLines={2} style={styles.errorDetail}>
-            {error.message}
+            {t('gallery.failed.detail')}
           </Text>
           <Pressable
-            accessibilityLabel="Retry loading galleries"
+            accessibilityLabel={t('accessibility.retryGalleries')}
             accessibilityRole="button"
             hitSlop={8}
             style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
             onPress={retry}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
           </Pressable>
         </View>
       ) : (

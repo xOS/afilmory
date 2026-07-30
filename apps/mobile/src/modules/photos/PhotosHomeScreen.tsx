@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { useTranslation } from '@/i18n'
 import { useAuth } from '@/modules/auth/sessionStore'
 import { signInPage } from '@/modules/auth/signInPage'
 import { present } from '@/presentation'
@@ -14,6 +15,7 @@ import { OwnGalleryView } from './OwnGalleryView'
 
 export function PhotosHomeScreen() {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const auth = useAuth()
   const signedOut = auth.status === 'signedOut'
@@ -36,16 +38,16 @@ export function PhotosHomeScreen() {
   if (auth.status === 'signedOut') {
     return (
       <View style={[styles.root, styles.center]}>
-        <Text style={styles.heroTitle}>Your gallery</Text>
-        <Text style={styles.heroSubtitle}>Sign in with your workspace to see your own photos here.</Text>
+        <Text style={styles.heroTitle}>{t('gallery.yours.title')}</Text>
+        <Text style={styles.heroSubtitle}>{t('gallery.yours.subtitle')}</Text>
         <Pressable
-          accessibilityLabel="Go to sign in"
+          accessibilityLabel={t('accessibility.goToSignIn')}
           accessibilityRole="button"
           hitSlop={8}
           style={({ pressed }) => [styles.heroButton, pressed && styles.pressed]}
           onPress={() => void present(signInPage)}
         >
-          <Text style={styles.heroButtonLabel}>Sign in</Text>
+          <Text style={styles.heroButtonLabel}>{t('common.signIn')}</Text>
         </Pressable>
       </View>
     )
@@ -55,10 +57,8 @@ export function PhotosHomeScreen() {
   if (!tenant || tenant.status !== 'active') {
     return (
       <View style={[styles.root, styles.center]}>
-        <Text style={styles.heroTitle}>Workspace pending</Text>
-        <Text style={styles.heroSubtitle}>
-          This workspace has not finished registering. Complete setup on the web, then come back.
-        </Text>
+        <Text style={styles.heroTitle}>{t('gallery.workspace.pending.title')}</Text>
+        <Text style={styles.heroSubtitle}>{t('gallery.workspace.pending.subtitle')}</Text>
       </View>
     )
   }

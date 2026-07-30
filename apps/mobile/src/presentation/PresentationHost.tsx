@@ -4,6 +4,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { ScreenStack, ScreenStackItem } from 'react-native-screens'
 
+import { useTranslation } from '@/i18n'
 import { font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
@@ -116,6 +117,7 @@ function SessionBody({
   session: PresentationSession
 }) {
   const { palette } = useTheme()
+  const { t } = useTranslation()
   const { Component } = session.page
   const { dismissible, headerShown } = session.presentation
 
@@ -132,7 +134,7 @@ function SessionBody({
               <View style={[styles.headerSide, styles.headerAction]}>
                 {dismissible ? (
                   <Pressable
-                    accessibilityLabel={`Close ${session.page.title}`}
+                    accessibilityLabel={t('accessibility.closePage', { title: session.page.title })}
                     accessibilityRole="button"
                     hitSlop={8}
                     style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}

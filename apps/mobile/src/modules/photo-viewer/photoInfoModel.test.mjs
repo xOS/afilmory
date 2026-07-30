@@ -21,6 +21,7 @@ const basePhoto = {
   isLive: false,
   tags: [],
   exif: null,
+  toneAnalysis: null,
   location: null,
   camera: null,
   lens: null,
@@ -124,4 +125,83 @@ test('buildPhotoInfoModel preserves server-derived location when embedded EXIF i
   assert.equal(rowValue(model, 'location', 'latitude'), '1.3521°')
   assert.equal(rowValue(model, 'location', 'place'), 'Singapore')
   assert.equal(rowValue(model, 'location', 'address'), 'Marina Bay')
+  assert.deepEqual(model.mapLocation, { latitude: 1.3521, longitude: 103.8198 })
+})
+
+test('buildPhotoInfoModel exposes the web tone analysis and histogram source', () => {
+  const model = buildPhotoInfoModel({
+    ...basePhoto,
+    toneAnalysis: {
+      toneType: 'high-contrast',
+      brightness: 48,
+      contrast: 72,
+      shadowRatio: 0.234,
+      highlightRatio: 0.119,
+    },
+  })
+
+  assert.equal(model.toneAnalysis?.tone.value, 'High Contrast')
+  assert.deepEqual(
+    model.toneAnalysis?.metrics.map(metric => [metric.id, metric.value]),
+    [
+      ['brightness', '48%'],
+      ['contrast', '72%'],
+      ['shadow-ratio', '23%'],
+      ['highlight-ratio', '12%'],
+    ],
+  )
+  assert.equal(model.toneAnalysis?.histogramUrl, basePhoto.thumbnailUrl)
+})
+
+test('buildPhotoInfoModel applies GPS references to the native map coordinates', () => {
+  const model = buildPhotoInfoModel({
+    ...basePhoto,
+    exif: {
+      GPSLatitude: 33.8688,
+      GPSLatitudeRef: 'S',
+      GPSLongitude: 151.2093,
+      GPSLongitudeRef: 'E',
+    },
+  })
+
+  assert.deepEqual(model.mapLocation, { latitude: -33.8688, longitude: 151.2093 })
+})
+
+test('buildPhotoInfoModel uses ShutterSpeedValue when ExposureTime is unavailable', () => {
+  const model = buildPhotoInfoModel({
+    ...basePhoto,
+    exif: {
+      ShutterSpeedValue: 1 / 250,
+    },
+  })
+
+  assert.equal(model.captureParameters.find(parameter => parameter.id === 'shutter-speed')?.value, '1/250 s')
+})
+
+test('buildPhotoInfoModel localizes metadata labels and known EXIF values', async () => {
+  const { i18n } = await import('../../i18n')
+  const model = buildPhotoInfoModel(
+    {
+      ...basePhoto,
+      exif: {
+        FNumber: 2.8,
+        MeteringMode: 'Pattern',
+      },
+      toneAnalysis: {
+        brightness: 50,
+        contrast: 75,
+        highlightRatio: 0.12,
+        shadowRatio: 0.2,
+        toneType: 'high-contrast',
+      },
+    },
+    i18n.getFixedT('zh-CN'),
+    'zh-CN',
+  )
+
+  assert.equal(model.basic.title, '基本信息')
+  assert.equal(model.captureParameters.find(parameter => parameter.id === 'aperture')?.label, '光圈')
+  assert.equal(rowValue(model, 'capture-mode', 'metering-mode'), '图案')
+  assert.equal(model.toneAnalysis?.tone.label, '影调类型')
+  assert.equal(model.toneAnalysis?.tone.value, '高对比度')
 })

@@ -2,6 +2,7 @@ import { requireNativeView } from 'expo'
 import type { ViewProps } from 'react-native'
 
 export interface PhotoMasonryItem {
+  accessibilityLabel: string
   id: string
   url: string
   originalUrl: string
@@ -52,7 +53,9 @@ export interface PhotoMasonryViewProps extends ViewProps {
   chromeDateInteractive?: boolean
   profileImageURL?: string
   profileInitial?: string
+  profileAccessibilityLabel?: string
   filterActive?: boolean
+  filterAccessibilityLabel?: string
   filterCount?: number
   onPhotoPress?: (event: { nativeEvent: PhotoPressEvent }) => void
   onVisibleRangeChange?: (event: { nativeEvent: VisibleRangeEvent }) => void

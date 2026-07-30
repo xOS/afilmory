@@ -40,7 +40,7 @@ struct PhotoInfoSheetView: View {
       }
 
       if !info.captureParameters.isEmpty {
-        Section("Capture Parameters") {
+        Section(info.localization.captureParameters) {
           LazyVGrid(columns: parameterColumns, spacing: 10) {
             ForEach(info.captureParameters) { parameter in
               PhotoCaptureParameterView(parameter: parameter)
@@ -51,7 +51,7 @@ struct PhotoInfoSheetView: View {
       }
 
       if !info.tags.isEmpty {
-        Section("Tags") {
+        Section(info.localization.tags) {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
               ForEach(info.tags, id: \.self) { tag in
@@ -68,10 +68,48 @@ struct PhotoInfoSheetView: View {
         }
       }
 
+      if let toneAnalysis = info.toneAnalysis {
+        Section(info.localization.toneAnalysis) {
+          PhotoInfoRowView(row: toneAnalysis.tone)
+
+          if !toneAnalysis.metrics.isEmpty {
+            LazyVGrid(columns: parameterColumns, spacing: 10) {
+              ForEach(toneAnalysis.metrics) { metric in
+                PhotoToneMetricView(metric: metric)
+              }
+            }
+            .padding(.vertical, 4)
+          }
+
+          VStack(alignment: .leading, spacing: 8) {
+            Text(info.localization.histogram)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            PhotoHistogramView(
+              urlString: toneAnalysis.histogramUrl,
+              failedMessage: info.localization.histogramFailure,
+              accessibilityLabel: info.localization.histogramAccessibilityLabel
+            )
+            .frame(height: 128)
+          }
+          .padding(.vertical, 4)
+        }
+      }
+
       ForEach(info.sections.dropFirst()) { section in
         Section(section.title) {
           ForEach(section.rows) { row in
             PhotoInfoRowView(row: row)
+          }
+
+          if section.id == "location", let mapLocation = info.mapLocation {
+            PhotoMapPreview(
+              latitude: mapLocation.latitude,
+              longitude: mapLocation.longitude,
+              accessibilityLabel: info.localization.mapAccessibilityLabel
+            )
+            .frame(height: 160)
+            .padding(.vertical, 4)
           }
         }
       }
@@ -119,6 +157,24 @@ private struct PhotoCaptureParameterView: View {
         .lineLimit(2)
     }
     .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+    .padding(12)
+    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .accessibilityElement(children: .combine)
+  }
+}
+
+private struct PhotoToneMetricView: View {
+  let metric: PhotoInfoRowRecord
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(metric.value)
+        .font(.headline.monospacedDigit())
+      Text(metric.label)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
     .padding(12)
     .background(.quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     .accessibilityElement(children: .combine)

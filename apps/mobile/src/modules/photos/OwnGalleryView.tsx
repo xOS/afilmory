@@ -3,6 +3,7 @@ import { PhotoMasonryView } from 'photo-masonry'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { getIntlLocale, useTranslation } from '@/i18n'
 import { useAuth } from '@/modules/auth/sessionStore'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
@@ -30,6 +31,7 @@ export function OwnGalleryView({ slug }: { slug: string }) {
 
 function NativeGallery({ slug }: { slug: string }) {
   const { palette } = useTheme()
+  const { i18n, t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const { error, loading, photos, refresh, refreshing, retry } = useGalleryManifest(slug)
   const auth = useAuth()
@@ -63,6 +65,7 @@ function NativeGallery({ slug }: { slug: string }) {
   const items = useMemo(
     () =>
       filtered.map(photo => ({
+        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
         id: photo.id,
         url: photo.thumbnailUrl,
         originalUrl: photo.originalUrl,
@@ -72,15 +75,15 @@ function NativeGallery({ slug }: { slug: string }) {
         height: photo.height,
         isLive: photo.isLive,
       })),
-    [filtered],
+    [filtered, t],
   )
 
   const dateLabel = useMemo(() => {
     if (!visibleRange) {
       return null
     }
-    return formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end)
-  }, [filtered, visibleRange])
+    return formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end, getIntlLocale(i18n.resolvedLanguage))
+  }, [filtered, i18n.resolvedLanguage, visibleRange])
 
   // Kept separate from the range so the native pill can drop it whole when it does not fit.
   const dateDetail = useMemo(() => {
@@ -114,8 +117,14 @@ function NativeGallery({ slug }: { slug: string }) {
   const handleRefresh = useCallback(() => void refresh(), [refresh])
 
   const hasFeed = columnsReady && !loading && error === null && photos.length > 0
-  const chromeDateLabel = filtersActive ? `${filtered.length} · ${summarizeFilters(filters)}` : (dateLabel ?? '')
+  const chromeDateLabel = filtersActive ? `${filtered.length} · ${summarizeFilters(filters, t)}` : (dateLabel ?? '')
   const profileInitial = Array.from((auth.session?.user.name ?? '?').trim())[0]?.toUpperCase() ?? '?'
+  const profileAccessibilityLabel = auth.session?.user.name
+    ? t('accessibility.profile', { name: auth.session.user.name })
+    : t('accessibility.profileUnknown')
+  const filterAccessibilityLabel = filtersActive
+    ? t('accessibility.filtersActive', { count: filterCount })
+    : t('accessibility.filters')
 
   function renderState() {
     if (loading || !columnsReady) {
@@ -129,18 +138,18 @@ function NativeGallery({ slug }: { slug: string }) {
     if (error) {
       return (
         <View pointerEvents="box-none" style={styles.center}>
-          <Text style={styles.stateTitle}>Failed to load photos</Text>
+          <Text style={styles.stateTitle}>{t('gallery.failed.photos')}</Text>
           <Text numberOfLines={2} style={styles.stateDetail}>
-            {error.message}
+            {t('gallery.failed.detail')}
           </Text>
           <Pressable
-            accessibilityLabel="Retry loading photos"
+            accessibilityLabel={t('accessibility.retryPhotos')}
             accessibilityRole="button"
             hitSlop={8}
             style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
             onPress={retry}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
           </Pressable>
         </View>
       )
@@ -149,8 +158,8 @@ function NativeGallery({ slug }: { slug: string }) {
     if (photos.length === 0) {
       return (
         <View pointerEvents="box-none" style={styles.center}>
-          <Text style={styles.stateTitle}>No photos yet</Text>
-          <Text style={styles.stateDetail}>Upload photos from the web dashboard and they will show up here.</Text>
+          <Text style={styles.stateTitle}>{t('gallery.empty.title')}</Text>
+          <Text style={styles.stateDetail}>{t('gallery.empty.subtitle')}</Text>
         </View>
       )
     }
@@ -158,15 +167,15 @@ function NativeGallery({ slug }: { slug: string }) {
     if (filtered.length === 0) {
       return (
         <View pointerEvents="box-none" style={styles.center}>
-          <Text style={styles.stateTitle}>No photos match the filters</Text>
+          <Text style={styles.stateTitle}>{t('gallery.empty.filtered')}</Text>
           <Pressable
-            accessibilityLabel="Clear filters"
+            accessibilityLabel={t('accessibility.clearFilters')}
             accessibilityRole="button"
             hitSlop={8}
             style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
             onPress={clearFilters}
           >
-            <Text style={styles.retryText}>Clear filters</Text>
+            <Text style={styles.retryText}>{t('common.clearFilters')}</Text>
           </Pressable>
         </View>
       )
@@ -188,10 +197,12 @@ function NativeGallery({ slug }: { slug: string }) {
           extraBottomInset={24}
           extraTopInset={NATIVE_CHROME_HEIGHT}
           filterActive={filtersActive}
+          filterAccessibilityLabel={filterAccessibilityLabel}
           filterCount={filterCount}
           gap={4}
           photos={error ? [] : items}
           profileImageURL={auth.session?.user.image ?? ''}
+          profileAccessibilityLabel={profileAccessibilityLabel}
           profileInitial={profileInitial}
           refreshing={refreshing}
           scrollThreshold={400}

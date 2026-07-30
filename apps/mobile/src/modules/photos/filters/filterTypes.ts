@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next'
+
 export type DatePreset = 'last7' | 'last30' | 'last90' | 'thisMonth' | 'thisYear' | 'lastYear'
 export type TagMode = 'any' | 'all'
 
@@ -23,13 +25,13 @@ export const EMPTY_FILTERS: PhotoFilters = {
   minRating: null,
 }
 
-export const DATE_PRESET_LABELS: Record<DatePreset, string> = {
-  last7: 'Last 7 days',
-  last30: 'Last 30 days',
-  last90: 'Last 90 days',
-  thisMonth: 'This month',
-  thisYear: 'This year',
-  lastYear: 'Last year',
+export const DATE_PRESET_KEYS: Record<DatePreset, string> = {
+  last7: 'action.date.preset.last7',
+  last30: 'action.date.preset.last30',
+  last90: 'action.date.preset.last90',
+  thisMonth: 'action.date.preset.thisMonth',
+  thisYear: 'action.date.preset.thisYear',
+  lastYear: 'action.date.preset.lastYear',
 }
 
 export function countActiveDimensions(filters: PhotoFilters): number {
@@ -100,23 +102,29 @@ export function presetRange(preset: DatePreset, now: Date): { from: string, to: 
   }
 }
 
-export function summarizeFilters(filters: PhotoFilters): string {
+export function summarizeFilters(filters: PhotoFilters, t: TFunction): string {
   const parts: string[] = []
 
   if (filters.tags.length > 0) {
-    parts.push(filters.tags.length === 1 ? filters.tags[0] : `${filters.tags.length} tags`)
+    parts.push(filters.tags.length === 1 ? filters.tags[0] : t('filter.summary.tags', { count: filters.tags.length }))
   }
   if (filters.cameras.length > 0) {
-    parts.push(filters.cameras.length === 1 ? filters.cameras[0] : `${filters.cameras.length} cameras`)
+    parts.push(
+      filters.cameras.length === 1
+        ? filters.cameras[0]
+        : t('filter.summary.cameras', { count: filters.cameras.length }),
+    )
   }
   if (filters.lenses.length > 0) {
-    parts.push(filters.lenses.length === 1 ? filters.lenses[0] : `${filters.lenses.length} lenses`)
+    parts.push(
+      filters.lenses.length === 1 ? filters.lenses[0] : t('filter.summary.lenses', { count: filters.lenses.length }),
+    )
   }
   if (filters.minRating !== null) {
     parts.push(`≥${filters.minRating}★`)
   }
   if (filters.dateFrom !== null || filters.dateTo !== null) {
-    parts.push(filters.datePreset ? DATE_PRESET_LABELS[filters.datePreset] : 'Dates')
+    parts.push(filters.datePreset ? t(DATE_PRESET_KEYS[filters.datePreset]) : t('filter.dates'))
   }
 
   return parts.join(' · ')

@@ -18,6 +18,7 @@ public class PhotoViewerModule: Module {
       Prop("transitionId") { (view: PhotoViewerView, id: String) in
         view.transitionId = id
       }
+
     }
   }
 }

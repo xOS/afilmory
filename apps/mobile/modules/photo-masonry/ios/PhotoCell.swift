@@ -91,6 +91,8 @@ final class PhotoCell: UICollectionViewCell {
   }
 
   func configure(with photo: MasonryPhoto, targetWidth: CGFloat) {
+    contentView.isAccessibilityElement = true
+    contentView.accessibilityLabel = photo.accessibilityLabel
     liveBadge.isHidden = !photo.isLive
     let scale = window?.screen.scale ?? UIScreen.main.scale
     let targetHeight = targetWidth / max(photo.aspectRatio, 0.01)

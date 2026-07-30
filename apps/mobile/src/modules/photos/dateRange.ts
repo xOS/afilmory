@@ -1,6 +1,21 @@
 import type { GalleryPhoto } from '@/modules/galleries/types'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function getDateFormatter(locale: string, includeYear: boolean): Intl.DateTimeFormat {
+  const key = `${locale}:${includeYear ? 'year' : 'current'}`
+  const existing = dateFormatters.get(key)
+  if (existing) {
+    return existing
+  }
+  const formatter = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  })
+  dateFormatters.set(key, formatter)
+  return formatter
+}
 
 function parseDate(value: string | null): Date | null {
   if (!value) {
@@ -10,7 +25,12 @@ function parseDate(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-export function formatVisibleDateRange(photos: GalleryPhoto[], startIndex: number, endIndex: number): string | null {
+export function formatVisibleDateRange(
+  photos: GalleryPhoto[],
+  startIndex: number,
+  endIndex: number,
+  locale: string,
+): string | null {
   if (photos.length === 0) {
     return null
   }
@@ -32,18 +52,9 @@ export function formatVisibleDateRange(photos: GalleryPhoto[], startIndex: numbe
   const currentYear = new Date().getFullYear()
   const from = oldest
   const to = newest
-  const fromLabel = `${MONTHS[from.getMonth()]} ${from.getDate()}`
-  const toLabel = `${MONTHS[to.getMonth()]} ${to.getDate()}`
-  const yearSuffix = to.getFullYear() === currentYear ? '' : `, ${to.getFullYear()}`
-
-  if (from.getFullYear() !== to.getFullYear()) {
-    return `${MONTHS[from.getMonth()]} ${from.getFullYear()} – ${MONTHS[to.getMonth()]} ${to.getFullYear()}`
-  }
-  if (from.getMonth() === to.getMonth() && from.getDate() === to.getDate()) {
-    return `${toLabel}${yearSuffix}`
-  }
-  if (from.getMonth() === to.getMonth()) {
-    return `${MONTHS[from.getMonth()]} ${from.getDate()}–${to.getDate()}${yearSuffix}`
-  }
-  return `${fromLabel} – ${toLabel}${yearSuffix}`
+  const includeYear = from.getFullYear() !== currentYear || to.getFullYear() !== currentYear
+  const formatter = getDateFormatter(locale, includeYear)
+  const fromLabel = formatter.format(from)
+  const toLabel = formatter.format(to)
+  return from.getTime() === to.getTime() ? toLabel : `${fromLabel} – ${toLabel}`
 }

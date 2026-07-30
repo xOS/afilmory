@@ -1,6 +1,7 @@
 import ExpoModulesCore
 
 struct MasonryPhoto: Record {
+  @Field var accessibilityLabel: String = ""
   @Field var id: String = ""
   @Field var url: String = ""
   @Field var originalUrl: String = ""
@@ -83,8 +84,16 @@ public class PhotoMasonryModule: Module {
         view.profileInitial = initial
       }
 
+      Prop("profileAccessibilityLabel") { (view: PhotoMasonryView, label: String) in
+        view.profileAccessibilityLabel = label
+      }
+
       Prop("filterActive") { (view: PhotoMasonryView, active: Bool) in
         view.filterActive = active
+      }
+
+      Prop("filterAccessibilityLabel") { (view: PhotoMasonryView, label: String) in
+        view.filterAccessibilityLabel = label
       }
 
       Prop("filterCount") { (view: PhotoMasonryView, count: Int) in
