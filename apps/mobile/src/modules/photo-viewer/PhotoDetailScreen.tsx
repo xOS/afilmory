@@ -6,11 +6,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { present, usePageRuntime } from '@/presentation'
+import { presentNativePhotoInfo } from '@/native/photoSheets'
+import { usePageRuntime } from '@/presentation'
 import { font } from '@/theme/tokens'
 
 import type { PhotoDetailRouteParams } from './photoDetailPage'
-import { photoInfoPage } from './photoInfoPage'
+import { buildPhotoInfoModel } from './photoInfoModel'
 import { getPhotoViewerSession, releasePhotoViewerSession } from './sessionStore'
 
 export function PhotoDetailScreen() {
@@ -41,7 +42,15 @@ export function PhotoDetailScreen() {
   }, [])
   const openInfo = useCallback(() => {
     if (currentPhoto) {
-      void present(photoInfoPage, currentPhoto)
+      const model = buildPhotoInfoModel(currentPhoto)
+      void presentNativePhotoInfo({
+        title: currentPhoto.title,
+        description: currentPhoto.description || null,
+        sections: [model.basic, ...model.sections],
+        captureParameters: model.captureParameters,
+        tags: currentPhoto.tags,
+        emptyMessage: model.hasExif ? null : 'No embedded EXIF metadata is available for this photo.',
+      })
     }
   }, [currentPhoto])
   const sharePhoto = useCallback(() => {

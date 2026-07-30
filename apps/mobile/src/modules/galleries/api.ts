@@ -2,7 +2,7 @@ import { ofetch } from 'ofetch'
 
 import { apiClient, SAAS_BASE_DOMAIN } from '@/api/client'
 
-import type { FeaturedGallery, GalleryCoverPhoto, GalleryPhoto } from './types'
+import type { FeaturedGallery, GalleryCoverPhoto, GalleryExif, GalleryLocation, GalleryPhoto } from './types'
 
 export async function fetchFeaturedGalleries(signal?: AbortSignal): Promise<FeaturedGallery[]> {
   const res = await apiClient<{ galleries: FeaturedGallery[] }>('/featured-galleries', { signal })
@@ -19,11 +19,19 @@ interface ManifestPhoto {
   width?: number
   height?: number
   aspectRatio?: number
+  format?: string
+  size?: number
   dateTaken?: string | null
   video?: { type?: string } | null
   tags?: string[]
-  exif?: { Make?: string, Model?: string, LensModel?: string, Rating?: number } | null
-  location?: { city?: string | null, locationName?: string | null } | null
+  exif?: GalleryExif | null
+  location?: {
+    latitude?: number
+    longitude?: number
+    country?: string | null
+    city?: string | null
+    locationName?: string | null
+  } | null
 }
 
 function photoAspectRatio(photo: ManifestPhoto): number {
@@ -51,6 +59,20 @@ function photoRating(exif: ManifestPhoto['exif']): number | null {
   return Math.min(5, Math.max(0, Math.round(exif.Rating)))
 }
 
+function photoLocation(location: ManifestPhoto['location']): GalleryLocation | null {
+  if (!location) {
+    return null
+  }
+
+  return {
+    latitude: location.latitude ?? null,
+    longitude: location.longitude ?? null,
+    country: location.country ?? null,
+    city: location.city ?? null,
+    locationName: location.locationName ?? null,
+  }
+}
+
 export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): Promise<GalleryPhoto[]> {
   const res = await ofetch<{ data: ManifestPhoto[] }>(`https://${slug}.${SAAS_BASE_DOMAIN}/api/manifest`, {
     signal,
@@ -68,9 +90,13 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
       aspectRatio: photoAspectRatio(photo),
       width: photo.width ?? 0,
       height: photo.height ?? 0,
+      format: photo.format ?? null,
+      size: photo.size ?? null,
       dateTaken: photo.dateTaken ?? null,
       isLive: Boolean(photo.video),
       tags: photo.tags ?? [],
+      exif: photo.exif ?? null,
+      location: photoLocation(photo.location),
       camera: photoCamera(photo.exif),
       lens: photoLens(photo.exif),
       rating: photoRating(photo.exif),

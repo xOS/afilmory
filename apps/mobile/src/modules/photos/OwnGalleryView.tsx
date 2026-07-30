@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useAuth } from '@/modules/auth/sessionStore'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
+import { presentNativePhotoFilters } from '@/native/photoSheets'
 import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
@@ -13,11 +14,11 @@ import { useTheme } from '@/theme/useTheme'
 
 import { getPreferredColumnCount, setPreferredColumnCount, waitForColumnPreference } from './columnPreference'
 import { formatVisibleDateRange } from './dateRange'
+import { buildFilterOptions } from './filters/aggregates'
 import { applyFilters } from './filters/applyFilters'
-import { clearFilters, useFilters } from './filters/filterStore'
+import { clearFilters, replaceFilters, useFilters } from './filters/filterStore'
 import { countActiveDimensions, hasActiveFilters, summarizeFilters } from './filters/filterTypes'
 import { cityForRange } from './filters/locationHint'
-import { filterSheetPage } from './filterSheetPage'
 import { setHomeFeed } from './homeFeedStore'
 import { profileSheetPage } from './profileSheetPage'
 
@@ -92,7 +93,14 @@ function NativeGallery({ slug }: { slug: string }) {
   const filtersActive = hasActiveFilters(filters)
   const openPhoto = useOpenPhotoViewer(filtered)
   const filterCount = countActiveDimensions(filters)
-  const openFilters = useCallback(() => void present(filterSheetPage), [])
+  const filterOptions = useMemo(() => buildFilterOptions(photos), [photos])
+  const openFilters = useCallback(() => {
+    void presentNativePhotoFilters(filters, filterOptions).then((next) => {
+      if (next) {
+        replaceFilters(next)
+      }
+    })
+  }, [filterOptions, filters])
   const openProfile = useCallback(() => void present(profileSheetPage), [])
 
   const handleVisibleRangeChange = useCallback((event: { nativeEvent: VisibleRangeEvent }) => {

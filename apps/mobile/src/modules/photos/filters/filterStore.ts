@@ -68,3 +68,13 @@ export function setMinRating(rating: number | null): void {
 export function clearFilters(): void {
   setState(EMPTY_FILTERS)
 }
+
+export function replaceFilters(next: PhotoFilters): void {
+  if (next.datePreset === null) {
+    setState(next)
+    return
+  }
+
+  const { from, to } = presetRange(next.datePreset, new Date())
+  setState({ ...next, dateFrom: from, dateTo: to })
+}
