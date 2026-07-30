@@ -92,6 +92,10 @@ Key implications when changing things:
 - **iOS only, forever.** Never spend effort on Android compatibility, fallbacks, or testing — no `Platform.OS === 'android'` branches, no Android-specific assets or config beyond what Expo scaffolding requires.
 - **Prefer native (Swift) implementations** when they yield better UX or performance than JS: custom views/gestures/scrolling go in local Expo Modules under `apps/mobile/modules/<name>/` (Swift + `expo-module.config.json`, autolinked via prebuild). Don't reach for JS workarounds when a UIKit primitive does it better.
 - **Simulator automation**: use `axe` (`brew install cameroncooke/axe/axe`) for tap/swipe HID injection + `xcrun simctl io <udid> screenshot`; never control the user's mouse (cliclick/AppleScript).
+- **expo-glass-effect gotcha**: `GlassView` latches its effect on the first `layoutSubviews` — never mount it inside a reanimated `entering` animation (animate opacity/translate via `useAnimatedStyle` instead), or the glass renders permanently dead.
+- **UIGlassEffect gotcha (iOS 26, native)**: `isInteractive = true` swallows touches meant for buttons hosted in the effect view's `contentView` — keep it off for tappable glass controls; floating control clusters need `UIGlassContainerEffect` hosting per-element `UIGlassEffect` views to get real refraction and merge behavior.
+- **Presentation anchor gotcha**: a react-native-screens `ScreenStack` used as an imperative presentation anchor must be non-zero-sized (e.g. 1×1 at origin) but must NOT cover the window — a zero-size anchor presents nothing, and a full-bleed anchor makes UIKit stop sampling backdrops, silently blanking every glass surface beneath it.
+- **Debug builds**: never pass `CODE_SIGNING_ALLOWED=NO` to simulator builds — it strips the keychain entitlement and `expo-secure-store` crashes on launch.
 
 ## Project Conventions That Matter
 

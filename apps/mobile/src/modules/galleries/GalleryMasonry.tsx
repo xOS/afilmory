@@ -1,24 +1,33 @@
-import { FlashList } from '@shopify/flash-list'
-import { Image } from 'expo-image'
+import { PhotoMasonryView } from 'photo-masonry'
 import { useMemo } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
-import { thumbHashHexToBase64 } from './thumbhash'
-import type { GalleryPhoto } from './types'
 import { useGalleryManifest } from './useGalleryManifest'
-
-const GAP = 4
 
 export function GalleryMasonry({ slug }: { slug: string }) {
   const { palette } = useTheme()
   const styles = useMemo(() => createStyles(palette), [palette])
-  const { width } = useWindowDimensions()
-  const tileWidth = (width - GAP) / 2 - GAP
   const { error, loading, photos, retry } = useGalleryManifest(slug)
+  const openPhoto = useOpenPhotoViewer(photos)
+  const items = useMemo(
+    () =>
+      photos.map(photo => ({
+        id: photo.id,
+        url: photo.thumbnailUrl,
+        originalUrl: photo.originalUrl,
+        thumbHash: photo.thumbHash,
+        aspectRatio: photo.aspectRatio,
+        width: photo.width,
+        height: photo.height,
+        isLive: photo.isLive,
+      })),
+    [photos],
+  )
 
   if (loading) {
     return (
@@ -49,41 +58,14 @@ export function GalleryMasonry({ slug }: { slug: string }) {
   }
 
   return (
-    <FlashList
-      masonry
-      contentContainerStyle={styles.listContent}
-      contentInsetAdjustmentBehavior="automatic"
-      data={photos}
-      keyExtractor={(item: GalleryPhoto) => item.id}
-      numColumns={2}
-      renderItem={({ item }: { item: GalleryPhoto }) => (
-        <View style={styles.tileWrapper}>
-          <PhotoTile height={Math.round(tileWidth / item.aspectRatio)} photo={item} styles={styles} />
-        </View>
-      )}
-      showsVerticalScrollIndicator={false}
-    />
-  )
-}
-
-function PhotoTile({
-  height,
-  photo,
-  styles,
-}: {
-  height: number
-  photo: GalleryPhoto
-  styles: ReturnType<typeof createStyles>
-}) {
-  const thumbhash = photo.thumbHash ? thumbHashHexToBase64(photo.thumbHash) : null
-  return (
-    <Image
-      contentFit="cover"
-      placeholder={thumbhash ? { thumbhash } : undefined}
-      recyclingKey={photo.id}
-      source={{ uri: photo.thumbnailUrl }}
-      style={[styles.tile, { height }]}
-      transition={150}
+    <PhotoMasonryView
+      chromeVisible={false}
+      defaultColumnCount={2}
+      extraBottomInset={96}
+      gap={4}
+      photos={items}
+      style={styles.masonry}
+      onPhotoPress={openPhoto}
     />
   )
 }
@@ -97,16 +79,7 @@ function createStyles(palette: Palette) {
       justifyContent: 'center',
       paddingHorizontal: 32,
     },
-    listContent: {
-      paddingBottom: 120,
-      paddingHorizontal: GAP / 2,
-      paddingTop: GAP / 2,
-    },
-    tileWrapper: { padding: GAP / 2 },
-    tile: {
-      backgroundColor: palette.bgElement,
-      width: '100%',
-    },
+    masonry: { flex: 1 },
     errorTitle: {
       color: palette.textPrimary,
       fontFamily: font.ui,

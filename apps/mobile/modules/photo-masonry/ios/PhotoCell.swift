@@ -39,6 +39,8 @@ final class PhotoCell: UICollectionViewCell {
   private let imageView = UIImageView()
   private let liveBadge = UIImageView()
 
+  var transitionSourceView: UIView { imageView }
+
   override init(frame: CGRect) {
     super.init(frame: frame)
     contentView.clipsToBounds = true

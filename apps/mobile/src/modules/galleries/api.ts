@@ -11,6 +11,9 @@ export async function fetchFeaturedGalleries(signal?: AbortSignal): Promise<Feat
 
 interface ManifestPhoto {
   id: string
+  title?: string
+  description?: string
+  originalUrl?: string
   thumbnailUrl: string
   thumbHash?: string | null
   width?: number
@@ -57,6 +60,9 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
     .sort((a, b) => (b.dateTaken ?? '').localeCompare(a.dateTaken ?? ''))
     .map(photo => ({
       id: photo.id,
+      title: photo.title ?? '',
+      description: photo.description ?? '',
+      originalUrl: photo.originalUrl || photo.thumbnailUrl,
       thumbnailUrl: photo.thumbnailUrl,
       thumbHash: photo.thumbHash ?? null,
       aspectRatio: photoAspectRatio(photo),

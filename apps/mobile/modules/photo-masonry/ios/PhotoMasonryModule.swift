@@ -3,8 +3,11 @@ import ExpoModulesCore
 struct MasonryPhoto: Record {
   @Field var id: String = ""
   @Field var url: String = ""
+  @Field var originalUrl: String = ""
   @Field var thumbHash: String?
   @Field var aspectRatio: Double = 1
+  @Field var width: Double = 0
+  @Field var height: Double = 0
   @Field var isLive: Bool = false
 }
 
@@ -50,6 +53,10 @@ public class PhotoMasonryModule: Module {
 
       Prop("refreshing") { (view: PhotoMasonryView, refreshing: Bool) in
         view.setRefreshing(refreshing)
+      }
+
+      Prop("chromeVisible") { (view: PhotoMasonryView, visible: Bool) in
+        view.chromeVisible = visible
       }
 
       Prop("chromeDateLabel") { (view: PhotoMasonryView, label: String) in

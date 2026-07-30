@@ -1,6 +1,8 @@
 import { signInPage } from '@/modules/auth/signInPage'
 import { galleriesPage } from '@/modules/galleries/galleriesPage'
 import { galleryDetailPage } from '@/modules/galleries/galleryDetailPage'
+import { photoDetailPage } from '@/modules/photo-viewer/photoDetailPage'
+import { photoInfoPage } from '@/modules/photo-viewer/photoInfoPage'
 import { filterSheetPage } from '@/modules/photos/filterSheetPage'
 import { photosPage } from '@/modules/photos/photosPage'
 import { profileSheetPage } from '@/modules/photos/profileSheetPage'
@@ -10,6 +12,8 @@ export const Pages = {
   filterSheet: filterSheetPage,
   galleries: galleriesPage,
   galleryDetail: galleryDetailPage,
+  photoDetail: photoDetailPage,
+  photoInfo: photoInfoPage,
   photos: photosPage,
   profile: profileSheetPage,
   settings: settingsPage,

@@ -1,11 +1,11 @@
 import type { ColumnCountChangeEvent, VisibleRangeEvent } from 'photo-masonry'
-import { isPhotoMasonryAvailable, PhotoMasonryView } from 'photo-masonry'
+import { PhotoMasonryView } from 'photo-masonry'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { useAuth } from '@/modules/auth/sessionStore'
-import { GalleryMasonry } from '@/modules/galleries/GalleryMasonry'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
+import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { present } from '@/presentation'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
@@ -24,9 +24,6 @@ import { profileSheetPage } from './profileSheetPage'
 const NATIVE_CHROME_HEIGHT = 60
 
 export function OwnGalleryView({ slug }: { slug: string }) {
-  if (!isPhotoMasonryAvailable) {
-    return <GalleryMasonry slug={slug} />
-  }
   return <NativeGallery slug={slug} />
 }
 
@@ -67,8 +64,11 @@ function NativeGallery({ slug }: { slug: string }) {
       filtered.map(photo => ({
         id: photo.id,
         url: photo.thumbnailUrl,
+        originalUrl: photo.originalUrl,
         thumbHash: photo.thumbHash,
         aspectRatio: photo.aspectRatio,
+        width: photo.width,
+        height: photo.height,
         isLive: photo.isLive,
       })),
     [filtered],
@@ -90,6 +90,7 @@ function NativeGallery({ slug }: { slug: string }) {
   }, [dateLabel, filtered, visibleRange])
 
   const filtersActive = hasActiveFilters(filters)
+  const openPhoto = useOpenPhotoViewer(filtered)
   const filterCount = countActiveDimensions(filters)
   const openFilters = useCallback(() => void present(filterSheetPage), [])
   const openProfile = useCallback(() => void present(profileSheetPage), [])
@@ -170,6 +171,7 @@ function NativeGallery({ slug }: { slug: string }) {
     <View style={styles.root}>
       {columnsReady ? (
         <PhotoMasonryView
+          chromeVisible
           chromeDateDetail={filtersActive ? '' : dateDetail}
           chromeDateInteractive={filtersActive}
           chromeDateLabel={chromeDateLabel}
@@ -189,6 +191,7 @@ function NativeGallery({ slug }: { slug: string }) {
           onColumnCountChange={handleColumnCountChange}
           onDatePress={openFilters}
           onFilterPress={openFilters}
+          onPhotoPress={openPhoto}
           onProfilePress={openProfile}
           onRefresh={handleRefresh}
           onVisibleRangeChange={handleVisibleRangeChange}

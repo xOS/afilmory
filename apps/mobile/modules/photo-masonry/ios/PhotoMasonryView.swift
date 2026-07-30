@@ -55,6 +55,10 @@ final class PhotoMasonryView: ExpoView {
 
   var scrollThreshold: CGFloat = 400
 
+  var chromeVisible = false {
+    didSet { updateChromeVisibility() }
+  }
+
   var chromeDateLabel = "" {
     didSet { updateDateButton() }
   }
@@ -116,6 +120,7 @@ final class PhotoMasonryView: ExpoView {
   private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
+  private var isOpeningPhoto = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -198,6 +203,18 @@ final class PhotoMasonryView: ExpoView {
     }
   }
 
+  func transitionSourceView(for photoId: String) -> UIView? {
+    guard let index = photos.firstIndex(where: { $0.id == photoId }) else { return nil }
+    let indexPath = IndexPath(item: index, section: 0)
+    if let cell = collectionView.cellForItem(at: indexPath) as? PhotoCell {
+      return cell.transitionSourceView
+    }
+
+    collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: false)
+    collectionView.layoutIfNeeded()
+    return (collectionView.cellForItem(at: indexPath) as? PhotoCell)?.transitionSourceView
+  }
+
   private func configureChrome() {
     dateButton.addTarget(self, action: #selector(handleDatePress), for: .touchUpInside)
     dateButton.accessibilityIdentifier = "photo-masonry-date"
@@ -258,6 +275,7 @@ final class PhotoMasonryView: ExpoView {
     updateDateInteraction()
     updateProfile()
     updateFilterButton()
+    updateChromeVisibility()
   }
 
   private func glassHost(for glass: UIVisualEffectView) -> UIView {
@@ -341,7 +359,7 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func updateDateVisibility(animated: Bool) {
-    let shouldShow = chromeDateVisible && !chromeDateLabel.isEmpty
+    let shouldShow = chromeVisible && chromeDateVisible && !chromeDateLabel.isEmpty
     let changes = {
       self.dateButton.alpha = shouldShow ? 1 : 0
       self.dateButton.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: -6)
@@ -398,9 +416,21 @@ final class PhotoMasonryView: ExpoView {
 
     let count = max(filterCount, 0)
     filterBadge.text = String(count)
-    filterBadge.isHidden = !filterActive || count == 0
+    filterBadge.isHidden = !chromeVisible || !filterActive || count == 0
     filterButton.accessibilityLabel = filterActive ? "Filters, \(count) active" : "Filters"
     filterButton.accessibilityTraits = filterActive ? [.button, .selected] : .button
+  }
+
+  private func updateChromeVisibility() {
+    controlCluster.isHidden = !chromeVisible
+    profileButton.isHidden = !chromeVisible
+    filterButton.isHidden = !chromeVisible
+    if !chromeVisible {
+      filterBadge.isHidden = true
+    } else {
+      updateFilterButton()
+    }
+    updateDateVisibility(animated: window != nil)
   }
 
   private func layoutChrome() {
@@ -612,15 +642,22 @@ extension PhotoMasonryView: UICollectionViewDataSource {
 
 extension PhotoMasonryView: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-    guard photos.indices.contains(indexPath.item) else { return }
+    guard !isOpeningPhoto, photos.indices.contains(indexPath.item) else { return }
+    isOpeningPhoto = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+      self?.isOpeningPhoto = false
+    }
+
     let photo = photos[indexPath.item]
     var frame = CGRect.zero
     if let attributes = collectionView.layoutAttributesForItem(at: indexPath) {
-      frame = collectionView.convert(attributes.frame, to: self)
+      frame = collectionView.convert(attributes.frame, to: nil)
     }
+    let transitionId = PhotoTransitionRegistry.shared.register(source: self, photoId: photo.id)
     onPhotoPress([
       "id": photo.id,
       "index": indexPath.item,
+      "transitionId": transitionId,
       "frame": [
         "x": frame.origin.x,
         "y": frame.origin.y,

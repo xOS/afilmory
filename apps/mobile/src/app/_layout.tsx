@@ -1,4 +1,4 @@
-import { DarkTheme, Slot, ThemeProvider } from 'expo-router'
+import { DarkTheme, Stack, ThemeProvider } from 'expo-router'
 import { useEffect, useMemo } from 'react'
 import { LogBox, StyleSheet } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -35,7 +35,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
       <SafeAreaProvider>
         <ThemeProvider value={navigationTheme}>
-          <Slot />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="photo/[photoId]" options={{ contentStyle: styles.photoScreen, gestureEnabled: true }} />
+          </Stack>
           <PresentationHost />
         </ThemeProvider>
       </SafeAreaProvider>
@@ -45,4 +49,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  photoScreen: { backgroundColor: '#000' },
 })

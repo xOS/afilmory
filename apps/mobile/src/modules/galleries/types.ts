@@ -25,6 +25,9 @@ export interface GalleryCoverPhoto {
 
 export interface GalleryPhoto {
   id: string
+  title: string
+  description: string
+  originalUrl: string
   thumbnailUrl: string
   thumbHash: string | null
   aspectRatio: number

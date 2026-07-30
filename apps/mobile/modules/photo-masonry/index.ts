@@ -1,20 +1,27 @@
 import { requireNativeView } from 'expo'
-import type { ComponentType } from 'react'
 import type { ViewProps } from 'react-native'
-import { Platform } from 'react-native'
 
 export interface PhotoMasonryItem {
   id: string
   url: string
+  originalUrl: string
   thumbHash: string | null
   aspectRatio: number
+  width: number
+  height: number
   isLive: boolean
 }
 
 export interface PhotoPressEvent {
   id: string
   index: number
+  transitionId: string
   frame: { x: number, y: number, width: number, height: number }
+}
+
+export interface PhotoViewerIndexChangeEvent {
+  id: string
+  index: number
 }
 
 export interface VisibleRangeEvent {
@@ -38,6 +45,7 @@ export interface PhotoMasonryViewProps extends ViewProps {
   extraBottomInset?: number
   scrollThreshold?: number
   refreshing?: boolean
+  chromeVisible?: boolean
   chromeDateLabel?: string
   chromeDateDetail?: string
   chromeDateVisible?: boolean
@@ -56,10 +64,13 @@ export interface PhotoMasonryViewProps extends ViewProps {
   onFilterPress?: () => void
 }
 
-export const isPhotoMasonryAvailable = Platform.OS === 'ios'
+export interface PhotoViewerViewProps extends ViewProps {
+  photos: PhotoMasonryItem[]
+  initialIndex: number
+  transitionId: string
+  onIndexChange?: (event: { nativeEvent: PhotoViewerIndexChangeEvent }) => void
+}
 
-const PhotoMasonryUnavailable: ComponentType<PhotoMasonryViewProps> = () => null
+export const PhotoMasonryView = requireNativeView<PhotoMasonryViewProps>('PhotoMasonry')
 
-export const PhotoMasonryView: ComponentType<PhotoMasonryViewProps> = isPhotoMasonryAvailable
-  ? requireNativeView<PhotoMasonryViewProps>('PhotoMasonry')
-  : PhotoMasonryUnavailable
+export const PhotoViewerView = requireNativeView<PhotoViewerViewProps>('PhotoViewer')
