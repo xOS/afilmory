@@ -21,12 +21,14 @@ import { font } from '@/theme/tokens'
 
 import type { PhotoDetailRouteParams } from './photoDetailPage'
 import { buildPhotoInfoSheetModel } from './photoInfoModel'
+import { PhotoReactionRail } from './PhotoReactionRail'
 import { getPhotoViewerSession, releasePhotoViewerSession } from './sessionStore'
 
-type GlassButtonSymbol = 'bubble.left' | 'info.circle' | 'square.and.arrow.up' | 'xmark'
+type GlassButtonSymbol = 'bubble.left' | 'face.smiling' | 'info.circle' | 'square.and.arrow.up' | 'xmark'
 
 const GLASS_BUTTON_ICON_SIZES: Record<GlassButtonSymbol, number> = {
   'bubble.left': 25,
+  'face.smiling': 25,
   'info.circle': 26,
   'square.and.arrow.up': 30,
   'xmark': 23,
@@ -43,6 +45,7 @@ export function PhotoDetailScreen() {
   const [currentIndex, setCurrentIndex] = useState(session?.initialIndex ?? 0)
   const [viewportWidth, setViewportWidth] = useState(0)
   const [infoInspectorVisible, setInfoInspectorVisible] = useState(false)
+  const [reactionRailVisible, setReactionRailVisible] = useState(false)
   const shareButtonRef = useRef<View>(null)
   const inspectorProgress = useSharedValue(0)
   const nativeGlassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
@@ -88,24 +91,32 @@ export function PhotoDetailScreen() {
   const inspectorSurfaceStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: INSPECTOR_WIDTH * (1 - inspectorProgress.get()) }],
   }))
-  const handleIndexChange = useCallback((event: { nativeEvent: PhotoViewerIndexChangeEvent }) => {
-    setCurrentIndex(event.nativeEvent.index)
-  }, [])
+  const closeReactionRail = useCallback(() => setReactionRailVisible(false), [])
+  const toggleReactionRail = useCallback(() => setReactionRailVisible(visible => !visible), [])
+  const handleIndexChange = useCallback(
+    (event: { nativeEvent: PhotoViewerIndexChangeEvent }) => {
+      closeReactionRail()
+      setCurrentIndex(event.nativeEvent.index)
+    },
+    [closeReactionRail],
+  )
   const openInfo = useCallback(() => {
     if (!photoInfo) {
       return
     }
+    closeReactionRail()
     if (canShowInfoInspector) {
       setInfoInspectorVisible(visible => !visible)
     }
     else {
       void presentNativePhotoInfo(photoInfo)
     }
-  }, [canShowInfoInspector, photoInfo])
+  }, [canShowInfoInspector, closeReactionRail, photoInfo])
   const sharePhoto = useCallback(() => {
     if (!currentPhoto) {
       return
     }
+    closeReactionRail()
     const anchor = findNodeHandle(shareButtonRef.current)
     void Share.share(
       {
@@ -114,17 +125,18 @@ export function PhotoDetailScreen() {
       },
       anchor === null ? undefined : { anchor },
     )
-  }, [currentPhoto])
+  }, [closeReactionRail, currentPhoto])
   const openComments = useCallback(() => {
     if (!currentPhoto || !session?.gallerySlug) {
       return
     }
+    closeReactionRail()
     void present(photoCommentsPage, {
       gallerySlug: session.gallerySlug,
       photoId: currentPhoto.id,
       photoTitle: currentPhoto.title,
     }).then(() => refreshCommentCount())
-  }, [currentPhoto, present, refreshCommentCount, session?.gallerySlug])
+  }, [closeReactionRail, currentPhoto, present, refreshCommentCount, session?.gallerySlug])
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width
@@ -199,15 +211,27 @@ export function PhotoDetailScreen() {
                   onPress={openInfo}
                 />
                 {session.gallerySlug ? (
-                  <ChromeButton
-                    accessibilityLabel={
-                      commentCount && commentCount > 0 ? `${t('photo.comments')}, ${commentCount}` : t('photo.comments')
-                    }
-                    badge={commentCount}
-                    nativeGlassAvailable={nativeGlassAvailable}
-                    symbol="bubble.left"
-                    onPress={openComments}
-                  />
+                  <>
+                    <ChromeButton
+                      accessibilityLabel={
+                        commentCount && commentCount > 0
+                          ? `${t('photo.comments')}, ${commentCount}`
+                          : t('photo.comments')
+                      }
+                      badge={commentCount}
+                      nativeGlassAvailable={nativeGlassAvailable}
+                      symbol="bubble.left"
+                      onPress={openComments}
+                    />
+                    <ChromeButton
+                      active={reactionRailVisible}
+                      accessibilityLabel={t('photo.reaction.open')}
+                      expanded={reactionRailVisible}
+                      nativeGlassAvailable={nativeGlassAvailable}
+                      symbol="face.smiling"
+                      onPress={toggleReactionRail}
+                    />
+                  </>
                 ) : null}
                 <ChromeButton
                   ref={shareButtonRef}
@@ -218,6 +242,16 @@ export function PhotoDetailScreen() {
                 />
               </ChromeButtonCluster>
             </View>
+            {session.gallerySlug ? (
+              <PhotoReactionRail
+                key={`${session.gallerySlug}:${currentPhoto.id}`}
+                gallerySlug={session.gallerySlug}
+                nativeGlassAvailable={nativeGlassAvailable}
+                photoId={currentPhoto.id}
+                visible={reactionRailVisible}
+                onReactionSelected={closeReactionRail}
+              />
+            ) : null}
           </SafeAreaView>
 
           <SafeAreaView edges={['bottom']} pointerEvents="none" style={styles.bottomChrome}>
@@ -257,13 +291,14 @@ interface ChromeButtonProps {
   active?: boolean
   accessibilityLabel: string
   badge?: number | null
+  expanded?: boolean
   nativeGlassAvailable: boolean
   onPress: () => void
   symbol: GlassButtonSymbol
 }
 
 const ChromeButton = forwardRef<View, ChromeButtonProps>(
-  ({ active = false, accessibilityLabel, badge, nativeGlassAvailable, onPress, symbol }, ref) => {
+  ({ active = false, accessibilityLabel, badge, expanded, nativeGlassAvailable, onPress, symbol }, ref) => {
     const content = (
       <View style={styles.chromeButtonIcon}>
         <SymbolView
@@ -288,6 +323,7 @@ const ChromeButton = forwardRef<View, ChromeButtonProps>(
             ref={ref}
             accessibilityLabel={accessibilityLabel}
             accessibilityRole="button"
+            accessibilityState={expanded === undefined ? undefined : { expanded }}
             hitSlop={8}
             style={({ pressed }) => [styles.chromeButtonContent, pressed && styles.glassContentPressed]}
             onPress={onPress}
@@ -303,6 +339,7 @@ const ChromeButton = forwardRef<View, ChromeButtonProps>(
         ref={ref}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
+        accessibilityState={expanded === undefined ? undefined : { expanded }}
         hitSlop={8}
         style={({ pressed }) => [
           styles.chromeButtonSurface,
