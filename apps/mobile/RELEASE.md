@@ -42,8 +42,9 @@ Trigger: push a `mobile-v*` tag, or run manually via workflow_dispatch.
 
 ## Per release
 
-1. Bump `expo.version` in `app.json` (build number is set by CI from the run number —
-   `ios.buildNumber` in `app.json` is only a local fallback).
+1. Bump `expo.version` in `app.json` (build number: CI seeds it from the run number,
+   then Xcode auto-bumps past any build already on ASC via
+   `manageAppVersionAndBuildNumber` — collisions with manual Xcode uploads are fine).
 2. Tag and push:
 
    ```bash

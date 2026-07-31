@@ -106,7 +106,7 @@ jobs:
             <dict>
               <key>app.afilmory</key><string>$PROFILE_NAME</string>
             </dict>
-            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>manageAppVersionAndBuildNumber</key><true/>
           </dict>
           </plist>
           EOF
