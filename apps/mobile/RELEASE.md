@@ -22,6 +22,28 @@ Trigger: push a `mobile-v*` tag, or run manually via workflow_dispatch.
    role **App Manager**. Note the Key ID and Issuer ID, download the `.p8`
    (downloadable only once).
 
+### One-time sponsorship purchase
+
+The mobile profile sheet loads this product from StoreKit and always displays
+the App Store's localized price. Configure the product before testing or
+submitting a build:
+
+| Field | Value |
+| --- | --- |
+| Type | Consumable |
+| Reference name | Afilmory Sponsor |
+| Product ID | `app.afilmory.sponsor` |
+| US price | USD 2.99 |
+
+1. Complete the Paid Apps Agreement, banking, and tax setup in App Store
+   Connect.
+2. Under **Afilmory → Monetization → In-App Purchases**, create the consumable
+   product above and add its required localization and review screenshot.
+3. Test the purchase with a Sandbox Apple Account on a development or TestFlight
+   build. Expo Go cannot load StoreKit purchases.
+4. Submit the first in-app purchase together with the app version that exposes
+   it, and describe the profile-sheet sponsorship path in App Review notes.
+
 ### GitHub secrets (repo → Settings → Secrets → Actions)
 
 | Secret | Value |

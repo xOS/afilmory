@@ -1,9 +1,11 @@
 import { FlashList } from '@shopify/flash-list'
 import { useRouter } from 'expo-router'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import type { LayoutChangeEvent } from 'react-native'
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
 import { useTranslation } from '@/i18n'
+import { getExploreGridMetrics } from '@/modules/shell/adaptiveLayout'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -18,6 +20,23 @@ export function GalleriesScreen() {
   const styles = useMemo(() => createStyles(palette), [palette])
   const { error, galleries, loading, refresh, refreshing, retry } = useFeaturedGalleries()
   const router = useRouter()
+  const [contentWidth, setContentWidth] = useState(0)
+  const gridMetrics = useMemo(() => getExploreGridMetrics(contentWidth), [contentWidth])
+  const gridStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        cardWrapper: {
+          paddingBottom: gridMetrics.gap,
+          paddingHorizontal: gridMetrics.gap / 2,
+        },
+        listContent: {
+          paddingBottom: 120,
+          paddingHorizontal: Math.max(0, gridMetrics.horizontalPadding - gridMetrics.gap / 2),
+          paddingTop: 12,
+        },
+      }),
+    [gridMetrics],
+  )
   const openGallery = useCallback(
     (gallery: FeaturedGallery) => {
       router.push({
@@ -27,9 +46,21 @@ export function GalleriesScreen() {
     },
     [router],
   )
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = event.nativeEvent.layout.width
+    setContentWidth(current => (current === nextWidth ? current : nextWidth))
+  }, [])
+  const renderGallery = useCallback(
+    ({ item }: { item: FeaturedGallery }) => (
+      <View style={gridStyles.cardWrapper}>
+        <GalleryCard gallery={item} onPress={openGallery} />
+      </View>
+    ),
+    [gridStyles.cardWrapper, openGallery],
+  )
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={handleLayout}>
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={palette.textSecondary} />
@@ -52,18 +83,16 @@ export function GalleriesScreen() {
         </View>
       ) : (
         <FlashList
-          contentContainerStyle={styles.listContent}
+          key={`gallery-grid-${gridMetrics.columns}`}
+          contentContainerStyle={gridStyles.listContent}
           contentInsetAdjustmentBehavior="automatic"
           data={galleries}
+          numColumns={gridMetrics.columns}
           keyExtractor={(item: FeaturedGallery) => item.id}
           refreshControl={
             <RefreshControl refreshing={refreshing} tintColor={palette.textSecondary} onRefresh={refresh} />
           }
-          renderItem={({ item }: { item: FeaturedGallery }) => (
-            <View style={styles.cardWrapper}>
-              <GalleryCard gallery={item} onPress={openGallery} />
-            </View>
-          )}
+          renderItem={renderGallery}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -81,12 +110,6 @@ function createStyles(palette: Palette) {
       justifyContent: 'center',
       paddingHorizontal: 32,
     },
-    listContent: {
-      paddingBottom: 120,
-      paddingHorizontal: 16,
-      paddingTop: 12,
-    },
-    cardWrapper: { paddingBottom: 14 },
     errorTitle: {
       color: palette.textPrimary,
       fontFamily: font.ui,

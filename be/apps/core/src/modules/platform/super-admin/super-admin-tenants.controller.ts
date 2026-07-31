@@ -1,6 +1,6 @@
 import { photoAssets } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
-import { Roles } from '@core/guards/roles.decorator'
+import { PlatformRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
 import { BillingPlanService } from '@core/modules/platform/billing/billing-plan.service'
@@ -22,7 +22,7 @@ import {
 } from './super-admin.dto'
 
 @Controller('super-admin/tenants')
-@Roles('superadmin')
+@PlatformRoles('superadmin')
 @BypassResponseTransform()
 export class SuperAdminTenantController {
   constructor(

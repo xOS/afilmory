@@ -127,8 +127,8 @@ const zhCnUiSchema = {
           },
           'site-accent-color': {
             title: '品牌主题色',
-            description: '用于按钮、强调文本等高亮元素，支持 HEX 格式。',
-            helper: '示例：#007bff',
+            description: '用于按钮、链接及其他高亮控件。',
+            helper: '保存为不包含透明度的十六进制颜色。',
           },
         },
       },
@@ -178,8 +178,8 @@ const zhCnUiSchema = {
         fields: {
           providers: {
             title: '地图提供商列表',
-            description: '使用 JSON 数组表示优先级列表，例如 ["maplibre"]。',
-            helper: '留空则禁用地图功能。',
+            description: '选择地图组件可以使用的渲染引擎。',
+            helper: '关闭全部提供商即可禁用地图功能。',
           },
           style: {
             title: '地图样式',
@@ -189,7 +189,7 @@ const zhCnUiSchema = {
           projection: {
             title: '地图投影',
             description: '选择地图渲染的投影方式。',
-            helper: '默认为 mercator，可根据需求切换为 globe。',
+            helper: 'Mercator 使用平面投影，Globe 以球体形式展示世界。',
             placeholder: '选择投影方式',
           },
         },

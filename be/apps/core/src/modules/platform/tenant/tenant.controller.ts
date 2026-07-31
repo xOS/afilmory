@@ -2,7 +2,7 @@ import { isTenantSlugReserved } from '@afilmory/utils'
 import { AllowPlaceholderTenant } from '@core/decorators/allow-placeholder.decorator'
 import { SkipTenantGuard } from '@core/decorators/skip-tenant.decorator'
 import { BizException, ErrorCode } from '@core/errors'
-import { Roles } from '@core/guards/roles.decorator'
+import { TenantRoles } from '@core/guards/roles.decorator'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
 import { Body, Controller, createZodSchemaDto, Delete, Get, Param, Post } from '@tsuki-hono/common'
 import { z } from 'zod'
@@ -106,28 +106,28 @@ export class TenantController {
   }
 
   @Get('/domains')
-  @Roles('admin')
+  @TenantRoles('admin')
   async listDomains() {
     const domains = await this.tenantDomainService.listDomainsForTenant()
     return { domains }
   }
 
   @Post('/domains')
-  @Roles('admin')
+  @TenantRoles('admin')
   async requestDomain(@Body() body: RequestTenantDomainDto) {
     const aggregate = await this.tenantDomainService.requestDomain(body.domain)
     return { domain: aggregate.domain }
   }
 
   @Post('/domains/:domainId/verify')
-  @Roles('admin')
+  @TenantRoles('admin')
   async verifyDomain(@Param('domainId') domainId: string) {
     const aggregate = await this.tenantDomainService.verifyDomain(domainId)
     return { domain: aggregate.domain }
   }
 
   @Delete('/domains/:domainId')
-  @Roles('admin')
+  @TenantRoles('admin')
   async deleteDomain(@Param('domainId') domainId: string) {
     await this.tenantDomainService.deleteDomain(domainId)
     return { deleted: true }

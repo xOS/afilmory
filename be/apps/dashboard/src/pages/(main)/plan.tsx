@@ -78,11 +78,11 @@ export function Component() {
   const { t } = useTranslation()
   const planQuery = useTenantPlanQuery()
   const queryClient = useQueryClient()
-  const session = (queryClient.getQueryData<SessionResponse | null>(AUTH_SESSION_QUERY_KEY) ??
-    null) as SessionResponse | null
+  const session = (queryClient.getQueryData<SessionResponse | null>(AUTH_SESSION_QUERY_KEY)
+    ?? null) as SessionResponse | null
 
-  const tenantId = session?.tenant?.id ?? null
-  const tenantSlug = session?.tenant?.slug ?? null
+  const tenantId = session?.requestedWorkspace?.id ?? null
+  const tenantSlug = session?.requestedWorkspace?.slug ?? null
   const creemCustomerId = session?.user?.creemCustomerId ?? null
 
   const plan = planQuery.data?.plan ?? null
@@ -105,7 +105,8 @@ export function Component() {
       <div className="space-y-6">
         {planQuery.isError && (
           <div className="text-red text-sm">
-            {t(planI18nKeys.errorLoadPrefix)}{' '}
+            {t(planI18nKeys.errorLoadPrefix)}
+            {' '}
             {planQuery.error instanceof Error ? planQuery.error.message : t(planI18nKeys.errorUnknown)}
           </div>
         )}
@@ -141,7 +142,7 @@ function PlanList({
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {plans.map((plan) => (
+      {plans.map(plan => (
         <PlanCard
           key={plan.planId}
           plan={plan}
@@ -219,9 +220,11 @@ function PlanCard({
         return
       }
       toast.error(t(planI18nKeys.toastMissingCheckoutUrl))
-    } catch (error) {
+    }
+    catch (error) {
       toast.error(error instanceof Error ? error.message : t(planI18nKeys.toastCheckoutFailure))
-    } finally {
+    }
+    finally {
       setCheckoutLoading(false)
     }
   }
@@ -243,9 +246,11 @@ function PlanCard({
         return
       }
       toast.error(t(planI18nKeys.toastMissingPortalUrl))
-    } catch (error) {
+    }
+    catch (error) {
       toast.error(error instanceof Error ? error.message : t(planI18nKeys.toastPortalFailure))
-    } finally {
+    }
+    finally {
       setPortalLoading(false)
     }
   }

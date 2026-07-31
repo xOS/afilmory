@@ -7,7 +7,7 @@ import { DbAccessor } from '@core/database/database.provider'
 import { AllowPlaceholderTenant } from '@core/decorators/allow-placeholder.decorator'
 import { SkipTenantGuard } from '@core/decorators/skip-tenant.decorator'
 import { BizException, ErrorCode } from '@core/errors'
-import { RoleBit, Roles } from '@core/guards/roles.decorator'
+import { PlatformRoles, RequireAuth, TenantRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
 import { Body, ContextParam, Controller, createLogger, Get, HttpContext, Post } from '@tsuki-hono/common'
@@ -16,15 +16,15 @@ import { eq } from 'drizzle-orm'
 import type { Context } from 'hono'
 
 import { getTenantContext, isPlaceholderTenantContext } from '../tenant/tenant.context'
-import { TenantService } from '../tenant/tenant.service'
 import type { TenantRecord } from '../tenant/tenant.types'
 import type { SocialProvidersConfig } from './auth.config'
 import { AuthProvider, MOBILE_AUTH_BROKER_SLUG } from './auth.provider'
 import { AuthRegistrationService } from './auth-registration.service'
+import { WorkspaceMembershipService } from './workspace-membership.service'
 
 const logger = createLogger('AuthController')
 
-const SOCIAL_PROVIDER_METADATA: Record<string, { name: string, icon: string }> = {
+const SOCIAL_PROVIDER_METADATA: Record<string, { name: string; icon: string }> = {
   google: {
     name: 'Google',
     icon: 'i-logos-google-icon',
@@ -38,14 +38,14 @@ const SOCIAL_PROVIDER_METADATA: Record<string, { name: string, icon: string }> =
 const PROVIDER_ID_SEPARATOR_PATTERN = /[-_]/g
 const PROVIDER_ID_WORD_START_PATTERN = /\b\w/g
 
-function resolveSocialProviderMetadata(id: string): { name: string, icon: string } {
+function resolveSocialProviderMetadata(id: string): { name: string; icon: string } {
   const metadata = SOCIAL_PROVIDER_METADATA[id]
   if (metadata) {
     return metadata
   }
   const formattedId = id
     .replaceAll(PROVIDER_ID_SEPARATOR_PATTERN, ' ')
-    .replaceAll(PROVIDER_ID_WORD_START_PATTERN, match => match.toUpperCase())
+    .replaceAll(PROVIDER_ID_WORD_START_PATTERN, (match) => match.toUpperCase())
   return {
     name: formattedId.trim() || id,
     icon: 'i-mingcute-earth-2-line',
@@ -76,7 +76,7 @@ type TenantSignUpRequest = {
     name?: string
     slug?: string | null
   }
-  settings?: Array<{ key?: string, value?: unknown }>
+  settings?: Array<{ key?: string; value?: unknown }>
   useSessionAccount?: boolean
 }
 
@@ -119,7 +119,7 @@ export class AuthController {
     private readonly dbAccessor: DbAccessor,
     private readonly systemSettings: SystemSettingService,
     private readonly registration: AuthRegistrationService,
-    private readonly tenantService: TenantService,
+    private readonly memberships: WorkspaceMembershipService,
   ) {}
 
   private readonly gatewayStateSecret = env.AUTH_GATEWAY_STATE_SECRET ?? env.CONFIG_ENCRYPTION_KEY
@@ -128,46 +128,79 @@ export class AuthController {
   @Get('/session')
   @SkipTenantGuard()
   async getSession(@ContextParam() _context: Context) {
-    let tenantContext = getTenantContext()
+    const tenantContext = getTenantContext()
     const authContext = HttpContext.getValue('auth')
 
     if (!authContext?.user || !authContext.session) {
       return null
     }
 
-    if (!tenantContext || isPlaceholderTenantContext(tenantContext)) {
-      const { tenantId } = authContext.user as { tenantId?: string | null }
-      if (tenantId) {
-        try {
-          const aggregate = await this.tenantService.getById(tenantId, { allowPending: true })
-          const isPlaceholder = aggregate.tenant.status !== 'active'
-          const existingRequestedSlug = tenantContext?.requestedSlug ?? null
-          const derivedRequestedSlug = existingRequestedSlug ?? aggregate.tenant.slug ?? null
-          tenantContext = {
-            tenant: aggregate.tenant,
-            isPlaceholder,
-            requestedSlug: derivedRequestedSlug,
-          }
-        }
-        catch {
-          // ignore; fallback to placeholder context if resolution fails
-        }
-      }
-    }
-
-    if (!tenantContext) {
-      return null
-    }
+    const membershipRecords = await this.memberships.listForUser(authContext.user.id)
+    const activeTenantId = (authContext.session as { activeTenantId?: string | null }).activeTenantId ?? null
+    const activeMembership = membershipRecords.find(
+      ({ status, workspace }) => status === 'active' && workspace.id === activeTenantId,
+    )
+    const requestedMembership = tenantContext
+      ? (membershipRecords.find(({ workspace }) => workspace.id === tenantContext.tenant.id) ?? null)
+      : null
 
     return {
       user: authContext.user,
       session: authContext.session,
-      tenant: {
-        isPlaceholder: tenantContext.isPlaceholder,
-        requestedSlug: tenantContext.requestedSlug,
-        ...tenantContext.tenant,
-      },
+      activeWorkspace: activeMembership?.workspace ?? null,
+      requestedWorkspace: tenantContext
+        ? {
+            isPlaceholder: tenantContext.isPlaceholder,
+            requestedSlug: tenantContext.requestedSlug,
+            ...tenantContext.tenant,
+          }
+        : null,
+      requestedMembership: requestedMembership
+        ? {
+            id: requestedMembership.id,
+            role: requestedMembership.role,
+            status: requestedMembership.status,
+          }
+        : null,
+      memberships: membershipRecords,
     }
+  }
+
+  @AllowPlaceholderTenant()
+  @Get('/workspaces')
+  @RequireAuth()
+  @SkipTenantGuard()
+  async listWorkspaces() {
+    const authContext = HttpContext.getValue('auth')
+    if (!authContext?.user) {
+      throw new BizException(ErrorCode.AUTH_UNAUTHORIZED)
+    }
+
+    return { memberships: await this.memberships.listActiveForUser(authContext.user.id) }
+  }
+
+  @AllowPlaceholderTenant()
+  @Post('/workspaces/switch')
+  @RequireAuth()
+  @SkipTenantGuard()
+  async switchWorkspace(@Body() body: { tenantId?: string }) {
+    const tenantId = body?.tenantId?.trim()
+    if (!tenantId) {
+      throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: 'A workspace ID is required.' })
+    }
+
+    const authContext = HttpContext.getValue('auth')
+    if (!authContext?.user || !authContext.session) {
+      throw new BizException(ErrorCode.AUTH_UNAUTHORIZED)
+    }
+
+    const membership = await this.memberships.switchActiveWorkspace({
+      sessionId: authContext.session.id,
+      userId: authContext.user.id,
+      tenantId,
+    })
+
+    return { activeWorkspace: membership.workspace, membership }
   }
 
   @AllowPlaceholderTenant()
@@ -188,8 +221,10 @@ export class AuthController {
     return { providers: buildProviderResponse(socialProviders) }
   }
 
+  @AllowPlaceholderTenant()
   @Get('/social/accounts')
-  @Roles(RoleBit.ADMIN)
+  @RequireAuth()
+  @SkipTenantGuard()
   async getSocialAccounts(@ContextParam() context: Context) {
     const auth = await this.auth.getAuth()
     const { headers } = context.req.raw
@@ -198,20 +233,24 @@ export class AuthController {
     const enabledProviders = new Set(Object.keys(socialProviders))
     return {
       accounts: accounts
-        .filter(account => account.providerId !== 'credential' && enabledProviders.has(account.providerId))
-        .map(account => this.serializeSocialAccount(account)),
+        .filter((account) => account.providerId !== 'credential' && enabledProviders.has(account.providerId))
+        .map((account) => this.serializeSocialAccount(account)),
     }
   }
 
+  @AllowPlaceholderTenant()
   @Post('/social/link')
-  @Roles(RoleBit.ADMIN)
+  @RequireAuth()
+  @SkipTenantGuard()
   async linkSocialAccount(@ContextParam() context: Context, @Body() body: LinkSocialAccountRequest) {
     return await this.handleLinkSocialAccount(context, body)
   }
 
   // Compatibility for Better Auth client default path
+  @AllowPlaceholderTenant()
   @Post('/link-social')
-  @Roles(RoleBit.ADMIN)
+  @RequireAuth()
+  @SkipTenantGuard()
   async linkSocialAccountCompat(@ContextParam() context: Context, @Body() body: LinkSocialAccountRequest) {
     return await this.handleLinkSocialAccount(context, body)
   }
@@ -253,8 +292,10 @@ export class AuthController {
     return await this.rewriteOAuthState(response, tenantSlug)
   }
 
+  @AllowPlaceholderTenant()
   @Post('/social/unlink')
-  @Roles(RoleBit.ADMIN)
+  @RequireAuth()
+  @SkipTenantGuard()
   async unlinkSocialAccount(@ContextParam() context: Context, @Body() body: UnlinkSocialAccountRequest) {
     const providerId = body?.providerId?.trim()
     if (!providerId) {
@@ -267,9 +308,9 @@ export class AuthController {
     const enabledProviders = new Set(Object.keys(socialProviders))
     const allAccounts = await auth.api.listUserAccounts({ headers })
     const linkedProviderAccounts = allAccounts.filter(
-      account => account.providerId !== 'credential' && enabledProviders.has(account.providerId),
+      (account) => account.providerId !== 'credential' && enabledProviders.has(account.providerId),
     )
-    const hasTargetAccount = linkedProviderAccounts.some(account => account.providerId === providerId)
+    const hasTargetAccount = linkedProviderAccounts.some((account) => account.providerId === providerId)
     if (hasTargetAccount && linkedProviderAccounts.length <= 1) {
       throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '至少需要保留一个已绑定的 OAuth Provider' })
     }
@@ -288,21 +329,22 @@ export class AuthController {
   }
 
   @Get('/permissions/dashboard')
-  @Roles(RoleBit.ADMIN)
+  @TenantRoles('admin')
   checkDashboardPermission() {
     return { allowed: true }
   }
 
   @Get('/permissions/superadmin')
-  @Roles(RoleBit.SUPERADMIN)
+  @PlatformRoles('superadmin')
   checkSuperAdminPermission() {
     return { allowed: true }
   }
 
   @AllowPlaceholderTenant()
+  @SkipTenantGuard()
   @Post('/sign-in/email')
-  async signInEmail(@ContextParam() context: Context, @Body() body: { email: string, password: string }) {
-    const email = body.email.trim()
+  async signInEmail(@ContextParam() context: Context, @Body() body: { email: string; password: string }) {
+    const email = body.email.trim().toLowerCase()
     if (email.length === 0) {
       throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '邮箱不能为空' })
     }
@@ -369,10 +411,8 @@ export class AuthController {
       tenantSlug = MOBILE_AUTH_BROKER_SLUG
     }
 
-    // Only allow auto sign-up on real tenants (not placeholder)
-    // On placeholder tenant, users must explicitly register first
-    const isRealTenant = tenantContext && !isPlaceholderTenantContext(tenantContext)
-    const shouldAllowSignUp = body.requestSignUp ?? isRealTenant
+    // Identity registration is global and does not create a workspace membership.
+    const shouldAllowSignUp = body.requestSignUp ?? true
 
     const auth = await this.auth.getAuth()
     const response = await auth.api.signInSocial({
@@ -429,7 +469,7 @@ export class AuthController {
             }
           : undefined,
         settings: body.settings?.filter(
-          (s): s is { key: string, value: unknown } => typeof s.key === 'string' && s.key.length > 0,
+          (s): s is { key: string; value: unknown } => typeof s.key === 'string' && s.key.length > 0,
         ),
         useSessionAccount,
       },
@@ -444,7 +484,7 @@ export class AuthController {
   }
 
   @Get('/admin-only')
-  @Roles(RoleBit.ADMIN)
+  @TenantRoles('admin')
   async adminOnly(@ContextParam() _context: Context) {
     return { ok: true }
   }
@@ -524,8 +564,7 @@ export class AuthController {
         throw new BizException(ErrorCode.COMMON_BAD_REQUEST, { message: '回调地址必须使用 http 或 https 协议' })
       }
       return parsed.toString()
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof BizException) {
         throw error
       }
@@ -572,8 +611,7 @@ export class AuthController {
       if (buffer.byteLength > 0) {
         text = new TextDecoder().decode(buffer)
       }
-    }
-    catch {
+    } catch {
       text = null
     }
 
@@ -581,8 +619,7 @@ export class AuthController {
       try {
         payload = JSON.parse(text)
         isJson = true
-      }
-      catch {
+      } catch {
         payload = text
       }
     }
@@ -593,8 +630,8 @@ export class AuthController {
       name: tenant.name,
     }
 
-    const responseBody
-      = isJson && payload && typeof payload === 'object' && !Array.isArray(payload)
+    const responseBody =
+      isJson && payload && typeof payload === 'object' && !Array.isArray(payload)
         ? {
             ...(payload as Record<string, unknown>),
             tenant: tenantPayload,
@@ -650,8 +687,7 @@ export class AuthController {
       let payload: unknown
       try {
         payload = await clone.json()
-      }
-      catch {
+      } catch {
         payload = null
       }
 
@@ -700,8 +736,7 @@ export class AuthController {
       })
       parsed.searchParams.set('state', wrapped)
       return parsed.toString()
-    }
-    catch (error) {
+    } catch (error) {
       logger.error(`[AuthController] Failed to wrap OAuth gateway state for url=${url}`, error)
       return url
     }

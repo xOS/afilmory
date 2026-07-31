@@ -1,4 +1,12 @@
-import { authAccounts, authUsers, commentReactions, comments, photoAssets, tenantDomains, tenants } from '@afilmory/db'
+import {
+  authUsers,
+  commentReactions,
+  comments,
+  photoAssets,
+  tenantDomains,
+  tenantMemberships,
+  tenants,
+} from '@afilmory/db'
 import { DEFAULT_BASE_DOMAIN } from '@afilmory/utils'
 import { getClientIp } from '@core/context/http-context.helper'
 import { DbAccessor } from '@core/database/database.provider'
@@ -6,10 +14,11 @@ import { BizException, ErrorCode } from '@core/errors'
 import { logger } from '@core/helpers/logger.helper'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
 import { CommentCreatedEvent } from '@core/modules/content/comment/events/comment-created.event'
+import { WorkspaceMembershipService } from '@core/modules/platform/auth/workspace-membership.service'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
 import { HttpContext } from '@tsuki-hono/common'
 import { EventEmitterService } from '@tsuki-hono/event-emitter'
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { inject, injectable } from 'tsyringe'
 
@@ -37,7 +46,6 @@ export interface UserViewModel {
 
 interface AuthUser {
   id?: string
-  role?: string
 }
 
 interface CommentResponseItem extends CommentViewModel {
@@ -59,6 +67,7 @@ export class CommentService {
     @inject(COMMENT_MODERATION_HOOK) private readonly moderationHook: CommentModerationHook,
     private readonly eventEmitter: EventEmitterService,
     private readonly systemSettings: SystemSettingService,
+    private readonly memberships: WorkspaceMembershipService,
   ) {}
 
   async createComment(
@@ -181,8 +190,7 @@ export class CommentService {
     const tenant = requireTenantContext()
     const authUser = this.getAuthUser()
     const viewerUserId = authUser?.id ?? null
-    const role = authUser?.role
-    const isAdmin = role === 'admin' || role === 'superadmin'
+    const isAdmin = viewerUserId ? await this.memberships.isWorkspaceAdmin(viewerUserId, tenant.tenant.id) : false
     const db = this.dbAccessor.get()
 
     const filters = [
@@ -466,8 +474,7 @@ export class CommentService {
     if (!userId) {
       throw new BizException(ErrorCode.AUTH_UNAUTHORIZED)
     }
-    const { role } = authUser!
-    const isAdmin = role === 'admin' || role === 'superadmin'
+    const isAdmin = await this.memberships.isWorkspaceAdmin(userId, tenant.tenant.id)
     const db = this.dbAccessor.get()
 
     const [record] = await db
@@ -504,8 +511,7 @@ export class CommentService {
     const tenant = requireTenantContext()
     const authUser = this.getAuthUser()
     const viewerUserId = authUser?.id ?? null
-    const role = authUser?.role
-    const isAdmin = role === 'admin' || role === 'superadmin'
+    const isAdmin = viewerUserId ? await this.memberships.isWorkspaceAdmin(viewerUserId, tenant.tenant.id) : false
     const db = this.dbAccessor.get()
 
     const filters = [
@@ -733,45 +739,34 @@ export class CommentService {
       }
     }
 
-    const accounts = await db
+    const ownedWorkspaces = await db
       .select({
-        userId: authAccounts.userId,
-        providerId: authAccounts.providerId,
-        accountId: authAccounts.accountId,
+        userId: tenantMemberships.userId,
+        slug: tenants.slug,
+        customDomain: tenantDomains.domain,
       })
-      .from(authAccounts)
-      .where(inArray(authAccounts.userId, uniqueUserIds))
-
-    if (accounts.length > 0) {
-      const conditions = accounts.map((acc) =>
-        and(eq(authAccounts.providerId, acc.providerId), eq(authAccounts.accountId, acc.accountId)),
+      .from(tenantMemberships)
+      .innerJoin(tenants, eq(tenantMemberships.tenantId, tenants.id))
+      .leftJoin(tenantDomains, and(eq(tenantDomains.tenantId, tenants.id), eq(tenantDomains.status, 'verified')))
+      .where(
+        and(
+          inArray(tenantMemberships.userId, uniqueUserIds),
+          eq(tenantMemberships.role, 'owner'),
+          eq(tenantMemberships.status, 'active'),
+        ),
       )
+      .orderBy(asc(tenantMemberships.createdAt), asc(tenants.id), asc(tenantDomains.createdAt))
 
-      const matchedTenants = await db
-        .select({
-          providerId: authAccounts.providerId,
-          accountId: authAccounts.accountId,
-          slug: tenants.slug,
-          customDomain: tenantDomains.domain,
-        })
-        .from(authAccounts)
-        .innerJoin(authUsers, eq(authAccounts.userId, authUsers.id))
-        .innerJoin(tenants, eq(authUsers.tenantId, tenants.id))
-        .leftJoin(tenantDomains, and(eq(tenantDomains.tenantId, tenants.id), eq(tenantDomains.status, 'verified')))
-        .where(and(or(...conditions), eq(authUsers.role, 'admin')))
-
+    if (ownedWorkspaces.length > 0) {
       const baseDomain = (await this.systemSettings.getSettings()).baseDomain || DEFAULT_BASE_DOMAIN
-
-      for (const acc of accounts) {
-        const match = matchedTenants.find((t) => t.providerId === acc.providerId && t.accountId === acc.accountId)
-
-        if (match && result[acc.userId]) {
-          if (match.customDomain) {
-            result[acc.userId].website = `https://${match.customDomain}`
-          } else {
-            result[acc.userId].website = `https://${match.slug}.${baseDomain}`
-          }
+      for (const workspace of ownedWorkspaces) {
+        const user = result[workspace.userId]
+        if (!user || user.website) {
+          continue
         }
+        user.website = workspace.customDomain
+          ? `https://${workspace.customDomain}`
+          : `https://${workspace.slug}.${baseDomain}`
       }
     }
 

@@ -37,7 +37,11 @@ final class PhotoCell: UICollectionViewCell {
   static let reuseIdentifier = "PhotoCell"
 
   private let imageView = UIImageView()
-  private let liveBadge = UIImageView()
+  private let liveBadge = UIButton(type: .system)
+  private let selectionShade = UIView()
+  private let selectionBadge = UIView()
+  private let selectionCheck = UIImageView()
+  private var livePhotoBadgeTitle = "LIVE"
 
   var transitionSourceView: UIView { imageView }
 
@@ -49,16 +53,39 @@ final class PhotoCell: UICollectionViewCell {
     imageView.sd_imageTransition = .fade(duration: 0.15)
     contentView.addSubview(imageView)
 
-    let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-    liveBadge.image = UIImage(systemName: "livephoto", withConfiguration: config)
-    liveBadge.tintColor = .white
-    liveBadge.contentMode = .center
-    liveBadge.layer.shadowColor = UIColor.black.cgColor
-    liveBadge.layer.shadowOpacity = 0.5
-    liveBadge.layer.shadowOffset = CGSize(width: 0, height: 1)
-    liveBadge.layer.shadowRadius = 2
+    var liveConfiguration = UIButton.Configuration.filled()
+    liveConfiguration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.62)
+    liveConfiguration.baseForegroundColor = .white
+    liveConfiguration.cornerStyle = .capsule
+    liveConfiguration.image = UIImage(systemName: "livephoto")
+    liveConfiguration.imagePadding = 4
+    liveConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+    liveBadge.configuration = liveConfiguration
     liveBadge.isHidden = true
+    liveBadge.isUserInteractionEnabled = false
     contentView.addSubview(liveBadge)
+
+    selectionShade.backgroundColor = UIColor.black.withAlphaComponent(0.2)
+    selectionShade.isHidden = true
+    selectionShade.isUserInteractionEnabled = false
+    contentView.addSubview(selectionShade)
+
+    selectionBadge.backgroundColor = .systemBlue
+    selectionBadge.layer.borderColor = UIColor.white.cgColor
+    selectionBadge.layer.borderWidth = 1.5
+    selectionBadge.isHidden = true
+    selectionBadge.isUserInteractionEnabled = false
+    contentView.addSubview(selectionBadge)
+
+    let checkConfig = UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+    selectionCheck.image = UIImage(systemName: "checkmark", withConfiguration: checkConfig)
+    selectionCheck.tintColor = .white
+    selectionCheck.contentMode = .center
+    selectionBadge.addSubview(selectionCheck)
+
+    if #available(iOS 13.4, *) {
+      addInteraction(UIPointerInteraction(delegate: self))
+    }
   }
 
   @available(*, unavailable)
@@ -69,7 +96,17 @@ final class PhotoCell: UICollectionViewCell {
   override func layoutSubviews() {
     super.layoutSubviews()
     imageView.frame = contentView.bounds
-    liveBadge.frame = CGRect(x: 7, y: 7, width: 18, height: 18)
+    layoutLivePhotoBadge()
+    selectionShade.frame = contentView.bounds
+    let badgeSize: CGFloat = 26
+    selectionBadge.frame = CGRect(
+      x: contentView.bounds.width - badgeSize - 8,
+      y: contentView.bounds.height - badgeSize - 8,
+      width: badgeSize,
+      height: badgeSize
+    )
+    selectionBadge.layer.cornerRadius = badgeSize / 2
+    selectionCheck.frame = selectionBadge.bounds
   }
 
   override var isHighlighted: Bool {
@@ -86,14 +123,28 @@ final class PhotoCell: UICollectionViewCell {
     imageView.sd_cancelCurrentImageLoad()
     imageView.image = nil
     liveBadge.isHidden = true
+    contentView.accessibilityValue = nil
+    selectionShade.isHidden = true
+    selectionBadge.isHidden = true
     contentView.transform = .identity
     contentView.alpha = 1
   }
 
-  func configure(with photo: MasonryPhoto, targetWidth: CGFloat) {
+  func configure(
+    with photo: MasonryPhoto,
+    targetWidth: CGFloat,
+    livePhotoBadgeTitle: String,
+    selectionMode: Bool,
+    selected: Bool
+  ) {
     contentView.isAccessibilityElement = true
     contentView.accessibilityLabel = photo.accessibilityLabel
-    liveBadge.isHidden = !photo.isLive
+    contentView.accessibilityTraits.insert(.button)
+    self.livePhotoBadgeTitle = livePhotoBadgeTitle
+    liveBadge.isHidden = !photo.hasLivePhoto
+    contentView.accessibilityValue = photo.hasLivePhoto ? livePhotoBadgeTitle : nil
+    setNeedsLayout()
+    configureSelection(selectionMode: selectionMode, selected: selected)
     let scale = window?.screen.scale ?? UIScreen.main.scale
     let targetHeight = targetWidth / max(photo.aspectRatio, 0.01)
     let pixelSize = CGSize(width: targetWidth * scale, height: targetHeight * scale)
@@ -103,5 +154,53 @@ final class PhotoCell: UICollectionViewCell {
       options: [.retryFailed],
       context: [.imageThumbnailPixelSize: NSValue(cgSize: pixelSize)]
     )
+  }
+
+  func setLivePhotoBadgeTitle(_ title: String) {
+    livePhotoBadgeTitle = title
+    if !liveBadge.isHidden {
+      contentView.accessibilityValue = title
+      setNeedsLayout()
+    }
+  }
+
+  private func layoutLivePhotoBadge() {
+    guard !liveBadge.isHidden else { return }
+    let showsTitle = contentView.bounds.width >= 124
+    if var configuration = liveBadge.configuration {
+      configuration.title = showsTitle ? livePhotoBadgeTitle : nil
+      configuration.imagePadding = showsTitle ? 4 : 0
+      liveBadge.configuration = configuration
+    }
+    let availableWidth = max(contentView.bounds.width - 14, 28)
+    let fittingSize = liveBadge.sizeThatFits(CGSize(width: availableWidth, height: 26))
+    liveBadge.frame = CGRect(
+      x: 7,
+      y: 7,
+      width: min(max(fittingSize.width, 28), availableWidth),
+      height: 26
+    )
+  }
+
+  func configureSelection(selectionMode: Bool, selected: Bool) {
+    selectionShade.isHidden = !selected
+    selectionBadge.isHidden = !selectionMode
+    selectionBadge.backgroundColor = selected ? .systemBlue : UIColor.black.withAlphaComponent(0.35)
+    selectionCheck.isHidden = !selected
+    if selected {
+      contentView.accessibilityTraits.insert(.selected)
+    } else {
+      contentView.accessibilityTraits.remove(.selected)
+    }
+  }
+}
+
+@available(iOS 13.4, *)
+extension PhotoCell: UIPointerInteractionDelegate {
+  func pointerInteraction(
+    _ interaction: UIPointerInteraction,
+    styleFor region: UIPointerRegion
+  ) -> UIPointerStyle? {
+    UIPointerStyle(effect: .lift(UITargetedPreview(view: contentView)))
   }
 }

@@ -1,4 +1,16 @@
 import ExpoModulesCore
+import CoreGraphics
+
+struct PresentationAnchorRecord: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var width: Double = 0
+  @Field var height: Double = 0
+
+  var rect: CGRect {
+    CGRect(x: x, y: y, width: width, height: height)
+  }
+}
 
 struct PhotoInfoRowRecord: Record, Identifiable {
   @Field var id: String = ""
@@ -112,7 +124,43 @@ struct PhotoFiltersRecord: Record {
 }
 
 struct PhotoFilterSheetRequest: Record {
+  @Field var anchor: PresentationAnchorRecord?
   @Field var filters: PhotoFiltersRecord = .init()
   @Field var localization: PhotoFilterLocalizationRecord = .init()
   @Field var options: PhotoFilterOptionsRecord = .init()
+}
+
+struct ProfileStripItemRecord: Record {
+  @Field var url: String = ""
+  @Field var thumbHash: String?
+  @Field var aspectRatio: Double = 1
+}
+
+struct ProfileLocalizationRecord: Record {
+  @Field var cacheCleared: String = ""
+  @Field var cancel: String = ""
+  @Field var clearCache: String = ""
+  @Field var done: String = ""
+  @Field var openWeb: String = ""
+  @Field var signOut: String = ""
+  @Field var signOutConfirmTitle: String = ""
+  @Field var sponsorDescription: String = ""
+  @Field var sponsorFailedMessage: String = ""
+  @Field var sponsorFailedTitle: String = ""
+  @Field var sponsorPending: String = ""
+  @Field var sponsorThanks: String = ""
+  @Field var sponsorTitle: String = ""
+  @Field var sponsorUnavailable: String = ""
+}
+
+struct ProfileSheetRecord: Record {
+  @Field var anchor: PresentationAnchorRecord?
+  @Field var userName: String = ""
+  @Field var avatarUrl: String = ""
+  @Field var avatarInitial: String = ""
+  @Field var tenantLine: String = ""
+  @Field var webUrl: String = ""
+  @Field var statsLine: String = ""
+  @Field var strip: [ProfileStripItemRecord] = []
+  @Field var localization: ProfileLocalizationRecord = .init()
 }

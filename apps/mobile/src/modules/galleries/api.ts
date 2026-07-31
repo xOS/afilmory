@@ -10,6 +10,7 @@ import type {
   GalleryPhoto,
   GalleryToneAnalysis,
 } from './types'
+import { isLivePhoto, normalizeGalleryVideoSource } from './videoSource'
 
 export async function fetchFeaturedGalleries(signal?: AbortSignal): Promise<FeaturedGallery[]> {
   const res = await apiClient<{ galleries: FeaturedGallery[] }>('/featured-galleries', { signal })
@@ -29,7 +30,7 @@ interface ManifestPhoto {
   format?: string
   size?: number
   dateTaken?: string | null
-  video?: { type?: string } | null
+  video?: unknown
   tags?: string[]
   exif?: GalleryExif | null
   toneAnalysis?: GalleryToneAnalysis | null
@@ -82,7 +83,8 @@ function photoLocation(location: ManifestPhoto['location']): GalleryLocation | n
 }
 
 export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): Promise<GalleryPhoto[]> {
-  const res = await ofetch<{ data: ManifestPhoto[] }>(`https://${slug}.${SAAS_BASE_DOMAIN}/api/manifest`, {
+  const galleryOrigin = `https://${slug}.${SAAS_BASE_DOMAIN}`
+  const res = await ofetch<{ data: ManifestPhoto[] }>(`${galleryOrigin}/api/manifest`, {
     signal,
   })
   return res.data
@@ -101,7 +103,7 @@ export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): 
       format: photo.format ?? null,
       size: photo.size ?? null,
       dateTaken: photo.dateTaken ?? null,
-      isLive: Boolean(photo.video),
+      video: normalizeGalleryVideoSource(photo.video, galleryOrigin),
       tags: photo.tags ?? [],
       exif: photo.exif ?? null,
       toneAnalysis: photo.toneAnalysis ?? null,
@@ -123,19 +125,21 @@ export function getCachedGalleryCovers(slug: string): GalleryCoverPhoto[] | unde
 }
 
 export async function fetchGalleryPreviewPhotos(slug: string, limit: number): Promise<GalleryCoverPhoto[]> {
-  const res = await ofetch<{ data: ManifestPhoto[] }>(
-    `https://${slug}.${SAAS_BASE_DOMAIN}/api/manifest/photos/search`,
-    {
-      method: 'POST',
-      body: { limit, sort: 'desc' },
-    },
-  )
-  return res.data.map(photo => ({
-    id: photo.id,
-    thumbnailUrl: photo.thumbnailUrl,
-    thumbHash: photo.thumbHash ?? null,
-    aspectRatio: photoAspectRatio(photo),
-  }))
+  const galleryOrigin = `https://${slug}.${SAAS_BASE_DOMAIN}`
+  const res = await ofetch<{ data: ManifestPhoto[] }>(`${galleryOrigin}/api/manifest/photos/search`, {
+    method: 'POST',
+    body: { limit, sort: 'desc' },
+  })
+  return res.data.map((photo) => {
+    const video = normalizeGalleryVideoSource(photo.video, galleryOrigin)
+    return {
+      id: photo.id,
+      thumbnailUrl: photo.thumbnailUrl,
+      thumbHash: photo.thumbHash ?? null,
+      aspectRatio: photoAspectRatio(photo),
+      isLivePhoto: isLivePhoto(video),
+    }
+  })
 }
 
 export function fetchGalleryCovers(gallery: FeaturedGallery): Promise<GalleryCoverPhoto[]> {

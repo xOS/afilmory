@@ -9,10 +9,11 @@ import { AuthConfig } from './auth.config'
 import { AuthController } from './auth.controller'
 import { AuthProvider } from './auth.provider'
 import { AuthRegistrationService } from './auth-registration.service'
+import { WorkspaceMembershipService } from './workspace-membership.service'
 
 @Module({
   imports: [DatabaseModule, SystemSettingModule, SettingModule, TenantModule, AppStateModule],
   controllers: [AuthController],
-  providers: [AuthProvider, AuthConfig, AuthRegistrationService],
+  providers: [AuthProvider, AuthConfig, AuthRegistrationService, WorkspaceMembershipService],
 })
 export class AuthModule {}

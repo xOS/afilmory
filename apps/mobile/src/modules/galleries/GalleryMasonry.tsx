@@ -4,18 +4,21 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { useTranslation } from '@/i18n'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
+import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
 import { useGalleryManifest } from './useGalleryManifest'
+import { livePhotoVideoUrl } from './videoSource'
 
 export function GalleryMasonry({ slug }: { slug: string }) {
   const { palette } = useTheme()
   const { t } = useTranslation()
   const styles = useMemo(() => createStyles(palette), [palette])
   const { error, loading, photos, retry } = useGalleryManifest(slug)
-  const openPhoto = useOpenPhotoViewer(photos)
+  const openPhoto = useOpenPhotoViewer(photos, slug)
+  const handlePhotoContextMenu = usePhotoContextMenu(photos)
   const items = useMemo(
     () =>
       photos.map(photo => ({
@@ -27,7 +30,7 @@ export function GalleryMasonry({ slug }: { slug: string }) {
         aspectRatio: photo.aspectRatio,
         width: photo.width,
         height: photo.height,
-        isLive: photo.isLive,
+        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
       })),
     [photos, t],
   )
@@ -63,11 +66,15 @@ export function GalleryMasonry({ slug }: { slug: string }) {
   return (
     <PhotoMasonryView
       chromeVisible={false}
+      contextMenuInfoTitle={t('photo.info')}
+      contextMenuShareTitle={t('photo.share')}
       defaultColumnCount={2}
       extraBottomInset={96}
       gap={4}
+      livePhotoBadgeTitle={t('photo.livePhoto')}
       photos={items}
       style={styles.masonry}
+      onPhotoContextMenuAction={handlePhotoContextMenu}
       onPhotoPress={openPhoto}
     />
   )

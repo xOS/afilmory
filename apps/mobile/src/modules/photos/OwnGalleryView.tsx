@@ -1,27 +1,29 @@
-import type { ColumnCountChangeEvent, VisibleRangeEvent } from 'photo-masonry'
+import type { ColumnCountChangeEvent, PresentationAnchorEvent, VisibleRangeEvent } from 'photo-masonry'
 import { PhotoMasonryView } from 'photo-masonry'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
+import { SAAS_BASE_DOMAIN } from '@/api/client'
 import { getIntlLocale, useTranslation } from '@/i18n'
-import { useAuth } from '@/modules/auth/sessionStore'
+import { signOut, useAuth } from '@/modules/auth/sessionStore'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
+import { livePhotoVideoUrl } from '@/modules/galleries/videoSource'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
-import { presentNativePhotoFilters } from '@/native/photoSheets'
-import { present } from '@/presentation'
+import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
+import { presentNativePhotoFilters, presentNativeProfile } from '@/native/photoSheets'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
-import { getPreferredColumnCount, setPreferredColumnCount, waitForColumnPreference } from './columnPreference'
-import { formatVisibleDateRange } from './dateRange'
+import { getPreferredItemWidth, setPreferredItemWidth, waitForColumnPreference } from './columnPreference'
+import { formatVisibleMonthAnchor } from './dateRange'
 import { buildFilterOptions } from './filters/aggregates'
 import { applyFilters } from './filters/applyFilters'
 import { clearFilters, replaceFilters, useFilters } from './filters/filterStore'
 import { countActiveDimensions, hasActiveFilters, summarizeFilters } from './filters/filterTypes'
 import { cityForRange } from './filters/locationHint'
 import { setHomeFeed } from './homeFeedStore'
-import { profileSheetPage } from './profileSheetPage'
+import { collectProfileStats } from './profileStats'
 
 const NATIVE_CHROME_HEIGHT = 60
 
@@ -57,8 +59,8 @@ function NativeGallery({ slug }: { slug: string }) {
     if (error) {
       return
     }
-    setHomeFeed(slug, photos)
-  }, [error, photos, slug])
+    setHomeFeed(slug)
+  }, [error, slug])
 
   const filtered = useMemo(() => applyFilters(photos, filters), [filters, photos])
 
@@ -73,7 +75,7 @@ function NativeGallery({ slug }: { slug: string }) {
         aspectRatio: photo.aspectRatio,
         width: photo.width,
         height: photo.height,
-        isLive: photo.isLive,
+        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
       })),
     [filtered, t],
   )
@@ -82,10 +84,15 @@ function NativeGallery({ slug }: { slug: string }) {
     if (!visibleRange) {
       return null
     }
-    return formatVisibleDateRange(filtered, visibleRange.start, visibleRange.end, getIntlLocale(i18n.resolvedLanguage))
+    return formatVisibleMonthAnchor(
+      filtered,
+      visibleRange.start,
+      visibleRange.end,
+      getIntlLocale(i18n.resolvedLanguage),
+    )
   }, [filtered, i18n.resolvedLanguage, visibleRange])
 
-  // Kept separate from the range so the native pill can drop it whole when it does not fit.
+  // Kept separate from the month anchor so the native pill can drop it whole when it does not fit.
   const dateDetail = useMemo(() => {
     if (!visibleRange || !dateLabel) {
       return ''
@@ -94,30 +101,74 @@ function NativeGallery({ slug }: { slug: string }) {
   }, [dateLabel, filtered, visibleRange])
 
   const filtersActive = hasActiveFilters(filters)
-  const openPhoto = useOpenPhotoViewer(filtered)
+  const openPhoto = useOpenPhotoViewer(filtered, slug)
+  const handlePhotoContextMenu = usePhotoContextMenu(filtered)
   const filterCount = countActiveDimensions(filters)
   const filterOptions = useMemo(() => buildFilterOptions(photos), [photos])
-  const openFilters = useCallback(() => {
-    void presentNativePhotoFilters(filters, filterOptions).then((next) => {
-      if (next) {
-        replaceFilters(next)
+  const openFilters = useCallback(
+    (event: { nativeEvent: PresentationAnchorEvent }) => {
+      void presentNativePhotoFilters(filters, filterOptions, event.nativeEvent.frame).then((next) => {
+        if (next) {
+          replaceFilters(next)
+        }
+      })
+    },
+    [filterOptions, filters],
+  )
+  const openProfile = useCallback(
+    (event: { nativeEvent: PresentationAnchorEvent }) => {
+      const session = auth.session
+      if (!session?.activeWorkspace) {
+        return
       }
-    })
-  }, [filterOptions, filters])
-  const openProfile = useCallback(() => void present(profileSheetPage), [])
+      const stats = collectProfileStats(photos)
+      const statsParts = [t('profile.stats.photos', { count: stats.photoCount })]
+      if (stats.cameraCount > 0) {
+        statsParts.push(t('profile.stats.cameras', { count: stats.cameraCount }))
+      }
+      if (stats.lensCount > 0) {
+        statsParts.push(t('profile.stats.lenses', { count: stats.lensCount }))
+      }
+      if (stats.yearSpan) {
+        statsParts.push(stats.yearSpan)
+      }
+      void presentNativeProfile(
+        {
+          userName: session.user.name,
+          avatarUrl: session.user.image ?? '',
+          avatarInitial: Array.from(session.user.name.trim())[0]?.toUpperCase() ?? '?',
+          tenantLine: `${session.activeWorkspace.name} · ${session.activeWorkspace.slug}`,
+          webUrl: `https://${session.activeWorkspace.slug}.${SAAS_BASE_DOMAIN}`,
+          statsLine: photos.length === 0 ? '' : statsParts.join(' · '),
+          strip: photos.slice(0, 12).map(photo => ({
+            url: photo.thumbnailUrl,
+            thumbHash: photo.thumbHash,
+            aspectRatio: photo.aspectRatio,
+          })),
+        },
+        event.nativeEvent.frame,
+      ).then((action) => {
+        if (action === 'signOut') {
+          void signOut()
+        }
+      })
+    },
+    [auth.session, photos, t],
+  )
 
   const handleVisibleRangeChange = useCallback((event: { nativeEvent: VisibleRangeEvent }) => {
     setVisibleRange({ start: event.nativeEvent.startIndex, end: event.nativeEvent.endIndex })
   }, [])
 
   const handleColumnCountChange = useCallback((event: { nativeEvent: ColumnCountChangeEvent }) => {
-    setPreferredColumnCount(event.nativeEvent.columnCount)
+    setPreferredItemWidth(event.nativeEvent.preferredItemWidth)
   }, [])
 
   const handleRefresh = useCallback(() => void refresh(), [refresh])
 
   const hasFeed = columnsReady && !loading && error === null && photos.length > 0
   const chromeDateLabel = filtersActive ? `${filtered.length} · ${summarizeFilters(filters, t)}` : (dateLabel ?? '')
+  const identityLabel = auth.session?.activeWorkspace?.name ?? ''
   const profileInitial = Array.from((auth.session?.user.name ?? '?').trim())[0]?.toUpperCase() ?? '?'
   const profileAccessibilityLabel = auth.session?.user.name
     ? t('accessibility.profile', { name: auth.session.user.name })
@@ -189,17 +240,21 @@ function NativeGallery({ slug }: { slug: string }) {
       {columnsReady ? (
         <PhotoMasonryView
           chromeVisible
+          contextMenuInfoTitle={t('photo.info')}
+          contextMenuShareTitle={t('photo.share')}
           chromeDateDetail={filtersActive ? '' : dateDetail}
           chromeDateInteractive={filtersActive}
           chromeDateLabel={chromeDateLabel}
-          chromeDateVisible={hasFeed && chromeDateLabel.length > 0}
-          defaultColumnCount={getPreferredColumnCount()}
+          chromeDateVisible={hasFeed && (chromeDateLabel.length > 0 || identityLabel.length > 0)}
+          chromeIdentityLabel={identityLabel}
+          preferredItemWidth={getPreferredItemWidth()}
           extraBottomInset={24}
           extraTopInset={NATIVE_CHROME_HEIGHT}
           filterActive={filtersActive}
           filterAccessibilityLabel={filterAccessibilityLabel}
           filterCount={filterCount}
           gap={4}
+          livePhotoBadgeTitle={t('photo.livePhoto')}
           photos={error ? [] : items}
           profileImageURL={auth.session?.user.image ?? ''}
           profileAccessibilityLabel={profileAccessibilityLabel}
@@ -210,6 +265,7 @@ function NativeGallery({ slug }: { slug: string }) {
           onColumnCountChange={handleColumnCountChange}
           onDatePress={openFilters}
           onFilterPress={openFilters}
+          onPhotoContextMenuAction={handlePhotoContextMenu}
           onPhotoPress={openPhoto}
           onProfilePress={openProfile}
           onRefresh={handleRefresh}

@@ -1,4 +1,4 @@
-import { Roles } from '@core/guards/roles.decorator'
+import { PlatformRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { parseStorageProviders } from '@core/modules/configuration/setting/storage-provider.utils'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
@@ -8,7 +8,7 @@ import { Body, Controller, Get, Patch } from '@tsuki-hono/common'
 import { UpdateSuperAdminSettingsDto } from './super-admin.dto'
 
 @Controller('super-admin/settings')
-@Roles('superadmin')
+@PlatformRoles('superadmin')
 export class SuperAdminSettingController {
   constructor(private readonly systemSettings: SystemSettingService) {}
 

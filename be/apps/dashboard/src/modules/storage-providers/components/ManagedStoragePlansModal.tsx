@@ -44,10 +44,10 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
   const { t } = useTranslation()
   const plansQuery = useManagedStoragePlansQuery()
   const queryClient = useQueryClient()
-  const session = (queryClient.getQueryData<SessionResponse | null>(AUTH_SESSION_QUERY_KEY) ??
-    null) as SessionResponse | null
-  const tenantId = session?.tenant?.id ?? null
-  const tenantSlug = session?.tenant?.slug ?? null
+  const session = (queryClient.getQueryData<SessionResponse | null>(AUTH_SESSION_QUERY_KEY)
+    ?? null) as SessionResponse | null
+  const tenantId = session?.requestedWorkspace?.id ?? null
+  const tenantSlug = session?.requestedWorkspace?.slug ?? null
   const creemCustomerId = session?.user?.creemCustomerId ?? null
   const [activeAction, setActiveAction] = useState<string | null>(null)
 
@@ -78,9 +78,11 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
         return
       }
       toast.error(t(managedStorageI18nKeys.toastMissingCheckoutUrl))
-    } catch (error) {
+    }
+    catch (error) {
       toast.error(error instanceof Error ? error.message : t(managedStorageI18nKeys.toastCheckoutFailure))
-    } finally {
+    }
+    finally {
       setActiveAction(null)
     }
   }
@@ -101,9 +103,11 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
         return
       }
       toast.error(t(managedStorageI18nKeys.toastMissingPortalUrl))
-    } catch (error) {
+    }
+    catch (error) {
       toast.error(error instanceof Error ? error.message : t(managedStorageI18nKeys.toastPortalFailure))
-    } finally {
+    }
+    finally {
       setActiveAction(null)
     }
   }
@@ -122,7 +126,7 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
       <div className="mt-6 space-y-4">
         {plansQuery.isLoading ? (
           <div className="grid gap-5 md:grid-cols-2">
-            {Array.from({ length: 2 }, (_, index) => `skeleton-${index}`).map((key) => (
+            {Array.from({ length: 2 }, (_, index) => `skeleton-${index}`).map(key => (
               <div key={key} className="bg-background-tertiary h-64 animate-pulse rounded-lg" />
             ))}
           </div>
@@ -140,7 +144,7 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
           </div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2">
-            {plansQuery.data.availablePlans.map((plan) => (
+            {plansQuery.data.availablePlans.map(plan => (
               <PlanCard
                 key={plan.id}
                 plan={plan}
@@ -195,11 +199,11 @@ function PlanCard({
     }
   }, [locale])
 
-  const hasPrice =
-    plan.pricing &&
-    plan.pricing.monthlyPrice !== null &&
-    plan.pricing.monthlyPrice !== undefined &&
-    Number.isFinite(plan.pricing.monthlyPrice)
+  const hasPrice
+    = plan.pricing
+      && plan.pricing.monthlyPrice !== null
+      && plan.pricing.monthlyPrice !== undefined
+      && Number.isFinite(plan.pricing.monthlyPrice)
 
   const priceLabel = hasPrice
     ? t(managedStorageI18nKeys.priceLabel, {

@@ -1,5 +1,5 @@
 import { BizException, ErrorCode } from '@core/errors'
-import { Roles } from '@core/guards/roles.decorator'
+import { TenantRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { Body, Controller, Delete, Get, Param, Post } from '@tsuki-hono/common'
 
@@ -16,7 +16,7 @@ const STORAGE_SETTING_KEYS = [
 type StorageSettingKey = (typeof STORAGE_SETTING_KEYS)[number]
 
 @Controller('storage/settings')
-@Roles('admin')
+@TenantRoles('admin')
 export class StorageSettingController {
   constructor(private readonly storageSettingService: StorageSettingService) {}
 

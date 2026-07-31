@@ -41,6 +41,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="index" />
               <Stack.Screen name="(tabs)" />
+              {__DEV__ ? <Stack.Screen name="dev" /> : null}
               <Stack.Screen
                 name="photo/[photoId]"
                 options={{ contentStyle: styles.photoScreen, gestureEnabled: true }}

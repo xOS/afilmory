@@ -1,6 +1,7 @@
 import type { GalleryPhoto } from '@/modules/galleries/types'
 
 export interface PhotoViewerSession {
+  gallerySlug: string | null
   id: string
   initialIndex: number
   photos: GalleryPhoto[]
@@ -14,8 +15,10 @@ export function createPhotoViewerSession(
   photos: GalleryPhoto[],
   initialIndex: number,
   transitionId: string,
+  gallerySlug: string | null,
 ): PhotoViewerSession {
   const session: PhotoViewerSession = {
+    gallerySlug,
     id: `photo-viewer-${nextSessionId++}`,
     initialIndex,
     photos,

@@ -128,8 +128,8 @@ const enUiSchema = {
           },
           'site-accent-color': {
             title: 'Accent color',
-            description: 'Applied to buttons and highlights, supports HEX format.',
-            helper: 'Example: #007bff',
+            description: 'Applied to buttons, links, and highlighted controls.',
+            helper: 'Stored as a hexadecimal color without opacity.',
           },
         },
       },
@@ -179,8 +179,8 @@ const enUiSchema = {
         fields: {
           providers: {
             title: 'Map providers',
-            description: 'JSON array ordered by priority, for example ["maplibre"].',
-            helper: 'Leave empty to disable map features.',
+            description: 'Choose the engines available to the map component.',
+            helper: 'Turn off every provider to disable map features.',
           },
           style: {
             title: 'Map style',
@@ -190,7 +190,7 @@ const enUiSchema = {
           projection: {
             title: 'Map projection',
             description: 'Choose the rendering projection.',
-            helper: 'Defaults to mercator; switch to globe if needed.',
+            helper: 'Mercator is flat; Globe presents the world as a sphere.',
             placeholder: 'Select a projection',
           },
         },

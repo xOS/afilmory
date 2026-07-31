@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
@@ -9,7 +10,7 @@ import {
   THUMBNAIL_PLUGIN_DATA_KEY,
 } from '@afilmory/builder/plugins/thumbnail-storage/shared.js'
 import { BizException, ErrorCode } from '@core/errors'
-import { Roles } from '@core/guards/roles.decorator'
+import { PlatformRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import { PhotoBuilderService } from '@core/modules/content/photo/builder/photo-builder.service'
 import { runWithBuilderLogRelay } from '@core/modules/infrastructure/data-sync/builder-log-relay'
@@ -26,7 +27,7 @@ const DEBUG_STORAGE_PREFIX = '.afilmory/debug'
 const DEBUG_STORAGE_PROVIDER = 'super-admin-debug-storage'
 
 @Controller('super-admin/builder')
-@Roles('superadmin')
+@PlatformRoles('superadmin')
 export class SuperAdminBuilderDebugController {
   private readonly logger = createLogger('SuperAdminBuilderDebugController')
 

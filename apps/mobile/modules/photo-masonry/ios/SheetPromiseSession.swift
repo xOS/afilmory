@@ -1,7 +1,7 @@
 import ExpoModulesCore
 import UIKit
 
-final class PhotoFilterSheetSession: NSObject, UIAdaptivePresentationControllerDelegate {
+final class SheetPromiseSession: NSObject, UIAdaptivePresentationControllerDelegate {
   private let promise: Promise
   private let onSettle: () -> Void
   private var isSettled = false
@@ -11,8 +11,8 @@ final class PhotoFilterSheetSession: NSObject, UIAdaptivePresentationControllerD
     self.onSettle = onSettle
   }
 
-  func complete(with filters: PhotoFiltersRecord) {
-    settle(with: filters)
+  func complete(with value: Any?) {
+    settle(with: value)
   }
 
   func cancel() {
@@ -23,10 +23,10 @@ final class PhotoFilterSheetSession: NSObject, UIAdaptivePresentationControllerD
     cancel()
   }
 
-  private func settle(with filters: PhotoFiltersRecord?) {
+  private func settle(with value: Any?) {
     guard !isSettled else { return }
     isSettled = true
-    promise.resolve(filters)
+    promise.resolve(value)
     onSettle()
   }
 }

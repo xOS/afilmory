@@ -1,6 +1,6 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["PhotoMasonryModule", "PhotoViewerModule", "PhotoSheetsModule"]
+    "modules": ["PhotoMapModule", "PhotoMasonryModule", "PhotoViewerModule", "PhotoSheetsModule"]
   }
 }

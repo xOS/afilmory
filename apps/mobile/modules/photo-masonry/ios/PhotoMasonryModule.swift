@@ -9,7 +9,12 @@ struct MasonryPhoto: Record {
   @Field var aspectRatio: Double = 1
   @Field var width: Double = 0
   @Field var height: Double = 0
-  @Field var isLive: Bool = false
+  @Field var livePhotoVideoUrl: String?
+
+  var hasLivePhoto: Bool {
+    guard let livePhotoVideoUrl else { return false }
+    return !livePhotoVideoUrl.isEmpty
+  }
 }
 
 public class PhotoMasonryModule: Module {
@@ -25,15 +30,34 @@ public class PhotoMasonryModule: Module {
         "onRefresh",
         "onDatePress",
         "onProfilePress",
-        "onFilterPress"
+        "onFilterPress",
+        "onPhotoContextMenuAction",
+        "onSelectionChange",
+        "onSelectionModeChange"
       )
 
       Prop("photos") { (view: PhotoMasonryView, photos: [MasonryPhoto]) in
         view.setPhotos(photos)
       }
 
+      Prop("contextMenuInfoTitle") { (view: PhotoMasonryView, title: String) in
+        view.contextMenuInfoTitle = title
+      }
+
+      Prop("contextMenuShareTitle") { (view: PhotoMasonryView, title: String) in
+        view.contextMenuShareTitle = title
+      }
+
+      Prop("contextMenuSelectTitle") { (view: PhotoMasonryView, title: String?) in
+        view.contextMenuSelectTitle = title ?? ""
+      }
+
       Prop("defaultColumnCount") { (view: PhotoMasonryView, count: Int) in
         view.defaultColumnCount = count
+      }
+
+      Prop("preferredItemWidth") { (view: PhotoMasonryView, width: Double) in
+        view.preferredItemWidth = CGFloat(width)
       }
 
       Prop("gap") { (view: PhotoMasonryView, gap: Double) in
@@ -58,6 +82,10 @@ public class PhotoMasonryModule: Module {
 
       Prop("chromeVisible") { (view: PhotoMasonryView, visible: Bool) in
         view.chromeVisible = visible
+      }
+
+      Prop("chromeIdentityLabel") { (view: PhotoMasonryView, label: String) in
+        view.chromeIdentityLabel = label
       }
 
       Prop("chromeDateLabel") { (view: PhotoMasonryView, label: String) in
@@ -98,6 +126,22 @@ public class PhotoMasonryModule: Module {
 
       Prop("filterCount") { (view: PhotoMasonryView, count: Int) in
         view.filterCount = count
+      }
+
+      Prop("livePhotoBadgeTitle") { (view: PhotoMasonryView, title: String) in
+        view.livePhotoBadgeTitle = title
+      }
+
+      Prop("selectionEnabled") { (view: PhotoMasonryView, enabled: Bool) in
+        view.selectionEnabled = enabled
+      }
+
+      Prop("selectionMode") { (view: PhotoMasonryView, active: Bool) in
+        view.setSelectionMode(active)
+      }
+
+      Prop("selectedPhotoIds") { (view: PhotoMasonryView, ids: [String]) in
+        view.setSelectedPhotoIds(ids)
       }
     }
   }

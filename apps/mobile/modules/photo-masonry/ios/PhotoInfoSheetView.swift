@@ -126,6 +126,44 @@ struct PhotoInfoSheetView: View {
   }
 }
 
+struct PhotoInfoInspectorView: View {
+  let info: PhotoInfoSheetRecord
+  let onClose: () -> Void
+
+  var body: some View {
+    if #available(iOS 26.0, *) {
+      PhotoInfoSheetView(info: info)
+        .safeAreaBar(edge: .top, spacing: 0) {
+          header
+        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+    } else {
+      PhotoInfoSheetView(info: info)
+        .safeAreaInset(edge: .top, spacing: 0) {
+          header
+        }
+    }
+  }
+
+  private var header: some View {
+    HStack(spacing: 12) {
+      Text(info.localization.title)
+        .font(.headline)
+      Spacer()
+      Button(action: onClose) {
+        Image(systemName: "xmark")
+          .font(.body.weight(.semibold))
+          .frame(width: 28, height: 28)
+          .contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(info.localization.done)
+    }
+    .padding(.horizontal, 16)
+    .frame(height: 52)
+  }
+}
+
 private struct PhotoInfoRowView: View {
   let row: PhotoInfoRowRecord
 

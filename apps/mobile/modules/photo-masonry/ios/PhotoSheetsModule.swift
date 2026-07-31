@@ -1,12 +1,22 @@
 import ExpoModulesCore
+import Foundation
 import SwiftUI
 import UIKit
 
 public final class PhotoSheetsModule: Module {
-  private var filterSession: PhotoFilterSheetSession?
+  private var filterSession: SheetPromiseSession?
+  private var profileSession: SheetPromiseSession?
 
   public func definition() -> ModuleDefinition {
     Name("PhotoSheets")
+
+    View(PhotoInfoPanelView.self) {
+      Events("onClose")
+
+      Prop("infoJSON") { (view: PhotoInfoPanelView, infoJSON: String) in
+        view.setInfoJSON(infoJSON)
+      }
+    }
 
     AsyncFunction("presentPhotoInfo") { (info: PhotoInfoSheetRecord, promise: Promise) in
       guard let presenter = self.appContext?.utilities?.currentViewController() else {
@@ -28,7 +38,12 @@ public final class PhotoSheetsModule: Module {
         menu: nil
       )
 
-      let navigationController = self.makeSheetNavigationController(root: hostingController)
+      let navigationController = self.makeNavigationController(
+        root: hostingController,
+        presenter: presenter,
+        anchor: nil,
+        preferredContentSize: CGSize(width: 520, height: 680)
+      )
       presenter.present(navigationController, animated: true) {
         promise.resolve()
       }
@@ -52,7 +67,7 @@ public final class PhotoSheetsModule: Module {
       let hostingController = UIHostingController(rootView: PhotoFilterSheetView(model: model))
       hostingController.navigationItem.title = request.localization.title
 
-      let session = PhotoFilterSheetSession(promise: promise) { [weak self] in
+      let session = SheetPromiseSession(promise: promise) { [weak self] in
         self?.filterSession = nil
       }
       self.filterSession = session
@@ -77,24 +92,196 @@ public final class PhotoSheetsModule: Module {
         menu: nil
       )
 
-      let navigationController = self.makeSheetNavigationController(root: hostingController)
+      let navigationController = self.makeNavigationController(
+        root: hostingController,
+        presenter: presenter,
+        anchor: request.anchor,
+        preferredContentSize: CGSize(width: 430, height: 620)
+      )
       navigationController.presentationController?.delegate = session
       presenter.present(navigationController, animated: true)
     }
     .runOnQueue(.main)
+
+    AsyncFunction("presentProfile") { (profile: ProfileSheetRecord, promise: Promise) in
+      guard self.profileSession == nil else {
+        promise.reject("ERR_PROFILE_SHEET_ACTIVE", "The profile sheet is already presented.")
+        return
+      }
+      guard let presenter = self.appContext?.utilities?.currentViewController() else {
+        promise.reject(
+          "ERR_PROFILE_SHEET_PRESENTER",
+          "Unable to find a view controller for the profile sheet."
+        )
+        return
+      }
+
+      let session = SheetPromiseSession(promise: promise) { [weak self] in
+        self?.profileSession = nil
+      }
+      self.profileSession = session
+
+      let hostingController = UIHostingController(
+        rootView: ProfileSheetView(profile: profile) { [weak session, weak presenter] in
+          session?.complete(with: "signOut")
+          presenter?.dismiss(animated: true)
+        }
+      )
+      hostingController.view.backgroundColor = .systemGroupedBackground
+      if !self.configurePopover(
+        hostingController,
+        presenter: presenter,
+        anchor: profile.anchor,
+        preferredContentSize: CGSize(width: 390, height: 520)
+      ) {
+        hostingController.modalPresentationStyle = .pageSheet
+        if let sheet = hostingController.sheetPresentationController {
+          sheet.detents = [.medium()]
+          sheet.prefersGrabberVisible = true
+        }
+      }
+      hostingController.presentationController?.delegate = session
+      presenter.present(hostingController, animated: true)
+    }
+    .runOnQueue(.main)
   }
 
-  private func makeSheetNavigationController(root: UIViewController) -> UINavigationController {
+  private func makeNavigationController(
+    root: UIViewController,
+    presenter: UIViewController,
+    anchor: PresentationAnchorRecord?,
+    preferredContentSize: CGSize
+  ) -> UINavigationController {
     let navigationController = UINavigationController(rootViewController: root)
-    navigationController.modalPresentationStyle = .pageSheet
     navigationController.navigationBar.prefersLargeTitles = false
 
-    if let sheet = navigationController.sheetPresentationController {
-      sheet.detents = [.medium(), .large()]
-      sheet.selectedDetentIdentifier = .medium
-      sheet.prefersGrabberVisible = true
-      sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+    if !configurePopover(
+      navigationController,
+      presenter: presenter,
+      anchor: anchor,
+      preferredContentSize: preferredContentSize
+    ) {
+      navigationController.modalPresentationStyle = .pageSheet
+      if let sheet = navigationController.sheetPresentationController {
+        sheet.detents = [.medium(), .large()]
+        sheet.selectedDetentIdentifier = .medium
+        sheet.prefersGrabberVisible = true
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+      }
     }
     return navigationController
+  }
+
+  private func configurePopover(
+    _ viewController: UIViewController,
+    presenter: UIViewController,
+    anchor: PresentationAnchorRecord?,
+    preferredContentSize: CGSize
+  ) -> Bool {
+    guard presenter.traitCollection.horizontalSizeClass == .regular,
+          let anchor,
+          anchor.width > 0,
+          anchor.height > 0
+    else { return false }
+
+    viewController.modalPresentationStyle = .popover
+    viewController.preferredContentSize = preferredContentSize
+    guard let popover = viewController.popoverPresentationController else { return false }
+    popover.sourceView = presenter.view
+    if let window = presenter.view.window {
+      popover.sourceRect = presenter.view.convert(anchor.rect, from: window)
+    } else {
+      popover.sourceRect = anchor.rect
+    }
+    popover.permittedArrowDirections = .any
+    return true
+  }
+}
+
+final class PhotoInfoPanelView: ExpoView {
+  let onClose = EventDispatcher()
+
+  private var info: PhotoInfoSheetRecord = .init()
+  private var hostingController: UIHostingController<PhotoInfoInspectorView>!
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+
+    hostingController = UIHostingController(
+      rootView: PhotoInfoInspectorView(info: info, onClose: {})
+    )
+    hostingController.rootView = makeRootView()
+    backgroundColor = .clear
+    hostingController.view.backgroundColor = .clear
+    hostingController.view.isOpaque = false
+    addSubview(hostingController.view)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    hostingController.view.frame = bounds
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      hostingController.willMove(toParent: nil)
+      hostingController.removeFromParent()
+    } else {
+      attachHostingControllerIfNeeded()
+    }
+  }
+
+  func setInfoJSON(_ infoJSON: String) {
+    guard let data = infoJSON.data(using: .utf8),
+          let jsonObject = try? JSONSerialization.jsonObject(with: data),
+          let dictionary = Self.normalizeJSONValue(jsonObject) as? [String: Any],
+          let appContext
+    else { return }
+
+    do {
+      info = try PhotoInfoSheetRecord(from: dictionary, appContext: appContext)
+      hostingController.rootView = makeRootView()
+    } catch {
+      #if DEBUG
+      print("PhotoInfoPanelView failed to decode infoJSON: \(error)")
+      #endif
+    }
+  }
+
+  private func makeRootView() -> PhotoInfoInspectorView {
+    PhotoInfoInspectorView(info: info) { [weak self] in
+      self?.onClose([:])
+    }
+  }
+
+  private func attachHostingControllerIfNeeded() {
+    guard hostingController.parent == nil else { return }
+    var responder: UIResponder? = next
+    while let current = responder {
+      if let viewController = current as? UIViewController {
+        viewController.addChild(hostingController)
+        hostingController.didMove(toParent: viewController)
+        return
+      }
+      responder = current.next
+    }
+  }
+
+  private static func normalizeJSONValue(_ value: Any) -> Any? {
+    if value is NSNull {
+      return nil
+    }
+    if let dictionary = value as? [String: Any] {
+      return dictionary.reduce(into: [String: Any]()) { result, element in
+        if let normalized = normalizeJSONValue(element.value) {
+          result[element.key] = normalized
+        }
+      }
+    }
+    if let array = value as? [Any] {
+      return array.compactMap(normalizeJSONValue)
+    }
+    return value
   }
 }

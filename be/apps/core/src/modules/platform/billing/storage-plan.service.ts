@@ -1,11 +1,10 @@
-import { authUsers, creemSubscriptions, tenants } from '@afilmory/db'
+import { creemSubscriptions, tenants } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
 import { createLogger } from '@tsuki-hono/common'
-import type { SQL } from 'drizzle-orm'
-import { and, desc, eq, inArray, or } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
 import { BillingPlanService } from './billing-plan.service'
@@ -173,35 +172,10 @@ export class StoragePlanService {
 
   private async resolveLatestSubscriptionForTenant(tenantId: string, productId: string) {
     const db = this.dbAccessor.get()
-    const users = await db
-      .select({ id: authUsers.id, creemCustomerId: authUsers.creemCustomerId })
-      .from(authUsers)
-      .where(eq(authUsers.tenantId, tenantId))
-
-    const userIds = users.map((user) => user.id).filter((id): id is string => typeof id === 'string' && id.length > 0)
-    const customerIds = users
-      .map((user) => user.creemCustomerId)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0)
-
-    if (userIds.length === 0 && customerIds.length === 0) {
-      return null
-    }
-
-    const conditions: SQL[] = []
-    if (userIds.length > 0) {
-      conditions.push(inArray(creemSubscriptions.referenceId, userIds))
-    }
-    if (customerIds.length > 0) {
-      conditions.push(inArray(creemSubscriptions.creemCustomerId, customerIds))
-    }
-
-    const where =
-      conditions.length === 1 ? conditions[0] : and(or(...conditions), eq(creemSubscriptions.productId, productId))
-
     const [record] = await db
       .select()
       .from(creemSubscriptions)
-      .where(conditions.length === 1 ? and(where, eq(creemSubscriptions.productId, productId)) : where)
+      .where(and(eq(creemSubscriptions.tenantId, tenantId), eq(creemSubscriptions.productId, productId)))
       .orderBy(desc(creemSubscriptions.updatedAt))
       .limit(1)
 

@@ -1,4 +1,4 @@
-import { authUsers, photoAssets, settings, tenantDomains, tenants } from '@afilmory/db'
+import { authUsers, photoAssets, settings, tenantDomains, tenantMemberships, tenants } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { normalizeDate } from '@core/helpers/normalize.helper'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
@@ -119,14 +119,15 @@ export class FeaturedGalleriesService {
       // Primary authors
       db
         .select({
-          tenantId: authUsers.tenantId,
+          tenantId: tenantMemberships.tenantId,
           name: authUsers.name,
           image: authUsers.image,
         })
         .from(authUsers)
-        .where(inArray(authUsers.tenantId, finalTenantIds))
+        .innerJoin(tenantMemberships, eq(tenantMemberships.userId, authUsers.id))
+        .where(and(inArray(tenantMemberships.tenantId, finalTenantIds), eq(tenantMemberships.status, 'active')))
         .orderBy(
-          sql`case when ${authUsers.role} = 'admin' then 0 when ${authUsers.role} = 'superadmin' then 1 else 2 end`,
+          sql`case when ${tenantMemberships.role} = 'owner' then 0 when ${tenantMemberships.role} = 'admin' then 1 else 2 end`,
           asc(authUsers.createdAt),
         ),
       // Verified domains
@@ -190,8 +191,8 @@ export class FeaturedGalleriesService {
 
     const authorMap = new Map<string, { name: string; avatar: string | null }>()
     for (const author of authors) {
-      if (!authorMap.has(author.tenantId!)) {
-        authorMap.set(author.tenantId!, {
+      if (!authorMap.has(author.tenantId)) {
+        authorMap.set(author.tenantId, {
           name: author.name,
           avatar: author.image ?? null,
         })

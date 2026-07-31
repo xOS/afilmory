@@ -45,6 +45,17 @@ export interface PhotoInfoModel {
   toneAnalysis: PhotoInfoToneAnalysis | null
 }
 
+export interface PhotoInfoSheetModel {
+  captureParameters: CaptureParameter[]
+  description: string | null
+  emptyMessage: string | null
+  mapLocation: PhotoInfoMapLocation | null
+  sections: PhotoInfoSection[]
+  tags: string[]
+  title: string
+  toneAnalysis: PhotoInfoToneAnalysis | null
+}
+
 type NullablePhotoInfoRow = Omit<PhotoInfoRow, 'value'> & { value: string | null }
 type NullableCaptureParameter = Omit<CaptureParameter, 'value'> & { value: string | null }
 type Translator = (key: string, options?: Record<string, unknown>) => string
@@ -598,5 +609,23 @@ export function buildPhotoInfoModel(
     mapLocation: buildMapLocation(photo, exif),
     sections,
     toneAnalysis: buildToneAnalysis(photo.toneAnalysis, photo.thumbnailUrl, t),
+  }
+}
+
+export function buildPhotoInfoSheetModel(
+  photo: GalleryPhoto,
+  t: Translator = translate,
+  locale = getIntlLocale(),
+): PhotoInfoSheetModel {
+  const model = buildPhotoInfoModel(photo, t, locale)
+  return {
+    captureParameters: model.captureParameters,
+    description: photo.description || null,
+    emptyMessage: model.hasExif ? null : t('photo.noExif'),
+    mapLocation: model.mapLocation,
+    sections: [model.basic, ...model.sections],
+    tags: photo.tags,
+    title: photo.title,
+    toneAnalysis: model.toneAnalysis,
   }
 }

@@ -18,7 +18,7 @@ const basePhoto = {
   format: 'jpeg',
   size: 5 * 1024 * 1024,
   dateTaken: '2026-07-30T12:00:00.000Z',
-  isLive: false,
+  video: null,
   tags: [],
   exif: null,
   toneAnalysis: null,

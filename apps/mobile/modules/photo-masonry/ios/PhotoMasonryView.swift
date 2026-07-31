@@ -3,7 +3,9 @@ import SDWebImage
 import UIKit
 
 private let minColumnCount = 1
-private let maxColumnCount = 4
+private let maxColumnCount = 12
+private let minItemWidth: CGFloat = 92
+private let defaultPreferredItemWidth: CGFloat = 190
 private let chromeEdgeInset: CGFloat = 12
 private let chromeControlSize: CGFloat = 44
 private let chromeControlGap: CGFloat = 12
@@ -11,6 +13,7 @@ private let chromeTopOffset: CGFloat = 8
 private let chromeDateRightGap: CGFloat = 12
 private let chromeDateFontSize: CGFloat = 17
 private let chromeDateHorizontalInset: CGFloat = 16
+private let dateAnchorIdleDelay: TimeInterval = 1.5
 private let avatarImageSize: CGFloat = 34
 private let filterBadgeSize: CGFloat = 16
 
@@ -30,9 +33,20 @@ final class PhotoMasonryView: ExpoView {
   let onDatePress = EventDispatcher()
   let onProfilePress = EventDispatcher()
   let onFilterPress = EventDispatcher()
+  let onPhotoContextMenuAction = EventDispatcher()
+  let onSelectionChange = EventDispatcher()
+  let onSelectionModeChange = EventDispatcher()
+
+  var contextMenuInfoTitle = ""
+  var contextMenuShareTitle = ""
+  var contextMenuSelectTitle = ""
 
   var defaultColumnCount = 2 {
-    didSet { applyDefaultColumnCountIfNeeded() }
+    didSet { applyInitialColumnCountIfNeeded() }
+  }
+
+  var preferredItemWidth = defaultPreferredItemWidth {
+    didSet { applyPreferredItemWidthIfPossible() }
   }
 
   var gap: CGFloat = 4 {
@@ -57,6 +71,10 @@ final class PhotoMasonryView: ExpoView {
 
   var chromeVisible = false {
     didSet { updateChromeVisibility() }
+  }
+
+  var chromeIdentityLabel = "" {
+    didSet { updateDateButton() }
   }
 
   var chromeDateLabel = "" {
@@ -90,7 +108,13 @@ final class PhotoMasonryView: ExpoView {
   }
 
   var filterActive = false {
-    didSet { updateFilterButton() }
+    didSet {
+      updateFilterButton()
+      if filterActive {
+        resetDateAnchor()
+      }
+      updateDateButton()
+    }
   }
 
   var filterAccessibilityLabel = "" {
@@ -99,6 +123,22 @@ final class PhotoMasonryView: ExpoView {
 
   var filterCount = 0 {
     didSet { updateFilterButton() }
+  }
+
+  var livePhotoBadgeTitle = "LIVE" {
+    didSet {
+      for case let cell as PhotoCell in collectionView.visibleCells {
+        cell.setLivePhotoBadgeTitle(livePhotoBadgeTitle)
+      }
+    }
+  }
+
+  var selectionEnabled = false {
+    didSet {
+      if !selectionEnabled {
+        setSelectionMode(false)
+      }
+    }
   }
 
   private var photos: [MasonryPhoto] = []
@@ -118,7 +158,8 @@ final class PhotoMasonryView: ExpoView {
   private let filterGlass = UIVisualEffectView()
 
   private var columnCount = 2
-  private var hasAppliedDefaultColumnCount = false
+  private var hasAppliedInitialColumnCount = false
+  private var lastLayoutWidth: CGFloat = 0
   private var pinchStartPosition: CGFloat = 2
   private var pinchAnchorItem: Int?
   private var pinchAnchorViewportOffset: CGFloat = 0
@@ -129,6 +170,11 @@ final class PhotoMasonryView: ExpoView {
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
   private var isOpeningPhoto = false
+  private var selectionMode = false
+  private var selectedPhotoIds = Set<String>()
+  private var showsDateAnchor = false
+  private var dateIdleTimer: Timer?
+  private var lastUserScrollAt: CFTimeInterval = 0
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -169,8 +215,17 @@ final class PhotoMasonryView: ExpoView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    let widthChanged = lastLayoutWidth > 0 && abs(lastLayoutWidth - bounds.width) > 0.5
+    let anchor = widthChanged ? captureViewportAnchor() : nil
     collectionView.frame = bounds
     overlayView.frame = bounds
+    applyInitialColumnCountIfNeeded()
+    if widthChanged {
+      applyPreferredItemWidth(for: bounds.width)
+      collectionView.layoutIfNeeded()
+      restoreViewportAnchor(anchor)
+    }
+    lastLayoutWidth = bounds.width
     layoutChrome()
   }
 
@@ -183,7 +238,11 @@ final class PhotoMasonryView: ExpoView {
   // tab bar minimization, scroll edge effects, and status-bar tap scroll-to-top (iOS 26).
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    guard window != nil else { return }
+    guard window != nil else {
+      dateIdleTimer?.invalidate()
+      dateIdleTimer = nil
+      return
+    }
     var responder: UIResponder? = next
     while let current = responder {
       if let viewController = current as? UIViewController {
@@ -196,6 +255,9 @@ final class PhotoMasonryView: ExpoView {
 
   func setPhotos(_ newPhotos: [MasonryPhoto]) {
     photos = newPhotos
+    let availableIds = Set(newPhotos.map(\.id))
+    let previousSelection = selectedPhotoIds
+    selectedPhotoIds.formIntersection(availableIds)
     layout.aspectRatios = newPhotos.map { CGFloat($0.aspectRatio) }
     layout.invalidateLayout()
     collectionView.reloadData()
@@ -203,6 +265,28 @@ final class PhotoMasonryView: ExpoView {
     DispatchQueue.main.async { [weak self] in
       self?.emitVisibleRange()
     }
+    if selectedPhotoIds != previousSelection {
+      emitSelection()
+    }
+  }
+
+  func setSelectionMode(_ active: Bool) {
+    guard !active || selectionEnabled else { return }
+    guard selectionMode != active else { return }
+    selectionMode = active
+    if !active {
+      selectedPhotoIds.removeAll()
+      emitSelection()
+    }
+    updateVisibleSelectionState()
+  }
+
+  func setSelectedPhotoIds(_ ids: [String]) {
+    let availableIds = Set(photos.map(\.id))
+    let next = Set(ids).intersection(availableIds)
+    guard next != selectedPhotoIds else { return }
+    selectedPhotoIds = next
+    updateVisibleSelectionState()
   }
 
   func setRefreshing(_ refreshing: Bool) {
@@ -340,9 +424,79 @@ final class PhotoMasonryView: ExpoView {
     return dateTitleWidth(combined) <= dateAvailableWidth ? combined : chromeDateLabel
   }
 
+  private func isShowingDatePill() -> Bool {
+    if filterActive { return true }
+    return showsDateAnchor && !chromeDateLabel.isEmpty
+  }
+
+  private func currentDateTitle() -> String {
+    isShowingDatePill() ? fittedDateTitle() : chromeIdentityLabel
+  }
+
+  private func setDateAnchorActive(_ active: Bool) {
+    guard showsDateAnchor != active else { return }
+    showsDateAnchor = active
+
+    guard window != nil, chromeVisible, chromeDateVisible else {
+      updateDateButton()
+      return
+    }
+    UIView.transition(
+      with: dateButton,
+      duration: 0.2,
+      options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction],
+      animations: { self.updateDateButton() }
+    )
+    UIView.animate(
+      withDuration: 0.2,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
+      animations: { self.layoutChrome() }
+    )
+  }
+
+  // Re-arms with the remaining time instead of resetting on every scroll callback,
+  // which would allocate a fresh timer per frame while the finger is down.
+  private func noteUserScroll() {
+    guard !filterActive else { return }
+    lastUserScrollAt = CACurrentMediaTime()
+    setDateAnchorActive(true)
+    if dateIdleTimer == nil {
+      armDateIdleTimer(after: dateAnchorIdleDelay)
+    }
+  }
+
+  private func armDateIdleTimer(after delay: TimeInterval) {
+    dateIdleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+      self?.handleDateIdleTimer()
+    }
+  }
+
+  private func handleDateIdleTimer() {
+    dateIdleTimer = nil
+    let elapsed = CACurrentMediaTime() - lastUserScrollAt
+    if elapsed >= dateAnchorIdleDelay {
+      setDateAnchorActive(false)
+    } else {
+      armDateIdleTimer(after: dateAnchorIdleDelay - elapsed)
+    }
+  }
+
+  private func resetDateAnchor() {
+    dateIdleTimer?.invalidate()
+    dateIdleTimer = nil
+    setDateAnchorActive(false)
+  }
+
   private func updateDateButton() {
-    let title = fittedDateTitle()
-    var configuration = makeChromeConfiguration(prominent: true)
+    let title = currentDateTitle()
+    var configuration: UIButton.Configuration
+    if isShowingDatePill() {
+      configuration = makeChromeConfiguration(prominent: true)
+    } else {
+      configuration = .plain()
+      configuration.baseForegroundColor = .white
+    }
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: 0,
       leading: chromeDateHorizontalInset,
@@ -368,7 +522,7 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func updateDateVisibility(animated: Bool) {
-    let shouldShow = chromeVisible && chromeDateVisible && !chromeDateLabel.isEmpty
+    let shouldShow = chromeVisible && chromeDateVisible && !currentDateTitle().isEmpty
     let changes = {
       self.dateButton.alpha = shouldShow ? 1 : 0
       self.dateButton.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: -6)
@@ -499,14 +653,76 @@ final class PhotoMasonryView: ExpoView {
     filterBadge.layer.cornerRadius = filterBadgeSize / 2
   }
 
-  private func applyDefaultColumnCountIfNeeded() {
-    guard !hasAppliedDefaultColumnCount else { return }
-    hasAppliedDefaultColumnCount = true
-    let clamped = min(max(defaultColumnCount, minColumnCount), maxColumnCount)
+  private struct ViewportAnchor {
+    let item: Int
+    let offset: CGFloat
+  }
+
+  private func maxAllowedColumnCount(for width: CGFloat) -> Int {
+    guard width > 0 else { return 4 }
+    let widthLimited = Int(floor((width + gap) / (minItemWidth + gap)))
+    return min(maxColumnCount, max(4, widthLimited))
+  }
+
+  private func columnCount(forPreferredItemWidth width: CGFloat, containerWidth: CGFloat) -> Int {
+    let preferred = max(width, minItemWidth)
+    let rawCount = Int(((containerWidth + gap) / (preferred + gap)).rounded())
+    return min(max(rawCount, minColumnCount), maxAllowedColumnCount(for: containerWidth))
+  }
+
+  private func applyInitialColumnCountIfNeeded() {
+    guard !hasAppliedInitialColumnCount, bounds.width > 0 else { return }
+    hasAppliedInitialColumnCount = true
+    let clamped = preferredItemWidth > 0
+      ? columnCount(forPreferredItemWidth: preferredItemWidth, containerWidth: bounds.width)
+      : min(max(defaultColumnCount, minColumnCount), maxAllowedColumnCount(for: bounds.width))
     guard clamped != columnCount else { return }
     columnCount = clamped
     layout.zoomPosition = CGFloat(clamped)
     layout.invalidateLayout()
+  }
+
+  private func applyPreferredItemWidthIfPossible() {
+    guard hasAppliedInitialColumnCount, bounds.width > 0, preferredItemWidth > 0 else { return }
+    let anchor = captureViewportAnchor()
+    applyPreferredItemWidth(for: bounds.width)
+    collectionView.layoutIfNeeded()
+    restoreViewportAnchor(anchor)
+  }
+
+  private func applyPreferredItemWidth(for width: CGFloat) {
+    guard preferredItemWidth > 0 else { return }
+    let next = columnCount(forPreferredItemWidth: preferredItemWidth, containerWidth: width)
+    guard next != columnCount || layout.zoomPosition != CGFloat(next) else { return }
+    columnCount = next
+    layout.zoomPosition = CGFloat(next)
+    layout.invalidateLayout()
+  }
+
+  private func captureViewportAnchor() -> ViewportAnchor? {
+    let visible = collectionView.indexPathsForVisibleItems
+    guard !visible.isEmpty else { return nil }
+    let viewportTop = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    let anchorPath = visible.min { lhs, rhs in
+      let lhsDistance = abs((layout.layoutAttributesForItem(at: lhs)?.frame.minY ?? 0) - viewportTop)
+      let rhsDistance = abs((layout.layoutAttributesForItem(at: rhs)?.frame.minY ?? 0) - viewportTop)
+      return lhsDistance < rhsDistance
+    }
+    guard let anchorPath, let frame = layout.layoutAttributesForItem(at: anchorPath)?.frame else { return nil }
+    return ViewportAnchor(item: anchorPath.item, offset: frame.minY - collectionView.contentOffset.y)
+  }
+
+  private func restoreViewportAnchor(_ anchor: ViewportAnchor?) {
+    guard let anchor,
+          photos.indices.contains(anchor.item),
+          let frame = layout.layoutAttributesForItem(at: IndexPath(item: anchor.item, section: 0))?.frame
+    else { return }
+    let minOffset = -collectionView.adjustedContentInset.top
+    let maxOffset = max(
+      minOffset,
+      collectionView.contentSize.height + collectionView.adjustedContentInset.bottom - collectionView.bounds.height
+    )
+    collectionView.contentOffset.y = min(max(frame.minY - anchor.offset, minOffset), maxOffset)
   }
 
   private func updateInsets() {
@@ -526,15 +742,141 @@ final class PhotoMasonryView: ExpoView {
 
   @objc private func handleDatePress() {
     guard chromeDateInteractive else { return }
-    onDatePress([:])
+    onDatePress(presentationAnchorPayload(for: dateButton))
   }
 
   @objc private func handleProfilePress() {
-    onProfilePress([:])
+    onProfilePress(presentationAnchorPayload(for: profileButton))
   }
 
   @objc private func handleFilterPress() {
-    onFilterPress([:])
+    onFilterPress(presentationAnchorPayload(for: filterButton))
+  }
+
+  private func presentationAnchorPayload(for view: UIView) -> [String: Any] {
+    let frame = view.window.map { view.convert(view.bounds, to: $0) } ?? view.convert(view.bounds, to: nil)
+    return [
+      "frame": [
+        "x": frame.minX,
+        "y": frame.minY,
+        "width": frame.width,
+        "height": frame.height,
+      ],
+    ]
+  }
+
+  private func toggleSelectionFromContextMenu(at indexPath: IndexPath) {
+    guard selectionEnabled else { return }
+    let enteredSelectionMode = !selectionMode
+    if !selectionMode {
+      selectionMode = true
+      onSelectionModeChange(["active": true])
+    }
+    toggleSelection(at: indexPath)
+    if enteredSelectionMode {
+      updateVisibleSelectionState()
+    }
+  }
+
+  private func toggleSelection(at indexPath: IndexPath) {
+    guard photos.indices.contains(indexPath.item) else { return }
+    let id = photos[indexPath.item].id
+    if selectedPhotoIds.contains(id) {
+      selectedPhotoIds.remove(id)
+    } else {
+      selectedPhotoIds.insert(id)
+    }
+    haptics.impactOccurred()
+    emitSelection()
+    if let cell = collectionView.cellForItem(at: indexPath) as? PhotoCell {
+      cell.configureSelection(selectionMode: true, selected: selectedPhotoIds.contains(id))
+    }
+  }
+
+  private func emitSelection() {
+    let ids = photos.map(\.id).filter { selectedPhotoIds.contains($0) }
+    onSelectionChange(["ids": ids])
+  }
+
+  private func updateVisibleSelectionState() {
+    for indexPath in collectionView.indexPathsForVisibleItems {
+      guard photos.indices.contains(indexPath.item),
+            let cell = collectionView.cellForItem(at: indexPath) as? PhotoCell else { continue }
+      let id = photos[indexPath.item].id
+      cell.configureSelection(selectionMode: selectionMode, selected: selectedPhotoIds.contains(id))
+    }
+  }
+
+  private func makeContextMenuConfiguration(at indexPath: IndexPath) -> UIContextMenuConfiguration? {
+    guard photos.indices.contains(indexPath.item) else { return nil }
+    let photoId = photos[indexPath.item].id
+    let hasStandardActions = !contextMenuInfoTitle.isEmpty || !contextMenuShareTitle.isEmpty
+    let hasSelectionAction = selectionEnabled && !contextMenuSelectTitle.isEmpty
+    guard hasStandardActions || hasSelectionAction else { return nil }
+
+    return UIContextMenuConfiguration(identifier: photoId as NSString, previewProvider: nil) { [weak self] _ in
+      guard let self else { return nil }
+      var actions = [UIMenuElement]()
+
+      if !self.contextMenuInfoTitle.isEmpty {
+        actions.append(
+          UIAction(title: self.contextMenuInfoTitle, image: UIImage(systemName: "info.circle")) { [weak self] _ in
+            self?.emitContextMenuAction("info", photoId: photoId)
+          }
+        )
+      }
+
+      if !self.contextMenuShareTitle.isEmpty {
+        actions.append(
+          UIAction(title: self.contextMenuShareTitle, image: UIImage(systemName: "square.and.arrow.up")) {
+            [weak self] _ in
+            self?.emitContextMenuAction("share", photoId: photoId)
+          }
+        )
+      }
+
+      if self.selectionEnabled, !self.contextMenuSelectTitle.isEmpty {
+        let selectionState: UIMenuElement.State = self.selectedPhotoIds.contains(photoId) ? .on : .off
+        actions.append(
+          UIAction(
+            title: self.contextMenuSelectTitle,
+            image: UIImage(systemName: "checkmark.circle"),
+            state: selectionState
+          ) { [weak self] _ in
+            guard let self, let indexPath = self.indexPath(forPhotoId: photoId) else { return }
+            self.toggleSelectionFromContextMenu(at: indexPath)
+          }
+        )
+      }
+
+      return UIMenu(children: actions)
+    }
+  }
+
+  private func emitContextMenuAction(_ action: String, photoId: String) {
+    guard let indexPath = indexPath(forPhotoId: photoId) else { return }
+    onPhotoContextMenuAction([
+      "action": action,
+      "id": photoId,
+      "index": indexPath.item,
+    ])
+  }
+
+  private func indexPath(forPhotoId photoId: String) -> IndexPath? {
+    guard let index = photos.firstIndex(where: { $0.id == photoId }) else { return nil }
+    return IndexPath(item: index, section: 0)
+  }
+
+  private func indexPath(for configuration: UIContextMenuConfiguration) -> IndexPath? {
+    guard let identifier = configuration.identifier as? NSString else { return nil }
+    return indexPath(forPhotoId: identifier as String)
+  }
+
+  private func contextMenuPreview(at indexPath: IndexPath) -> UITargetedPreview? {
+    guard let cell = collectionView.cellForItem(at: indexPath) as? PhotoCell else { return nil }
+    let parameters = UIPreviewParameters()
+    parameters.backgroundColor = .clear
+    return UITargetedPreview(view: cell.contentView, parameters: parameters)
   }
 
   @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
@@ -571,7 +913,10 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func clampPosition(_ position: CGFloat) -> CGFloat {
-    min(max(position, CGFloat(minColumnCount)), CGFloat(maxColumnCount))
+    min(
+      max(position, CGFloat(minColumnCount)),
+      CGFloat(maxAllowedColumnCount(for: collectionView.bounds.width))
+    )
   }
 
   private func applyZoomPosition(_ position: CGFloat) {
@@ -614,8 +959,13 @@ final class PhotoMasonryView: ExpoView {
         self.pinchAnchorItem = nil
         if settled != self.columnCount {
           self.columnCount = settled
-          self.onColumnCountChange(["columnCount": settled])
         }
+        let settledItemWidth = self.layout.itemWidth
+        self.preferredItemWidth = settledItemWidth
+        self.onColumnCountChange([
+          "columnCount": settled,
+          "preferredItemWidth": settledItemWidth,
+        ])
         self.emitVisibleRange()
       }
     )
@@ -644,13 +994,28 @@ extension PhotoMasonryView: UICollectionViewDataSource {
 
   func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: PhotoCell.reuseIdentifier, for: indexPath) as! PhotoCell
-    cell.configure(with: photos[indexPath.item], targetWidth: layout.itemWidth)
+    let photo = photos[indexPath.item]
+    cell.configure(
+      with: photo,
+      targetWidth: layout.itemWidth,
+      livePhotoBadgeTitle: livePhotoBadgeTitle,
+      selectionMode: selectionMode,
+      selected: selectedPhotoIds.contains(photo.id)
+    )
     return cell
   }
 }
 
 extension PhotoMasonryView: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    if selectionMode {
+      toggleSelection(at: indexPath)
+      return
+    }
+    emitPhotoPress(at: indexPath)
+  }
+
+  private func emitPhotoPress(at indexPath: IndexPath) {
     guard !isOpeningPhoto, photos.indices.contains(indexPath.item) else { return }
     isOpeningPhoto = true
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -676,6 +1041,71 @@ extension PhotoMasonryView: UICollectionViewDelegate {
     ])
   }
 
+  @available(iOS 16.0, *)
+  func collectionView(
+    _ collectionView: UICollectionView,
+    contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
+    point: CGPoint
+  ) -> UIContextMenuConfiguration? {
+    let indexPath = collectionView.indexPathForItem(at: point) ?? indexPaths.first
+    guard let indexPath else { return nil }
+    return makeContextMenuConfiguration(at: indexPath)
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    contextMenuConfigurationForItemAt indexPath: IndexPath,
+    point: CGPoint
+  ) -> UIContextMenuConfiguration? {
+    makeContextMenuConfiguration(at: indexPath)
+  }
+
+  @available(iOS 16.0, *)
+  func collectionView(
+    _ collectionView: UICollectionView,
+    contextMenuConfiguration: UIContextMenuConfiguration,
+    highlightPreviewForItemAt indexPath: IndexPath
+  ) -> UITargetedPreview? {
+    contextMenuPreview(at: indexPath)
+  }
+
+  @available(iOS 16.0, *)
+  func collectionView(
+    _ collectionView: UICollectionView,
+    contextMenuConfiguration: UIContextMenuConfiguration,
+    dismissalPreviewForItemAt indexPath: IndexPath
+  ) -> UITargetedPreview? {
+    contextMenuPreview(at: indexPath)
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+  ) -> UITargetedPreview? {
+    guard let indexPath = indexPath(for: configuration) else { return nil }
+    return contextMenuPreview(at: indexPath)
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+  ) -> UITargetedPreview? {
+    guard let indexPath = indexPath(for: configuration) else { return nil }
+    return contextMenuPreview(at: indexPath)
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+    animator: UIContextMenuInteractionCommitAnimating
+  ) {
+    guard !selectionMode, let indexPath = indexPath(for: configuration) else { return }
+    animator.preferredCommitStyle = .dismiss
+    animator.addCompletion { [weak self] in
+      self?.emitPhotoPress(at: indexPath)
+    }
+  }
+
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
     let beyond = offset > scrollThreshold
@@ -689,6 +1119,20 @@ extension PhotoMasonryView: UICollectionViewDelegate {
       lastVisibleRangeEmit = now
       emitVisibleRange()
     }
+
+    // Pinch zoom repositions contentOffset programmatically; only user-driven
+    // scrolling should surface the date anchor.
+    if scrollView.isDragging || scrollView.isDecelerating {
+      if offset <= 1 {
+        resetDateAnchor()
+      } else {
+        noteUserScroll()
+      }
+    }
+  }
+
+  func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+    resetDateAnchor()
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {

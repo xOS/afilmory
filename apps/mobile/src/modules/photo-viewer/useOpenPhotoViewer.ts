@@ -6,7 +6,7 @@ import type { GalleryPhoto } from '@/modules/galleries/types'
 
 import { createPhotoViewerSession } from './sessionStore'
 
-export function useOpenPhotoViewer(photos: GalleryPhoto[]) {
+export function useOpenPhotoViewer(photos: GalleryPhoto[], gallerySlug: string | null) {
   const router = useRouter()
   const openingRef = useRef(false)
 
@@ -23,7 +23,7 @@ export function useOpenPhotoViewer(photos: GalleryPhoto[]) {
         return
       }
 
-      const session = createPhotoViewerSession(photos, index, pressed.transitionId)
+      const session = createPhotoViewerSession(photos, index, pressed.transitionId, gallerySlug)
       const href = {
         pathname: '/photo/[photoId]',
         params: { photoId: pressed.id, session: session.id },
@@ -35,6 +35,6 @@ export function useOpenPhotoViewer(photos: GalleryPhoto[]) {
         openingRef.current = false
       }, 600)
     },
-    [photos, router],
+    [gallerySlug, photos, router],
   )
 }

@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
 
 import { setAuthCookie } from '@/api/auth'
+import { setActiveTenantSlug } from '@/api/client'
 
-import { fetchSession } from './api'
+import { fetchSession, switchActiveWorkspace } from './api'
 import { authClient } from './authClient'
 import type { AuthProviderId, SessionInfo } from './types'
 
@@ -40,7 +41,14 @@ export function useAuth(): AuthState {
 
 function resetToSignedOut() {
   setAuthCookie(null)
+  setActiveTenantSlug(null)
   setState({ status: 'signedOut', session: null })
+}
+
+function setSignedIn(session: SessionInfo, cookie: string | null) {
+  setAuthCookie(cookie)
+  setActiveTenantSlug(session.activeWorkspace?.slug)
+  setState({ status: 'signedIn', session })
 }
 
 export async function hydrateAuth(): Promise<void> {
@@ -55,8 +63,7 @@ export async function hydrateAuth(): Promise<void> {
       resetToSignedOut()
       return
     }
-    setAuthCookie(cookie)
-    setState({ status: 'signedIn', session })
+    setSignedIn(session, cookie)
   }
   catch {
     resetToSignedOut()
@@ -73,11 +80,26 @@ export async function signInWithProvider(provider: AuthProviderId): Promise<void
   if (!session) {
     throw new Error('Sign-in did not produce a session.')
   }
-  setAuthCookie(cookie)
-  setState({ status: 'signedIn', session })
+  setSignedIn(session, cookie)
 }
 
 export async function signOut(): Promise<void> {
   await authClient.signOut().catch(() => {})
   resetToSignedOut()
+}
+
+export async function switchWorkspace(tenantId: string): Promise<void> {
+  const cookie = authClient.getCookie()
+  if (!cookie) {
+    resetToSignedOut()
+    throw new Error('A valid session is required to switch workspaces.')
+  }
+
+  await switchActiveWorkspace(cookie, tenantId)
+  const session = await fetchSession(cookie)
+  if (!session) {
+    resetToSignedOut()
+    throw new Error('The session expired while switching workspaces.')
+  }
+  setSignedIn(session, cookie)
 }

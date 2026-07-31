@@ -1,7 +1,7 @@
 import type { PhotoManifestItem } from '@afilmory/builder'
 import type { ManifestVersion } from '@afilmory/builder/manifest/version.js'
 import { CURRENT_MANIFEST_VERSION } from '@afilmory/builder/manifest/version.ts'
-import { relations } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 
 import { generateId } from './snowflake'
@@ -27,7 +28,9 @@ const snowflakeId = createSnowflakeId('id').primaryKey()
 // Better Auth custom schema
 // =========================
 
-export const userRoleEnum = pgEnum('user_role', ['user', 'admin', 'superadmin'])
+export const platformRoleEnum = pgEnum('platform_role', ['user', 'superadmin'])
+export const tenantMembershipRoleEnum = pgEnum('tenant_membership_role', ['member', 'admin', 'owner'])
+export const tenantMembershipStatusEnum = pgEnum('tenant_membership_status', ['active', 'suspended'])
 
 export const tenantStatusEnum = pgEnum('tenant_status', ['pending', 'active', 'inactive', 'suspended'])
 export const tenantDomainStatusEnum = pgEnum('tenant_domain_status', ['pending', 'verified', 'disabled'])
@@ -86,7 +89,7 @@ export const tenants = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [unique('uq_tenant_slug').on(t.slug)],
+  (t) => [unique('uq_tenant_slug').on(t.slug)],
 )
 
 export const tenantDomains = pgTable(
@@ -103,11 +106,11 @@ export const tenantDomains = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [unique('uq_tenant_domain_domain').on(t.domain), index('idx_tenant_domain_tenant').on(t.tenantId)],
+  (t) => [unique('uq_tenant_domain_domain').on(t.domain), index('idx_tenant_domain_tenant').on(t.tenantId)],
 )
 
-// Custom users table (Better Auth: user)
-// Note: Multi-tenant design - same email can exist in different tenants
+// Platform-global users table (Better Auth: user).
+// Workspace permissions live exclusively in tenantMemberships.
 export const authUsers = pgTable(
   'auth_user',
   {
@@ -118,8 +121,7 @@ export const authUsers = pgTable(
     image: text('image'),
     creemCustomerId: text('creem_customer_id'),
     hadTrial: boolean('had_trial').default(false).notNull(),
-    role: userRoleEnum('role').notNull().default('user'),
-    tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
+    role: platformRoleEnum('role').notNull().default('user'),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
     twoFactorEnabled: boolean('two_factor_enabled').default(false).notNull(),
@@ -129,11 +131,31 @@ export const authUsers = pgTable(
     banReason: text('ban_reason'),
     banExpires: timestamp('ban_expires_at', { mode: 'string' }),
   },
-  t => [
-    // Multi-tenant: same email can exist in different tenants
-    unique('uq_auth_user_tenant_email').on(t.tenantId, t.email),
-    index('idx_auth_user_email').on(t.email),
-    index('idx_auth_user_tenant').on(t.tenantId),
+  (t) => [uniqueIndex('uq_auth_user_email_normalized').on(sql`lower(trim(${t.email}))`)],
+)
+
+export const tenantMemberships = pgTable(
+  'tenant_membership',
+  {
+    id: snowflakeId,
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    role: tenantMembershipRoleEnum('role').notNull().default('member'),
+    status: tenantMembershipStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('uq_tenant_membership_tenant_user').on(t.tenantId, t.userId),
+    uniqueIndex('uq_tenant_membership_active_owner')
+      .on(t.tenantId)
+      .where(sql`${t.role} = 'owner' and ${t.status} = 'active'`),
+    index('idx_tenant_membership_user_status').on(t.userId, t.status),
+    index('idx_tenant_membership_tenant_role_status').on(t.tenantId, t.role, t.status),
   ],
 )
 
@@ -146,14 +168,13 @@ export const authSessions = pgTable('auth_session', {
   updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
+  activeTenantId: text('active_tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
   userId: text('user_id')
     .notNull()
     .references(() => authUsers.id, { onDelete: 'cascade' }),
 })
 
-// Custom accounts table (Better Auth: account)
-// Note: Multi-tenant design - same social account can exist in different tenants
+// Platform-global accounts table (Better Auth: account).
 export const authAccounts = pgTable(
   'auth_account',
   {
@@ -163,7 +184,6 @@ export const authAccounts = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => authUsers.id, { onDelete: 'cascade' }),
-    tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
     accessToken: text('access_token'),
     refreshToken: text('refresh_token'),
     idToken: text('id_token'),
@@ -174,12 +194,9 @@ export const authAccounts = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
-    // Multi-tenant: same social account can exist in different tenants
-    unique('uq_auth_account_tenant_provider').on(t.tenantId, t.providerId, t.accountId),
+  (t) => [
+    unique('uq_auth_account_provider').on(t.providerId, t.accountId),
     index('idx_auth_account_user').on(t.userId),
-    index('idx_auth_account_tenant').on(t.tenantId),
-    index('idx_auth_account_provider').on(t.providerId, t.accountId),
   ],
 )
 
@@ -194,6 +211,7 @@ export const authVerifications = pgTable('auth_verification', {
 
 export const creemSubscriptions = pgTable('creem_subscription', {
   id: text('id').primaryKey(),
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
   productId: text('product_id').notNull(),
   referenceId: text('reference_id').notNull(),
   creemCustomerId: text('creem_customer_id'),
@@ -222,7 +240,7 @@ export const settings = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [unique('uq_settings_tenant_key').on(t.tenantId, t.key)],
+  (t) => [unique('uq_settings_tenant_key').on(t.tenantId, t.key)],
 )
 
 export const systemSettings = pgTable(
@@ -236,7 +254,7 @@ export const systemSettings = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [unique('uq_system_setting_key').on(t.key)],
+  (t) => [unique('uq_system_setting_key').on(t.key)],
 )
 
 export const reactions = pgTable(
@@ -250,7 +268,7 @@ export const reactions = pgTable(
     refKey: text('ref_key').notNull(),
     reaction: text('reaction').notNull(),
   },
-  t => [index('idx_reactions_tenant_ref_key').on(t.tenantId, t.refKey)],
+  (t) => [index('idx_reactions_tenant_ref_key').on(t.tenantId, t.refKey)],
 )
 
 export const comments = pgTable(
@@ -273,7 +291,7 @@ export const comments = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { mode: 'string' }),
   },
-  t => [
+  (t) => [
     index('idx_comment_tenant_photo').on(t.tenantId, t.photoId),
     index('idx_comment_parent').on(t.parentId),
     index('idx_comment_user').on(t.userId),
@@ -304,7 +322,7 @@ export const commentReactions = pgTable(
     reaction: text('reaction').notNull(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     unique('uq_comment_reaction_user').on(t.tenantId, t.commentId, t.userId, t.reaction),
     index('idx_comment_reaction_comment').on(t.tenantId, t.commentId),
   ],
@@ -327,7 +345,7 @@ export const managedStorageUsages = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     index('idx_managed_storage_usage_tenant_recorded').on(t.tenantId, t.recordedAt),
     index('idx_managed_storage_usage_provider').on(t.providerKey),
   ],
@@ -352,7 +370,7 @@ export const managedStorageFileReferences = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     unique('uq_managed_storage_file_ref_tenant_key').on(t.tenantId, t.storageKey),
     index('idx_managed_storage_file_ref_provider').on(t.providerKey),
     index('idx_managed_storage_file_ref_reference').on(t.referenceType, t.referenceId),
@@ -382,7 +400,7 @@ export const photoAssets = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     unique('uq_photo_asset_tenant_storage_key').on(t.tenantId, t.storageKey),
     unique('uq_photo_asset_tenant_photo_id').on(t.tenantId, t.photoId),
   ],
@@ -412,7 +430,7 @@ export const photoAccessLogs = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     index('idx_photo_access_log_tenant').on(t.tenantId),
     index('idx_photo_access_log_asset').on(t.photoAssetId),
     index('idx_photo_access_log_token').on(t.tokenId),
@@ -434,7 +452,7 @@ export const photoAccessStats = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     primaryKey({ name: 'pk_photo_access_stat', columns: [t.tenantId, t.photoAssetId] }),
     index('idx_photo_access_stat_photo').on(t.tenantId, t.photoId),
   ],
@@ -455,7 +473,7 @@ export const photoSyncRuns = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [index('idx_photo_sync_run_tenant').on(t.tenantId)],
+  (t) => [index('idx_photo_sync_run_tenant').on(t.tenantId)],
 )
 
 export type BillingUsageMetadata = Record<string, unknown>
@@ -475,7 +493,7 @@ export const billingUsageEvents = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
   },
-  t => [
+  (t) => [
     index('idx_billing_usage_event_tenant').on(t.tenantId),
     index('idx_billing_usage_event_type').on(t.eventType),
   ],
@@ -485,6 +503,7 @@ export const dbSchema = {
   tenants,
   tenantDomains,
   authUsers,
+  tenantMemberships,
   authSessions,
   authAccounts,
   authVerifications,

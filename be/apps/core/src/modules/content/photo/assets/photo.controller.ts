@@ -1,10 +1,22 @@
 import { getOptionalDbContext } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
-import { Roles } from '@core/guards/roles.decorator'
+import { TenantRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
 import type { DataSyncProgressEvent } from '@core/modules/infrastructure/data-sync/data-sync.types'
 import { createProgressSseResponse } from '@core/modules/shared/http/sse'
-import { Body, ContextParam, Controller, createLogger, Delete, Get, Param, Patch, Post, Query, UseInterceptors } from '@tsuki-hono/common'
+import {
+  Body,
+  ContextParam,
+  Controller,
+  createLogger,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseInterceptors,
+} from '@tsuki-hono/common'
 import type { Context } from 'hono'
 import { inject } from 'tsyringe'
 
@@ -21,12 +33,13 @@ type DeleteAssetsDto = {
 }
 
 @Controller('photos')
-@Roles('admin')
+@TenantRoles('admin')
 export class PhotoController {
   constructor(
     @inject(PhotoAssetService) private readonly photoAssetService: PhotoAssetService,
     @inject(StorageAccessService) private readonly storageAccessService: StorageAccessService,
   ) {}
+
   private readonly logger = createLogger(this.constructor.name)
 
   @Get('assets')

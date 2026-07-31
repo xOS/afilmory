@@ -21,6 +21,7 @@ export interface GalleryCoverPhoto {
   thumbnailUrl: string
   thumbHash: string | null
   aspectRatio: number
+  isLivePhoto: boolean
 }
 
 export interface GalleryLocation {
@@ -115,6 +116,18 @@ export interface GalleryExif {
   FujiRecipe?: GalleryFujiRecipe
 }
 
+export type GalleryVideoSource
+  = | {
+    type: 'live-photo'
+    videoUrl: string
+  }
+  | {
+    type: 'motion-photo'
+    offset: number
+    size?: number
+    presentationTimestamp?: number
+  }
+
 export interface GalleryPhoto {
   id: string
   title: string
@@ -128,7 +141,7 @@ export interface GalleryPhoto {
   format: string | null
   size: number | null
   dateTaken: string | null
-  isLive: boolean
+  video: GalleryVideoSource | null
   tags: string[]
   exif: GalleryExif | null
   toneAnalysis: GalleryToneAnalysis | null

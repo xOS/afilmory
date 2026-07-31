@@ -5,10 +5,10 @@ export interface SessionUser {
   name: string
   email: string
   image?: string | null
-  role?: string | null
+  role?: 'user' | 'superadmin' | null
 }
 
-export interface SessionTenant {
+export interface SessionWorkspace {
   id: string
   slug: string
   name: string
@@ -16,7 +16,18 @@ export interface SessionTenant {
   isPlaceholder?: boolean
 }
 
+export interface SessionMembership {
+  id: string
+  role: 'member' | 'admin' | 'owner'
+  status: 'active' | 'suspended'
+  workspace: SessionWorkspace
+}
+
 export interface SessionInfo {
   user: SessionUser
-  tenant: SessionTenant | null
+  activeWorkspace: SessionWorkspace | null
+  requestedWorkspace: SessionWorkspace | null
+  requestedMembership: Omit<SessionMembership, 'workspace'> | null
+  memberships: SessionMembership[]
+  activeMembership: SessionMembership | null
 }

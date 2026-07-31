@@ -4,33 +4,49 @@ import { SymbolView } from 'expo-symbols'
 import type { PhotoViewerIndexChangeEvent } from 'photo-masonry'
 import { PhotoViewerView } from 'photo-masonry'
 import type { PropsWithChildren } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { LayoutChangeEvent } from 'react-native'
+import { findNodeHandle, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native'
+import Animated, { Easing, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getIntlLocale, useTranslation } from '@/i18n'
-import { presentNativePhotoInfo } from '@/native/photoSheets'
+import { photoCommentsPage } from '@/modules/comments/photoCommentsPage'
+import { usePhotoCommentCount } from '@/modules/comments/usePhotoCommentCount'
+import { livePhotoVideoUrl } from '@/modules/galleries/videoSource'
+import { supportsPhotoInspector } from '@/modules/shell/adaptiveLayout'
+import { buildNativePhotoInfoPayload, NativePhotoInfoPanel, presentNativePhotoInfo } from '@/native/photoSheets'
 import { usePageRuntime } from '@/presentation'
 import { font } from '@/theme/tokens'
 
 import type { PhotoDetailRouteParams } from './photoDetailPage'
-import { buildPhotoInfoModel } from './photoInfoModel'
+import { buildPhotoInfoSheetModel } from './photoInfoModel'
 import { getPhotoViewerSession, releasePhotoViewerSession } from './sessionStore'
 
-type GlassButtonSymbol = 'info.circle' | 'square.and.arrow.up' | 'xmark'
+type GlassButtonSymbol = 'bubble.left' | 'info.circle' | 'square.and.arrow.up' | 'xmark'
 
 const GLASS_BUTTON_ICON_SIZES: Record<GlassButtonSymbol, number> = {
+  'bubble.left': 25,
   'info.circle': 26,
   'square.and.arrow.up': 30,
   'xmark': 23,
 }
 
+const INSPECTOR_TRANSITION_DURATION = 320
+const INSPECTOR_TRANSITION_EASING = Easing.bezier(0.32, 0.72, 0, 1)
+const INSPECTOR_WIDTH = 380
+
 export function PhotoDetailScreen() {
-  const { cancel, params } = usePageRuntime<PhotoDetailRouteParams>()
+  const { cancel, params, present } = usePageRuntime<PhotoDetailRouteParams>()
   const { i18n, t } = useTranslation()
   const session = getPhotoViewerSession(params.sessionId)
   const [currentIndex, setCurrentIndex] = useState(session?.initialIndex ?? 0)
+  const [viewportWidth, setViewportWidth] = useState(0)
+  const [infoInspectorVisible, setInfoInspectorVisible] = useState(false)
+  const shareButtonRef = useRef<View>(null)
+  const inspectorProgress = useSharedValue(0)
   const nativeGlassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
+  const canShowInfoInspector = supportsPhotoInspector(viewportWidth)
 
   useEffect(() => () => releasePhotoViewerSession(params.sessionId), [params.sessionId])
 
@@ -45,39 +61,91 @@ export function PhotoDetailScreen() {
         aspectRatio: photo.aspectRatio,
         width: photo.width,
         height: photo.height,
-        isLive: photo.isLive,
+        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
       })) ?? [],
     [session, t],
   )
 
   const currentPhoto = session?.photos[currentIndex] ?? null
+  const { count: commentCount, refresh: refreshCommentCount } = usePhotoCommentCount(
+    session?.gallerySlug ?? null,
+    currentPhoto?.id ?? null,
+  )
+  const photoInfo = useMemo(() => {
+    if (!currentPhoto) {
+      return null
+    }
+    return buildPhotoInfoSheetModel(currentPhoto, t, getIntlLocale(i18n.resolvedLanguage))
+  }, [currentPhoto, i18n.resolvedLanguage, t])
+  const nativePhotoInfoJSON = useMemo(
+    () => (photoInfo ? JSON.stringify(buildNativePhotoInfoPayload(photoInfo)) : null),
+    [photoInfo],
+  )
+  const inspectorPresented = canShowInfoInspector && infoInspectorVisible && nativePhotoInfoJSON !== null
+  const inspectorClipStyle = useAnimatedStyle(() => ({
+    width: INSPECTOR_WIDTH * inspectorProgress.get(),
+  }))
+  const inspectorSurfaceStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: INSPECTOR_WIDTH * (1 - inspectorProgress.get()) }],
+  }))
   const handleIndexChange = useCallback((event: { nativeEvent: PhotoViewerIndexChangeEvent }) => {
     setCurrentIndex(event.nativeEvent.index)
   }, [])
   const openInfo = useCallback(() => {
-    if (currentPhoto) {
-      const model = buildPhotoInfoModel(currentPhoto, t, getIntlLocale(i18n.resolvedLanguage))
-      void presentNativePhotoInfo({
-        title: currentPhoto.title,
-        description: currentPhoto.description || null,
-        sections: [model.basic, ...model.sections],
-        captureParameters: model.captureParameters,
-        tags: currentPhoto.tags,
-        toneAnalysis: model.toneAnalysis,
-        mapLocation: model.mapLocation,
-        emptyMessage: model.hasExif ? null : t('photo.noExif'),
-      })
+    if (!photoInfo) {
+      return
     }
-  }, [currentPhoto, i18n.resolvedLanguage, t])
+    if (canShowInfoInspector) {
+      setInfoInspectorVisible(visible => !visible)
+    }
+    else {
+      void presentNativePhotoInfo(photoInfo)
+    }
+  }, [canShowInfoInspector, photoInfo])
   const sharePhoto = useCallback(() => {
     if (!currentPhoto) {
       return
     }
-    void Share.share({
-      message: currentPhoto.title || currentPhoto.originalUrl,
-      url: currentPhoto.originalUrl,
-    })
+    const anchor = findNodeHandle(shareButtonRef.current)
+    void Share.share(
+      {
+        message: currentPhoto.title || currentPhoto.originalUrl,
+        url: currentPhoto.originalUrl,
+      },
+      anchor === null ? undefined : { anchor },
+    )
   }, [currentPhoto])
+  const openComments = useCallback(() => {
+    if (!currentPhoto || !session?.gallerySlug) {
+      return
+    }
+    void present(photoCommentsPage, {
+      gallerySlug: session.gallerySlug,
+      photoId: currentPhoto.id,
+      photoTitle: currentPhoto.title,
+    }).then(() => refreshCommentCount())
+  }, [currentPhoto, present, refreshCommentCount, session?.gallerySlug])
+
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = event.nativeEvent.layout.width
+    setViewportWidth(current => (current === nextWidth ? current : nextWidth))
+  }, [])
+
+  useEffect(() => {
+    if (!canShowInfoInspector) {
+      setInfoInspectorVisible(false)
+    }
+  }, [canShowInfoInspector])
+
+  useEffect(() => {
+    inspectorProgress.set(
+      withTiming(inspectorPresented ? 1 : 0, {
+        duration: INSPECTOR_TRANSITION_DURATION,
+        easing: INSPECTOR_TRANSITION_EASING,
+        reduceMotion: ReduceMotion.System,
+      }),
+    )
+  }, [inspectorPresented, inspectorProgress])
 
   if (!session || !currentPhoto) {
     return (
@@ -92,105 +160,164 @@ export function PhotoDetailScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={handleLayout}>
       <StatusBar style="light" />
-      <PhotoViewerView
-        initialIndex={session.initialIndex}
-        photos={items}
-        style={styles.viewer}
-        testID="photo-viewer"
-        transitionId={session.transitionId}
-        onIndexChange={handleIndexChange}
-      />
-
-      <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topChrome}>
-        <View pointerEvents="box-none" style={styles.toolbar}>
-          <ChromeButton
-            accessibilityLabel={t('photo.close')}
-            nativeGlassAvailable={nativeGlassAvailable}
-            symbol="xmark"
-            onPress={cancel}
+      <View style={styles.contentRow}>
+        <View style={styles.mediaColumn}>
+          <PhotoViewerView
+            initialIndex={session.initialIndex}
+            interactiveDismissEnabled={!infoInspectorVisible}
+            keyboardCloseTitle={t('photo.close')}
+            keyboardInfoTitle={t('photo.info')}
+            keyboardNextTitle={t('photo.next')}
+            keyboardPreviousTitle={t('photo.previous')}
+            livePhotoAccessibilityHint={t('photo.livePhotoHint')}
+            livePhotoBadgeTitle={t('photo.livePhoto')}
+            photos={items}
+            style={styles.viewer}
+            testID="photo-viewer"
+            transitionId={session.transitionId}
+            onIndexChange={handleIndexChange}
+            onInfoRequest={openInfo}
+            onRequestClose={cancel}
           />
-          <ChromeButtonCluster nativeGlassAvailable={nativeGlassAvailable}>
-            <ChromeButton
-              accessibilityLabel={t('photo.info')}
-              nativeGlassAvailable={nativeGlassAvailable}
-              symbol="info.circle"
-              onPress={openInfo}
-            />
-            <ChromeButton
-              accessibilityLabel={t('photo.share')}
-              nativeGlassAvailable={nativeGlassAvailable}
-              symbol="square.and.arrow.up"
-              onPress={sharePhoto}
-            />
-          </ChromeButtonCluster>
-        </View>
-      </SafeAreaView>
 
-      <SafeAreaView edges={['bottom']} pointerEvents="none" style={styles.bottomChrome}>
-        <Text numberOfLines={1} style={styles.caption}>
-          {currentPhoto.title || currentPhoto.dateTaken || ''}
-        </Text>
-        <Text style={styles.counter}>
-          {currentIndex + 1}
-          {' '}
-          /
-          {session.photos.length}
-        </Text>
-      </SafeAreaView>
+          <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topChrome}>
+            <View pointerEvents="box-none" style={styles.toolbar}>
+              <ChromeButton
+                accessibilityLabel={t('photo.close')}
+                nativeGlassAvailable={nativeGlassAvailable}
+                symbol="xmark"
+                onPress={cancel}
+              />
+              <ChromeButtonCluster nativeGlassAvailable={nativeGlassAvailable}>
+                <ChromeButton
+                  active={canShowInfoInspector && infoInspectorVisible}
+                  accessibilityLabel={t('photo.info')}
+                  nativeGlassAvailable={nativeGlassAvailable}
+                  symbol="info.circle"
+                  onPress={openInfo}
+                />
+                {session.gallerySlug ? (
+                  <ChromeButton
+                    accessibilityLabel={
+                      commentCount && commentCount > 0 ? `${t('photo.comments')}, ${commentCount}` : t('photo.comments')
+                    }
+                    badge={commentCount}
+                    nativeGlassAvailable={nativeGlassAvailable}
+                    symbol="bubble.left"
+                    onPress={openComments}
+                  />
+                ) : null}
+                <ChromeButton
+                  ref={shareButtonRef}
+                  accessibilityLabel={t('photo.share')}
+                  nativeGlassAvailable={nativeGlassAvailable}
+                  symbol="square.and.arrow.up"
+                  onPress={sharePhoto}
+                />
+              </ChromeButtonCluster>
+            </View>
+          </SafeAreaView>
+
+          <SafeAreaView edges={['bottom']} pointerEvents="none" style={styles.bottomChrome}>
+            <Text numberOfLines={1} style={styles.caption}>
+              {currentPhoto.title || currentPhoto.dateTaken || ''}
+            </Text>
+            <Text style={styles.counter}>
+              {currentIndex + 1}
+              {' '}
+              /
+              {session.photos.length}
+            </Text>
+          </SafeAreaView>
+        </View>
+
+        {canShowInfoInspector && nativePhotoInfoJSON ? (
+          <Animated.View
+            accessibilityElementsHidden={!inspectorPresented}
+            pointerEvents={inspectorPresented ? 'auto' : 'none'}
+            style={[styles.infoInspectorClip, inspectorClipStyle]}
+          >
+            <Animated.View style={[styles.infoInspectorContainer, inspectorSurfaceStyle]}>
+              <NativePhotoInfoPanel
+                infoJSON={nativePhotoInfoJSON}
+                style={styles.infoInspector}
+                onClose={() => setInfoInspectorVisible(false)}
+              />
+            </Animated.View>
+          </Animated.View>
+        ) : null}
+      </View>
     </View>
   )
 }
 
-function ChromeButton({
-  accessibilityLabel,
-  nativeGlassAvailable,
-  onPress,
-  symbol,
-}: {
+interface ChromeButtonProps {
+  active?: boolean
   accessibilityLabel: string
+  badge?: number | null
   nativeGlassAvailable: boolean
   onPress: () => void
   symbol: GlassButtonSymbol
-}) {
-  const content = (
-    <SymbolView name={symbol} scale="large" size={GLASS_BUTTON_ICON_SIZES[symbol]} tintColor="#fff" weight="regular" />
-  )
-
-  if (nativeGlassAvailable) {
-    return (
-      <GlassView colorScheme="dark" glassEffectStyle="regular" isInteractive style={styles.chromeButtonSurface}>
-        <Pressable
-          accessibilityLabel={accessibilityLabel}
-          accessibilityRole="button"
-          hitSlop={8}
-          style={({ pressed }) => [styles.chromeButtonContent, pressed && styles.glassContentPressed]}
-          onPress={onPress}
-        >
-          {content}
-        </Pressable>
-      </GlassView>
-    )
-  }
-
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-      hitSlop={8}
-      style={({ pressed }) => [
-        styles.chromeButtonSurface,
-        styles.chromeButtonContent,
-        styles.chromeButtonFallback,
-        pressed && styles.fallbackPressed,
-      ]}
-      onPress={onPress}
-    >
-      {content}
-    </Pressable>
-  )
 }
+
+const ChromeButton = forwardRef<View, ChromeButtonProps>(
+  ({ active = false, accessibilityLabel, badge, nativeGlassAvailable, onPress, symbol }, ref) => {
+    const content = (
+      <View style={styles.chromeButtonIcon}>
+        <SymbolView
+          name={symbol}
+          scale="large"
+          size={GLASS_BUTTON_ICON_SIZES[symbol]}
+          tintColor={active ? '#0a84ff' : '#fff'}
+          weight="regular"
+        />
+        {badge && badge > 0 ? (
+          <View style={styles.commentBadge}>
+            <Text style={styles.commentBadgeLabel}>{badge > 99 ? '99+' : badge}</Text>
+          </View>
+        ) : null}
+      </View>
+    )
+
+    if (nativeGlassAvailable) {
+      return (
+        <GlassView colorScheme="dark" glassEffectStyle="regular" isInteractive style={styles.chromeButtonSurface}>
+          <Pressable
+            ref={ref}
+            accessibilityLabel={accessibilityLabel}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [styles.chromeButtonContent, pressed && styles.glassContentPressed]}
+            onPress={onPress}
+          >
+            {content}
+          </Pressable>
+        </GlassView>
+      )
+    }
+
+    return (
+      <Pressable
+        ref={ref}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.chromeButtonSurface,
+          styles.chromeButtonContent,
+          styles.chromeButtonFallback,
+          pressed && styles.fallbackPressed,
+        ]}
+        onPress={onPress}
+      >
+        {content}
+      </Pressable>
+    )
+  },
+)
+ChromeButton.displayName = 'ChromeButton'
 
 function ChromeButtonCluster({ children, nativeGlassAvailable }: PropsWithChildren<{ nativeGlassAvailable: boolean }>) {
   if (nativeGlassAvailable) {
@@ -206,6 +333,20 @@ function ChromeButtonCluster({ children, nativeGlassAvailable }: PropsWithChildr
 
 const styles = StyleSheet.create({
   root: { backgroundColor: '#000', flex: 1 },
+  contentRow: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
+  mediaColumn: { flex: 1 },
+  infoInspectorClip: { overflow: 'hidden' },
+  infoInspectorContainer: {
+    backgroundColor: '#1c1c1e',
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    bottom: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: INSPECTOR_WIDTH,
+  },
+  infoInspector: { flex: 1 },
   viewer: { flex: 1 },
   topChrome: { left: 0, position: 'absolute', right: 0, top: 0, zIndex: 1 },
   toolbar: {
@@ -225,6 +366,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
+  },
+  chromeButtonIcon: { alignItems: 'center', justifyContent: 'center' },
+  commentBadge: {
+    alignItems: 'center',
+    backgroundColor: '#0a84ff',
+    borderColor: 'rgba(0,0,0,0.72)',
+    borderRadius: 999,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    minHeight: 16,
+    minWidth: 16,
+    paddingHorizontal: 3,
+    position: 'absolute',
+    right: -9,
+    top: -8,
+  },
+  commentBadgeLabel: {
+    color: '#fff',
+    fontFamily: font.ui,
+    fontSize: 9,
+    fontWeight: '700',
+    lineHeight: 11,
   },
   chromeButtonFallback: {
     backgroundColor: 'rgba(20,20,22,0.72)',

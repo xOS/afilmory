@@ -2,13 +2,13 @@ import type { ManagedStorageConfig, RemoteStorageConfig } from '@afilmory/builde
 import { StorageManager } from '@afilmory/builder/storage/index.js'
 import {
   authSessions,
-  authUsers,
   commentReactions,
   comments,
   photoAssets,
   reactions,
   settings,
   tenantDomains,
+  tenantMemberships,
   tenants,
 } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
@@ -147,8 +147,11 @@ export class DataManagementService {
       await tx.delete(comments).where(eq(comments.tenantId, options.tenantId))
       await tx.delete(commentReactions).where(eq(commentReactions.tenantId, options.tenantId))
 
-      await tx.delete(authSessions).where(eq(authSessions.tenantId, options.tenantId))
-      await tx.delete(authUsers).where(eq(authUsers.tenantId, options.tenantId))
+      await tx
+        .update(authSessions)
+        .set({ activeTenantId: null, updatedAt: new Date().toISOString() })
+        .where(eq(authSessions.activeTenantId, options.tenantId))
+      await tx.delete(tenantMemberships).where(eq(tenantMemberships.tenantId, options.tenantId))
       await tx.delete(tenants).where(eq(tenants.id, options.tenantId))
     })
   }

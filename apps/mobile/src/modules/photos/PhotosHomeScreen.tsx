@@ -53,8 +53,8 @@ export function PhotosHomeScreen() {
     )
   }
 
-  const tenant = auth.session?.tenant
-  if (!tenant || tenant.status !== 'active') {
+  const workspace = auth.session?.activeWorkspace
+  if (!workspace || workspace.status !== 'active') {
     return (
       <View style={[styles.root, styles.center]}>
         <Text style={styles.heroTitle}>{t('gallery.workspace.pending.title')}</Text>
@@ -65,7 +65,7 @@ export function PhotosHomeScreen() {
 
   return (
     <View style={styles.root}>
-      <OwnGalleryView slug={tenant.slug} />
+      <OwnGalleryView slug={workspace.slug} />
     </View>
   )
 }

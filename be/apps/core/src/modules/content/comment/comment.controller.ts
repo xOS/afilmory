@@ -1,4 +1,4 @@
-import { Roles } from '@core/guards/roles.decorator'
+import { RequireAuth, TenantRoles } from '@core/guards/roles.decorator'
 import { Body, ContextParam, Controller, Delete, Get, Param, Post, Query } from '@tsuki-hono/common'
 import type { Context } from 'hono'
 
@@ -16,7 +16,7 @@ export class CommentController {
   constructor(private readonly commentService: CommentService) {}
 
   @Post('/')
-  @Roles('user')
+  @RequireAuth()
   async createComment(@ContextParam() context: Context, @Body() body: CreateCommentDto) {
     return await this.commentService.createComment(body, context)
   }
@@ -32,19 +32,19 @@ export class CommentController {
   }
 
   @Get('/all')
-  @Roles('admin')
+  @TenantRoles('admin')
   async listAllComments(@Query() query: ListAllCommentsQueryDto) {
     return await this.commentService.listAllComments(query)
   }
 
   @Post('/:id/reactions')
-  @Roles('user')
+  @RequireAuth()
   async react(@Param('id') commentId: string, @Body() body: CommentReactionDto) {
     return await this.commentService.toggleReaction(commentId, body)
   }
 
   @Delete('/:id')
-  @Roles('user')
+  @RequireAuth()
   async deleteComment(@Param('id') commentId: string) {
     await this.commentService.softDelete(commentId)
     return { id: commentId, deleted: true }

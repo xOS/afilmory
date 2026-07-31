@@ -1,4 +1,4 @@
-import { Roles } from '@core/guards/roles.decorator'
+import { TenantRoles } from '@core/guards/roles.decorator'
 import { Controller, createZodSchemaDto, Get, Query } from '@tsuki-hono/common'
 import { inject } from 'tsyringe'
 import z from 'zod'
@@ -15,7 +15,7 @@ const usageQuerySchema = z.object({
 class UsageQueryDto extends createZodSchemaDto(usageQuerySchema) {}
 
 @Controller('billing')
-@Roles('admin')
+@TenantRoles('owner')
 export class BillingController {
   constructor(
     @inject(BillingUsageService) private readonly billingUsageService: BillingUsageService,

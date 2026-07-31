@@ -18,8 +18,27 @@ test('mobile catalogs translate navigation, interpolation, and pluralized photo 
   const chinese = i18n.getFixedT('zh-CN')
   const japanese = i18n.getFixedT('jp')
 
-  assert.equal(chinese('tabs.settings'), '设置')
+  assert.equal(chinese('tabs.studio'), 'Studio')
   assert.equal(chinese('accessibility.openGallery', { name: '夏日' }), '打开夏日')
   assert.equal(chinese('gallery.photos', { count: 2 }), '2 张照片')
   assert.equal(japanese('tabs.photos'), '写真')
+})
+
+test('Studio navigation and primary actions are available in every mobile catalog', () => {
+  for (const language of ['en', 'zh-CN', 'zh-HK', 'zh-TW', 'jp', 'ko']) {
+    const translate = i18n.getFixedT(language)
+    assert.notEqual(translate('tabs.studio'), 'tabs.studio')
+    assert.notEqual(translate('studio.library.title'), 'studio.library.title')
+    assert.notEqual(translate('studio.operations.run.action'), 'studio.operations.run.action')
+  }
+})
+
+test('photo comment actions are localized without Web-only markup', () => {
+  for (const language of ['en', 'zh-CN', 'zh-HK', 'zh-TW', 'jp', 'ko']) {
+    const translate = i18n.getFixedT(language)
+    assert.notEqual(translate('photo.comments'), 'photo.comments')
+    assert.notEqual(translate('comments.like'), 'comments.like')
+    assert.ok(translate('comments.replyingToPlain', { user: 'Ada' }).includes('Ada'))
+    assert.doesNotMatch(translate('comments.replyingToPlain', { user: 'Ada' }), /<[^>]+>/)
+  }
 })

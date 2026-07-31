@@ -1,5 +1,5 @@
 import type { BuilderConfig, StorageConfig } from '@afilmory/builder'
-import { Roles } from '@core/guards/roles.decorator'
+import { TenantRoles } from '@core/guards/roles.decorator'
 import { createProgressSseResponse } from '@core/modules/shared/http/sse'
 import { Body, ContextParam, Controller, createLogger, Get, Param, Post } from '@tsuki-hono/common'
 import type { Context } from 'hono'
@@ -17,7 +17,7 @@ import type {
 } from './data-sync.types'
 
 @Controller('data-sync')
-@Roles('admin')
+@TenantRoles('admin')
 export class DataSyncController {
   private readonly logger = createLogger('DataSyncController')
   constructor(private readonly dataSyncService: DataSyncService) {}

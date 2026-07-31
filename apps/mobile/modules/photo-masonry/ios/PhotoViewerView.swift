@@ -5,6 +5,16 @@ import UIKit
 
 final class PhotoViewerView: ExpoView {
   let onIndexChange = EventDispatcher()
+  let onInfoRequest = EventDispatcher()
+  let onRequestClose = EventDispatcher()
+
+  var keyboardCloseTitle = ""
+  var keyboardInfoTitle = ""
+  var keyboardNextTitle = ""
+  var keyboardPreviousTitle = ""
+  var livePhotoAccessibilityHint = ""
+  var livePhotoBadgeTitle = ""
+  var interactiveDismissEnabled = true
 
   var initialIndex = 0 {
     didSet {
@@ -54,6 +64,9 @@ final class PhotoViewerView: ExpoView {
     guard bounds.width > 0, bounds.height > 0 else { return }
 
     let sizeChanged = layout.itemSize != bounds.size
+    if sizeChanged, hasPositionedInitialPhoto, collectionView.bounds.width > 0 {
+      updateCurrentIndexFromOffset()
+    }
     collectionView.frame = bounds
     if sizeChanged {
       cancelPrefetches()
@@ -63,7 +76,50 @@ final class PhotoViewerView: ExpoView {
 
     positionInitialPhotoIfNeeded()
     if sizeChanged, hasPositionedInitialPhoto {
+      collectionView.layoutIfNeeded()
+      collectionView.setContentOffset(
+        CGPoint(x: CGFloat(currentIndex) * collectionView.bounds.width, y: 0),
+        animated: false
+      )
       prefetchNeighborPhotos()
+    }
+  }
+
+  override var canBecomeFirstResponder: Bool { true }
+
+  override var keyCommands: [UIKeyCommand]? {
+    [
+      makeKeyCommand(
+        input: UIKeyCommand.inputLeftArrow,
+        modifiers: [],
+        action: #selector(showPreviousPhoto),
+        title: keyboardPreviousTitle
+      ),
+      makeKeyCommand(
+        input: UIKeyCommand.inputRightArrow,
+        modifiers: [],
+        action: #selector(showNextPhoto),
+        title: keyboardNextTitle
+      ),
+      makeKeyCommand(
+        input: UIKeyCommand.inputEscape,
+        modifiers: [],
+        action: #selector(requestClose),
+        title: keyboardCloseTitle
+      ),
+      makeKeyCommand(
+        input: "i",
+        modifiers: .command,
+        action: #selector(requestInfo),
+        title: keyboardInfoTitle
+      ),
+    ]
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      becomeFirstResponder()
     }
   }
 
@@ -71,17 +127,21 @@ final class PhotoViewerView: ExpoView {
     super.didMoveToSuperview()
     if superview != nil {
       configureZoomTransitionWhenReady()
-    } else if !transitionId.isEmpty {
-      cancelPrefetches()
-      let releasedId = transitionId
-      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-        PhotoTransitionRegistry.shared.release(id: releasedId)
-      }
+      return
+    }
+
+    cancelPrefetches()
+    deactivateVisibleCells()
+    guard !transitionId.isEmpty else { return }
+    let releasedId = transitionId
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      PhotoTransitionRegistry.shared.release(id: releasedId)
     }
   }
 
   func setPhotos(_ newPhotos: [MasonryPhoto]) {
     cancelPrefetches()
+    deactivateVisibleCells()
     photos = newPhotos
     currentIndex = clampedIndex(initialIndex)
     hasPositionedInitialPhoto = false
@@ -123,6 +183,7 @@ final class PhotoViewerView: ExpoView {
     if emit {
       onIndexChange(["id": photo.id, "index": currentIndex])
     }
+    updateVisibleCellActivity()
     prefetchNeighborPhotos()
   }
 
@@ -171,6 +232,68 @@ final class PhotoViewerView: ExpoView {
     collectionView.cellForItem(at: IndexPath(item: currentIndex, section: 0)) as? PhotoViewerCell
   }
 
+  private func updateVisibleCellActivity() {
+    for case let cell as PhotoViewerCell in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell) else { continue }
+      cell.setActive(indexPath.item == currentIndex)
+    }
+    updatePagingEnabled()
+  }
+
+  private func deactivateVisibleCells() {
+    for case let cell as PhotoViewerCell in collectionView.visibleCells {
+      cell.setActive(false)
+    }
+    collectionView.isScrollEnabled = true
+  }
+
+  private func updatePagingEnabled() {
+    let currentCell = currentCell()
+    collectionView.isScrollEnabled = !(currentCell?.isZoomed ?? false)
+      && !(currentCell?.isPlayingLivePhoto ?? false)
+  }
+
+  private func makeKeyCommand(
+    input: String,
+    modifiers: UIKeyModifierFlags,
+    action: Selector,
+    title: String
+  ) -> UIKeyCommand {
+    let command = UIKeyCommand(input: input, modifierFlags: modifiers, action: action)
+    command.wantsPriorityOverSystemBehavior = true
+    if !title.isEmpty {
+      command.discoverabilityTitle = title
+    }
+    return command
+  }
+
+  private func navigate(by delta: Int) {
+    guard !photos.isEmpty else { return }
+    let nextIndex = clampedIndex(currentIndex + delta)
+    guard nextIndex != currentIndex else { return }
+    currentCell()?.setActive(false)
+    collectionView.setContentOffset(
+      CGPoint(x: CGFloat(nextIndex) * collectionView.bounds.width, y: 0),
+      animated: true
+    )
+  }
+
+  @objc private func showPreviousPhoto() {
+    navigate(by: -1)
+  }
+
+  @objc private func showNextPhoto() {
+    navigate(by: 1)
+  }
+
+  @objc private func requestClose() {
+    onRequestClose([:])
+  }
+
+  @objc private func requestInfo() {
+    onInfoRequest([:])
+  }
+
   private func targetRect(in viewController: UIViewController) -> CGRect? {
     guard photos.indices.contains(currentIndex) else { return nil }
     let photo = photos[currentIndex]
@@ -213,7 +336,10 @@ final class PhotoViewerView: ExpoView {
       self?.targetRect(in: context.zoomedViewController)
     }
     options.interactiveDismissShouldBegin = { [weak self] _ in
-      !(self?.currentCell()?.isZoomed ?? false)
+      guard let self else { return false }
+      return self.interactiveDismissEnabled
+        && !(self.currentCell()?.isZoomed ?? false)
+        && !(self.currentCell()?.isPlayingLivePhoto ?? false)
     }
     screen.preferredTransition = .zoom(options: options) { _ in
       PhotoTransitionRegistry.shared.sourceView(id: activeTransitionId)
@@ -236,24 +362,57 @@ final class PhotoViewerView: ExpoView {
 }
 
 extension PhotoViewerView: UICollectionViewDataSource {
-  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+  func collectionView(
+    _ collectionView: UICollectionView,
+    numberOfItemsInSection section: Int
+  ) -> Int {
     photos.count
   }
 
-  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+  func collectionView(
+    _ collectionView: UICollectionView,
+    cellForItemAt indexPath: IndexPath
+  ) -> UICollectionViewCell {
     let cell = collectionView.dequeueReusableCell(
       withReuseIdentifier: PhotoViewerCell.reuseIdentifier,
       for: indexPath
     ) as! PhotoViewerCell
-    cell.onZoomStateChange = { [weak self] zoomed in
-      self?.collectionView.isScrollEnabled = !zoomed
+    cell.onZoomStateChange = { [weak self, weak cell] _ in
+      guard let self, cell === self.currentCell() else { return }
+      self.updatePagingEnabled()
     }
-    cell.configure(with: photos[indexPath.item], viewportSize: collectionView.bounds.size)
+    cell.onLivePhotoPlaybackStateChange = { [weak self, weak cell] _ in
+      guard let self, cell === self.currentCell() else { return }
+      self.updatePagingEnabled()
+    }
+    cell.configure(
+      with: photos[indexPath.item],
+      viewportSize: collectionView.bounds.size,
+      livePhotoBadgeTitle: livePhotoBadgeTitle,
+      livePhotoAccessibilityHint: livePhotoAccessibilityHint
+    )
+    cell.setActive(indexPath.item == currentIndex)
     return cell
   }
 }
 
 extension PhotoViewerView: UICollectionViewDelegate {
+  func collectionView(
+    _ collectionView: UICollectionView,
+    willDisplay cell: UICollectionViewCell,
+    forItemAt indexPath: IndexPath
+  ) {
+    (cell as? PhotoViewerCell)?.setActive(indexPath.item == currentIndex)
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView,
+    didEndDisplaying cell: UICollectionViewCell,
+    forItemAt indexPath: IndexPath
+  ) {
+    (cell as? PhotoViewerCell)?.setActive(false)
+  }
+
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
     updateCurrentIndexFromOffset()
   }

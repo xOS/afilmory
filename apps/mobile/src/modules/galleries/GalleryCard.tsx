@@ -1,5 +1,7 @@
 import { Image } from 'expo-image'
+import { SymbolView } from 'expo-symbols'
 import { useEffect, useMemo, useState } from 'react'
+import type { StyleProp, ViewStyle } from 'react-native'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { useTranslation } from '@/i18n'
@@ -10,8 +12,6 @@ import { useTheme } from '@/theme/useTheme'
 import { fetchGalleryCovers, getCachedGalleryCovers } from './api'
 import { thumbHashHexToBase64 } from './thumbhash'
 import type { FeaturedGallery, GalleryCoverPhoto } from './types'
-
-const COVER_HEIGHT = 180
 
 export function GalleryCard({
   gallery,
@@ -103,7 +103,7 @@ function CoverImage({
   styles,
 }: {
   photo: GalleryCoverPhoto | undefined
-  style: object
+  style: StyleProp<ViewStyle>
   styles: ReturnType<typeof createStyles>
 }) {
   if (!photo) {
@@ -111,14 +111,21 @@ function CoverImage({
   }
   const thumbhash = photo.thumbHash ? thumbHashHexToBase64(photo.thumbHash) : null
   return (
-    <Image
-      contentFit="cover"
-      placeholder={thumbhash ? { thumbhash } : undefined}
-      recyclingKey={photo.id}
-      source={{ uri: photo.thumbnailUrl }}
-      style={style}
-      transition={200}
-    />
+    <View style={[style, styles.coverImage]}>
+      <Image
+        contentFit="cover"
+        placeholder={thumbhash ? { thumbhash } : undefined}
+        recyclingKey={photo.id}
+        source={{ uri: photo.thumbnailUrl }}
+        style={StyleSheet.absoluteFill}
+        transition={200}
+      />
+      {photo.isLivePhoto ? (
+        <View pointerEvents="none" style={styles.livePhotoBadge}>
+          <SymbolView name="livephoto" size={14} tintColor="#fff" weight="semibold" />
+        </View>
+      ) : null}
+    </View>
   )
 }
 
@@ -134,14 +141,26 @@ function createStyles(palette: Palette) {
     },
     cardPressed: { opacity: 0.85 },
     coverRow: {
+      aspectRatio: 16 / 9,
       flexDirection: 'row',
       gap: 2,
-      height: COVER_HEIGHT,
     },
     coverPrimary: { flex: 2 },
     coverColumn: { flex: 1, gap: 2 },
     coverSecondary: { flex: 1 },
+    coverImage: { overflow: 'hidden' },
     coverEmpty: { backgroundColor: palette.bgElement },
+    livePhotoBadge: {
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.56)',
+      borderRadius: 11,
+      height: 22,
+      justifyContent: 'center',
+      left: 7,
+      position: 'absolute',
+      top: 7,
+      width: 22,
+    },
     info: {
       gap: 10,
       padding: 14,

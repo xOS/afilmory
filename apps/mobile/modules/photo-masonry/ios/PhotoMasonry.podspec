@@ -13,6 +13,7 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   s.dependency 'RNScreens'
   s.dependency 'SDWebImage', '~> 5.0'
+  s.frameworks = 'AVFoundation', 'MapKit', 'StoreKit'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES'

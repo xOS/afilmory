@@ -14,7 +14,8 @@
     "db:studio": "pnpm -C ../../packages/db db:studio",
     "dev": "nodemon",
     "dev:reset-superadmin-password": "vite-node src/index.ts --reset-superadmin-password",
-    "manifest:migrate": "vite-node src/index.ts manifest:migrate"
+    "manifest:migrate": "vite-node src/index.ts manifest:migrate",
+    "test:global-identity-migration": "vite-node scripts/global-identity-migration-verification.ts"
   },
   "dependencies": {
     "@afilmory/be-utils": "workspace:*",

@@ -5,7 +5,7 @@ public class PhotoViewerModule: Module {
     Name("PhotoViewer")
 
     View(PhotoViewerView.self) {
-      Events("onIndexChange")
+      Events("onIndexChange", "onInfoRequest", "onRequestClose")
 
       Prop("photos") { (view: PhotoViewerView, photos: [MasonryPhoto]) in
         view.setPhotos(photos)
@@ -19,6 +19,33 @@ public class PhotoViewerModule: Module {
         view.transitionId = id
       }
 
+      Prop("keyboardCloseTitle") { (view: PhotoViewerView, title: String) in
+        view.keyboardCloseTitle = title
+      }
+
+      Prop("keyboardInfoTitle") { (view: PhotoViewerView, title: String) in
+        view.keyboardInfoTitle = title
+      }
+
+      Prop("keyboardNextTitle") { (view: PhotoViewerView, title: String) in
+        view.keyboardNextTitle = title
+      }
+
+      Prop("keyboardPreviousTitle") { (view: PhotoViewerView, title: String) in
+        view.keyboardPreviousTitle = title
+      }
+
+      Prop("livePhotoAccessibilityHint") { (view: PhotoViewerView, hint: String) in
+        view.livePhotoAccessibilityHint = hint
+      }
+
+      Prop("livePhotoBadgeTitle") { (view: PhotoViewerView, title: String) in
+        view.livePhotoBadgeTitle = title
+      }
+
+      Prop("interactiveDismissEnabled") { (view: PhotoViewerView, enabled: Bool) in
+        view.interactiveDismissEnabled = enabled
+      }
     }
   }
 }

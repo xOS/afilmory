@@ -1,4 +1,5 @@
-import { requireNativeModule } from 'expo'
+import { requireNativeModule, requireNativeView } from 'expo'
+import type { ViewProps } from 'react-native'
 
 import { translate } from '@/i18n'
 import type {
@@ -22,6 +23,13 @@ export interface NativePhotoInfoSheet {
   emptyMessage: string | null
 }
 
+export interface NativePresentationAnchor {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 interface NativePhotoInfoLocalization {
   captureParameters: string
   done: string
@@ -34,8 +42,13 @@ interface NativePhotoInfoLocalization {
   toneAnalysis: string
 }
 
-interface NativePhotoInfoSheetPayload extends NativePhotoInfoSheet {
+export interface NativePhotoInfoSheetPayload extends NativePhotoInfoSheet {
   localization: NativePhotoInfoLocalization
+}
+
+export interface NativePhotoInfoPanelProps extends ViewProps {
+  infoJSON: string
+  onClose?: () => void
 }
 
 interface NativePhotoFilterLocalization {
@@ -65,26 +78,69 @@ interface NativePhotoFilterLocalization {
 }
 
 interface NativePhotoFilterSheetRequest {
+  anchor?: NativePresentationAnchor
   filters: PhotoFilters
   localization: NativePhotoFilterLocalization
   options: FilterOptions
 }
 
+export interface NativeProfileStripItem {
+  url: string
+  thumbHash: string | null
+  aspectRatio: number
+}
+
+export interface NativeProfileSheet {
+  userName: string
+  avatarUrl: string
+  avatarInitial: string
+  tenantLine: string
+  webUrl: string
+  statsLine: string
+  strip: NativeProfileStripItem[]
+}
+
+interface NativeProfileLocalization {
+  cacheCleared: string
+  cancel: string
+  clearCache: string
+  done: string
+  openWeb: string
+  signOut: string
+  signOutConfirmTitle: string
+  sponsorDescription: string
+  sponsorFailedMessage: string
+  sponsorFailedTitle: string
+  sponsorPending: string
+  sponsorThanks: string
+  sponsorTitle: string
+  sponsorUnavailable: string
+}
+
+interface NativeProfileSheetPayload extends NativeProfileSheet {
+  anchor?: NativePresentationAnchor
+  localization: NativeProfileLocalization
+}
+
+export type NativeProfileAction = 'signOut'
+
 interface PhotoSheetsNativeModule {
   presentPhotoInfo: (info: NativePhotoInfoSheetPayload) => Promise<void>
   presentPhotoFilters: (request: NativePhotoFilterSheetRequest) => Promise<PhotoFilters | null>
+  presentProfile: (profile: NativeProfileSheetPayload) => Promise<NativeProfileAction | null>
 }
 
 const nativePhotoSheets = requireNativeModule('PhotoSheets') as PhotoSheetsNativeModule
+export const NativePhotoInfoPanel = requireNativeView<NativePhotoInfoPanelProps>('PhotoSheets')
 
-export function presentNativePhotoInfo(info: NativePhotoInfoSheet): Promise<void> {
+export function buildNativePhotoInfoPayload(info: NativePhotoInfoSheet): NativePhotoInfoSheetPayload {
   const mapAccessibilityLabel = info.mapLocation
     ? translate('sheet.map.accessibility', {
         latitude: info.mapLocation.latitude,
         longitude: info.mapLocation.longitude,
       })
     : ''
-  return nativePhotoSheets.presentPhotoInfo({
+  return {
     ...info,
     localization: {
       captureParameters: translate('exif.capture.parameters'),
@@ -97,11 +153,20 @@ export function presentNativePhotoInfo(info: NativePhotoInfoSheet): Promise<void
       title: translate('sheet.info'),
       toneAnalysis: translate('exif.tone.analysis.title'),
     },
-  })
+  }
 }
 
-export function presentNativePhotoFilters(filters: PhotoFilters, options: FilterOptions): Promise<PhotoFilters | null> {
+export function presentNativePhotoInfo(info: NativePhotoInfoSheet): Promise<void> {
+  return nativePhotoSheets.presentPhotoInfo(buildNativePhotoInfoPayload(info))
+}
+
+export function presentNativePhotoFilters(
+  filters: PhotoFilters,
+  options: FilterOptions,
+  anchor?: NativePresentationAnchor,
+): Promise<PhotoFilters | null> {
   return nativePhotoSheets.presentPhotoFilters({
+    anchor,
     filters,
     localization: {
       all: translate('filter.all'),
@@ -129,5 +194,31 @@ export function presentNativePhotoFilters(filters: PhotoFilters, options: Filter
       to: translate('action.date.to'),
     },
     options,
+  })
+}
+
+export function presentNativeProfile(
+  profile: NativeProfileSheet,
+  anchor?: NativePresentationAnchor,
+): Promise<NativeProfileAction | null> {
+  return nativePhotoSheets.presentProfile({
+    ...profile,
+    anchor,
+    localization: {
+      cacheCleared: translate('profile.cacheCleared'),
+      cancel: translate('common.cancel'),
+      clearCache: translate('profile.clearCache'),
+      done: translate('common.done'),
+      openWeb: translate('common.openGalleryWeb'),
+      signOut: translate('common.signOut'),
+      signOutConfirmTitle: translate('profile.signOutConfirmTitle'),
+      sponsorDescription: translate('profile.sponsor.description'),
+      sponsorFailedMessage: translate('profile.sponsor.failedMessage'),
+      sponsorFailedTitle: translate('profile.sponsor.failedTitle'),
+      sponsorPending: translate('profile.sponsor.pending'),
+      sponsorThanks: translate('profile.sponsor.thanks'),
+      sponsorTitle: translate('profile.sponsor.title'),
+      sponsorUnavailable: translate('profile.sponsor.unavailable'),
+    },
   })
 }

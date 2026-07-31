@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-
 import { authAccounts, authSessions, authUsers, authVerifications, creemSubscriptions, generateId } from '@afilmory/db'
 import { env } from '@afilmory/env'
 import { expo } from '@better-auth/expo'
@@ -14,19 +12,20 @@ import type { FlatSubscriptionEvent } from '@creem_io/better-auth'
 import { creem } from '@creem_io/better-auth'
 import type { OnModuleInit } from '@tsuki-hono/common'
 import { createLogger, HttpContext } from '@tsuki-hono/common'
+import type { BetterAuthOptions } from 'better-auth'
 import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { admin } from 'better-auth/plugins'
 import { eq } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { injectable } from 'tsyringe'
 
-import { TenantService } from '../tenant/tenant.service'
 import { extractTenantSlugFromHost } from '../tenant/tenant-host.utils'
 import type { AuthModuleOptions, SocialProviderOptions, SocialProvidersConfig } from './auth.config'
 import { AuthConfig } from './auth.config'
-import { brokerDrizzleAdapter } from './broker-adapter'
-import { tenantAwareDrizzleAdapter } from './tenant-aware-adapter'
+import { resolveAuthCookieScope } from './auth-cookie.policy'
+import { WorkspaceMembershipService } from './workspace-membership.service'
 
 export type BetterAuthInstance = ReturnType<typeof betterAuth>
 
@@ -34,8 +33,8 @@ const logger = createLogger('Auth')
 const TRAILING_SLASHES_PATTERN = /\/+$/
 
 // The reserved `api` slug never resolves to a tenant, which makes its host the
-// natural home for the mobile login broker: OAuth completes there, the provider
-// identity is matched globally, and a session for the matched tenant is issued.
+// natural home for the mobile login broker: OAuth completes there and the
+// provider identity is matched globally without requiring a workspace.
 export const MOBILE_AUTH_BROKER_SLUG = 'api'
 
 @injectable()
@@ -44,7 +43,7 @@ export class AuthProvider implements OnModuleInit {
     private readonly config: AuthConfig,
     private readonly drizzleProvider: DrizzleProvider,
     private readonly systemSettings: SystemSettingService,
-    private readonly tenantService: TenantService,
+    private readonly memberships: WorkspaceMembershipService,
     private readonly billingPlanService: BillingPlanService,
     private readonly storagePlanService: StoragePlanService,
   ) {}
@@ -58,8 +57,7 @@ export class AuthProvider implements OnModuleInit {
       const tenantContext = HttpContext.getValue('tenant') as { tenant?: { id?: string | null } } | undefined
       const tenantId = tenantContext?.tenant?.id
       return tenantId ?? null
-    }
-    catch {
+    } catch {
       return null
     }
   }
@@ -69,32 +67,12 @@ export class AuthProvider implements OnModuleInit {
       const tenantContext = HttpContext.getValue('tenant')
       const slug = tenantContext?.requestedSlug ?? tenantContext?.tenant?.slug
       return slug ? slug.toLowerCase() : null
-    }
-    catch {
+    } catch {
       return null
     }
   }
 
-  private async resolveTenantIdOrProvision(tenantSlug: string | null): Promise<string | null> {
-    const tenantIdFromContext = this.resolveTenantIdFromContext()
-    if (tenantIdFromContext) {
-      return tenantIdFromContext
-    }
-    if (!tenantSlug) {
-      return null
-    }
-
-    try {
-      const aggregate = await this.tenantService.ensurePendingTenant(tenantSlug)
-      return aggregate.tenant.id
-    }
-    catch (error) {
-      logger.error(`Failed to provision tenant for slug=${tenantSlug}`, error)
-      return null
-    }
-  }
-
-  private resolveRequestEndpoint(): { host: string | null, protocol: string | null } {
+  private resolveRequestEndpoint(): { host: string | null; protocol: string | null } {
     try {
       const hono = HttpContext.getValue('hono') as Context | undefined
       if (!hono) {
@@ -109,8 +87,7 @@ export class AuthProvider implements OnModuleInit {
         host: (forwardedHost ?? hostHeader ?? '').trim() || null,
         protocol: (forwardedProto ?? '').trim() || null,
       }
-    }
-    catch {
+    } catch {
       return { host: null, protocol: null }
     }
   }
@@ -118,12 +95,12 @@ export class AuthProvider implements OnModuleInit {
   private buildBetterAuthProvidersForHost(
     providers: SocialProvidersConfig,
     oauthGatewayUrl: string | null,
-  ): Record<string, { clientId: string, clientSecret: string, redirectUri?: string }> {
+  ): Record<string, { clientId: string; clientSecret: string; redirectUri?: string }> {
     const entries: Array<[keyof SocialProvidersConfig, SocialProviderOptions]> = Object.entries(providers).filter(
       (entry): entry is [keyof SocialProvidersConfig, SocialProviderOptions] => Boolean(entry[1]),
     )
 
-    return entries.reduce<Record<string, { clientId: string, clientSecret: string, redirectURI?: string }>>(
+    return entries.reduce<Record<string, { clientId: string; clientSecret: string; redirectURI?: string }>>(
       (acc, [key, value]) => {
         const redirectUri = this.buildRedirectUri(key, oauthGatewayUrl)
         acc[key] = {
@@ -178,46 +155,37 @@ export class AuthProvider implements OnModuleInit {
   }
 
   private async createAuthForEndpoint(
-    tenantSlug: string | null,
+    _tenantSlug: string | null,
     options: AuthModuleOptions,
     explicitTenantId?: string | null,
   ): Promise<BetterAuthInstance> {
     const db = this.drizzleProvider.getDb()
     const socialProviders = this.buildBetterAuthProvidersForHost(options.socialProviders, options.oauthGatewayUrl)
 
-    // Use tenant-aware adapter for multi-tenant user/account isolation
-    // This ensures that user lookups (by email) and account lookups (by provider)
-    // are scoped to the current tenant, allowing the same email/social account
-    // to exist as different users in different tenants
-    const ensureTenantId = async () => {
-      if (explicitTenantId) {
-        return explicitTenantId
-      }
-      return await this.resolveTenantIdOrProvision(tenantSlug)
-    }
+    const requestedTenantId = explicitTenantId ?? this.resolveTenantIdFromContext()
+    const cookieScope = resolveAuthCookieScope({
+      requestHost: this.resolveRequestEndpoint().host,
+      baseDomain: options.baseDomain,
+    })
 
-    return betterAuth({
-      database: tenantAwareDrizzleAdapter(
-        db,
-        {
-          provider: 'pg',
-          schema: {
-            user: authUsers,
-            session: authSessions,
-            account: authAccounts,
-            verification: authVerifications,
-            subscription: creemSubscriptions,
-          },
+    const auth = betterAuth({
+      database: drizzleAdapter(db, {
+        provider: 'pg',
+        schema: {
+          user: authUsers,
+          session: authSessions,
+          account: authAccounts,
+          verification: authVerifications,
+          subscription: creemSubscriptions,
         },
-        ensureTenantId,
-      ),
-      socialProviders: socialProviders as any,
+      }),
+      socialProviders: socialProviders as BetterAuthOptions['socialProviders'],
       emailAndPassword: { enabled: true },
       trustedOrigins: await this.buildTrustedOrigins(),
       session: {
         freshAge: 0,
         additionalFields: {
-          tenantId: { type: 'string', input: false },
+          activeTenantId: { type: 'string', input: false },
         },
       },
       account: {
@@ -228,14 +196,10 @@ export class AuthProvider implements OnModuleInit {
         // Auth's own DB-backed verification record already authenticate the
         // callback, so this redundant cookie check is safe to skip.
         skipStateCookieCheck: true,
-        additionalFields: {
-          tenantId: { type: 'string', input: false },
-        },
       },
 
       user: {
         additionalFields: {
-          tenantId: { type: 'string', input: false },
           role: { type: 'string', input: false },
           creemCustomerId: { type: 'string', input: false },
         },
@@ -244,17 +208,10 @@ export class AuthProvider implements OnModuleInit {
         user: {
           create: {
             before: async (user) => {
-              const tenantId = explicitTenantId ?? (await ensureTenantId())
-              if (!tenantId) {
-                throw new APIError('BAD_REQUEST', {
-                  message: 'Missing tenant context during account creation.',
-                })
-              }
-
               return {
                 data: {
                   ...user,
-                  tenantId,
+                  email: user.email.trim().toLowerCase(),
                   role: user.role ?? 'user',
                 },
               }
@@ -264,30 +221,14 @@ export class AuthProvider implements OnModuleInit {
         session: {
           create: {
             before: async (session) => {
-              const tenantId = explicitTenantId ?? this.resolveTenantIdFromContext()
-              const fallbackTenantId = tenantId ?? session.tenantId ?? (await ensureTenantId())
+              const activeTenantId = await this.memberships.resolveInitialActiveTenantId(
+                session.userId,
+                requestedTenantId,
+              )
               return {
                 data: {
                   ...session,
-                  tenantId: fallbackTenantId ?? null,
-                },
-              }
-            },
-          },
-        },
-        account: {
-          create: {
-            before: async (account) => {
-              const tenantId = explicitTenantId ?? this.resolveTenantIdFromContext()
-              const resolvedTenantId = tenantId ?? (await ensureTenantId())
-              if (!resolvedTenantId) {
-                return { data: account }
-              }
-
-              return {
-                data: {
-                  ...account,
-                  tenantId: resolvedTenantId,
+                  activeTenantId,
                 },
               }
             },
@@ -295,6 +236,9 @@ export class AuthProvider implements OnModuleInit {
         },
       },
       advanced: {
+        cookiePrefix: 'afilmory-global',
+        crossSubDomainCookies:
+          cookieScope.kind === 'managed-domain' ? { enabled: true, domain: cookieScope.domain } : { enabled: false },
         database: {
           generateId: () => generateId(),
         },
@@ -302,7 +246,7 @@ export class AuthProvider implements OnModuleInit {
       plugins: [
         expo(),
         admin({
-          adminRoles: ['admin'],
+          adminRoles: ['superadmin'],
           defaultRole: 'user',
           defaultBanReason: 'Spamming',
         }),
@@ -318,6 +262,7 @@ export class AuthProvider implements OnModuleInit {
                     event: data.webhookEventType,
                     metadata: this.mergeMetadata(data.metadata, data.subscription?.metadata),
                     status: data.subscription?.status ?? null,
+                    subscriptionId: data.subscription?.id ?? null,
                     defaultGrant: true,
                   })
                 },
@@ -345,8 +290,7 @@ export class AuthProvider implements OnModuleInit {
 
           try {
             await this.systemSettings.ensureRegistrationAllowed()
-          }
-          catch (error) {
+          } catch (error) {
             if (error instanceof BizException) {
               throw new APIError('FORBIDDEN', {
                 message: error.message,
@@ -358,6 +302,8 @@ export class AuthProvider implements OnModuleInit {
         }),
       },
     })
+
+    return auth as unknown as BetterAuthInstance
   }
 
   private resolveRequestSlug(options: AuthModuleOptions): string | null {
@@ -375,109 +321,13 @@ export class AuthProvider implements OnModuleInit {
   async getAuth(): Promise<BetterAuthInstance> {
     const options = await this.config.getOptions()
     const tenantSlug = this.resolveRequestSlug(options)
-    if (tenantSlug === MOBILE_AUTH_BROKER_SLUG) {
-      return await this.createAuthForBroker(options)
-    }
-    const instancePromise = this.createAuthForEndpoint(tenantSlug, options)
-    return await instancePromise
+    return await this.createAuthForEndpoint(tenantSlug, options)
   }
 
-  private async createAuthForBroker(options: AuthModuleOptions): Promise<BetterAuthInstance> {
-    const db = this.drizzleProvider.getDb()
-    const socialProviders = this.buildBetterAuthProvidersForHost(options.socialProviders, options.oauthGatewayUrl)
-
-    return betterAuth({
-      database: brokerDrizzleAdapter(db, {
-        provider: 'pg',
-        schema: {
-          user: authUsers,
-          session: authSessions,
-          account: authAccounts,
-          verification: authVerifications,
-        },
-      }),
-      socialProviders: socialProviders as any,
-      emailAndPassword: { enabled: false },
-      trustedOrigins: await this.buildTrustedOrigins(),
-      session: {
-        freshAge: 0,
-        additionalFields: {
-          tenantId: { type: 'string', input: false },
-        },
-      },
-      account: {
-        skipStateCookieCheck: true,
-        additionalFields: {
-          tenantId: { type: 'string', input: false },
-        },
-      },
-      user: {
-        additionalFields: {
-          tenantId: { type: 'string', input: false },
-          role: { type: 'string', input: false },
-          creemCustomerId: { type: 'string', input: false },
-        },
-      },
-      databaseHooks: {
-        session: {
-          create: {
-            before: async (session) => {
-              const [user] = await db
-                .select({ tenantId: authUsers.tenantId })
-                .from(authUsers)
-                .where(eq(authUsers.id, session.userId))
-                .limit(1)
-              if (!user?.tenantId) {
-                throw new APIError('UNAUTHORIZED', {
-                  message: 'No workspace is linked to this account. Create your gallery on the web first.',
-                })
-              }
-              return {
-                data: {
-                  ...session,
-                  tenantId: user.tenantId,
-                },
-              }
-            },
-          },
-        },
-      },
-      advanced: {
-        database: {
-          generateId: () => generateId(),
-        },
-      },
-      plugins: [expo()],
-    })
-  }
-
-  async getAuthForTenant(tenant: { id: string, slug?: string | null }): Promise<BetterAuthInstance> {
+  async getAuthForTenant(tenant: { id: string; slug?: string | null }): Promise<BetterAuthInstance> {
     const options = await this.config.getOptions()
     const tenantSlug = tenant.slug ?? null
     return await this.createAuthForEndpoint(tenantSlug, options, tenant.id)
-  }
-
-  private computeOptionsSignature(options: AuthModuleOptions): string {
-    const hash = createHash('sha256')
-    hash.update(options.baseDomain)
-    hash.update('|gateway=')
-    hash.update(options.oauthGatewayUrl ?? 'null')
-
-    const providerEntries = Object.entries(options.socialProviders)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, config]) => {
-        const secretHash = config?.clientSecret
-          ? createHash('sha256').update(config.clientSecret).digest('hex')
-          : 'null'
-        return {
-          provider,
-          clientId: config?.clientId ?? '',
-          secretHash,
-        }
-      })
-
-    hash.update(JSON.stringify(providerEntries))
-    return hash.digest('hex')
   }
 
   private async handleCreemSubscriptionEvent(data: FlatSubscriptionEvent<string>, forceRevoke: boolean): Promise<void> {
@@ -485,6 +335,7 @@ export class AuthProvider implements OnModuleInit {
       event: data.webhookEventType,
       metadata: this.mergeMetadata(data.metadata),
       status: data.status,
+      subscriptionId: data.id,
       forceRevoke,
     })
   }
@@ -493,10 +344,11 @@ export class AuthProvider implements OnModuleInit {
     event: string
     metadata?: Record<string, unknown> | null
     status?: string | null
+    subscriptionId?: string | null
     defaultGrant?: boolean
     forceRevoke?: boolean
   }): Promise<void> {
-    const { event, metadata, status, defaultGrant = false, forceRevoke = false } = params
+    const { event, metadata, status, subscriptionId, defaultGrant = false, forceRevoke = false } = params
     const tenantId = this.extractMetadataValue(metadata ?? undefined, 'tenantId')
     const planId = this.extractPlanIdFromMetadata(metadata ?? undefined)
     const storagePlanId = this.extractStoragePlanIdFromMetadata(metadata ?? undefined)
@@ -504,6 +356,10 @@ export class AuthProvider implements OnModuleInit {
     if (!tenantId) {
       logger.warn(`[AuthProvider] Creem ${event} event missing tenantId metadata`)
       return
+    }
+
+    if (subscriptionId) {
+      await this.attachSubscriptionTenant(subscriptionId, tenantId)
     }
 
     const shouldGrant = this.shouldGrantStatus(status, event, defaultGrant, forceRevoke)
@@ -517,6 +373,14 @@ export class AuthProvider implements OnModuleInit {
     }
 
     await this.applyRevocation({ tenantId, planId, storagePlanId, event })
+  }
+
+  private async attachSubscriptionTenant(subscriptionId: string, tenantId: string): Promise<void> {
+    const db = this.drizzleProvider.getDb()
+    await db
+      .update(creemSubscriptions)
+      .set({ tenantId, updatedAt: new Date().toISOString() })
+      .where(eq(creemSubscriptions.creemSubscriptionId, subscriptionId))
   }
 
   private mergeMetadata(...sources: Array<Record<string, unknown> | null | undefined>): Record<string, unknown> | null {
@@ -575,8 +439,7 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.billingPlanService.updateTenantPlan(tenantId, planId)
         logger.info(`[AuthProvider] Tenant ${tenantId} set to billing plan ${planId} via Creem (${event})`)
-      }
-      catch (error) {
+      } catch (error) {
         logger.error(`[AuthProvider] Failed to update tenant ${tenantId} billing plan from Creem (${event})`, error)
       }
     }
@@ -586,8 +449,7 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.storagePlanService.updateTenantPlan(tenantId, storagePlanId)
         logger.info(`[AuthProvider] Tenant ${tenantId} storage plan set to ${storagePlanId} via Creem (${event})`)
-      }
-      catch (error) {
+      } catch (error) {
         logger.error(`[AuthProvider] Failed to update tenant ${tenantId} storage plan from Creem (${event})`, error)
       }
     }
@@ -611,8 +473,7 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.billingPlanService.updateTenantPlan(tenantId, 'free')
         logger.info(`[AuthProvider] Tenant ${tenantId} downgraded to free via Creem (${event})`)
-      }
-      catch (error) {
+      } catch (error) {
         logger.error(`[AuthProvider] Failed to downgrade tenant ${tenantId} after Creem ${event}`, error)
       }
     }
@@ -622,8 +483,7 @@ export class AuthProvider implements OnModuleInit {
       try {
         await this.storagePlanService.updateTenantPlan(tenantId, null)
         logger.info(`[AuthProvider] Tenant ${tenantId} storage plan cleared via Creem (${event})`)
-      }
-      catch (error) {
+      } catch (error) {
         logger.error(`[AuthProvider] Failed to clear tenant ${tenantId} storage plan after Creem ${event}`, error)
       }
     }
