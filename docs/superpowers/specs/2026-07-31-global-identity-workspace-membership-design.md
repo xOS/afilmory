@@ -91,7 +91,10 @@ flowchart LR
 6. 匿名公开请求和跨 Gallery 社交请求仍在 Resource Workspace 的数据库隔离上下文中执行。
 7. Workspace URL、Slug、公开 Gallery 可见性或邮箱相同均不能创建 Membership。
 8. 删除 Workspace 不删除 Platform User；仅删除 Workspace 资源和 Membership，并将引用该 Workspace 的 active workspace 置空。
-9. 合并历史账号时，只有完全相同的受信 OAuth `(provider_id, account_id)` 可以作为自动合并证据。仅邮箱相同不足以证明是同一自然人。
+9. 合并历史账号时，仅允许以下证据建立身份连通关系：
+   - 完全相同的受信 OAuth `(provider_id, account_id)`；
+   - 同一规范化邮箱组中的所有账号均已验证邮箱，且每个账号都只绑定当前系统支持的 GitHub/Google OAuth，不含 Credential 或未知 Provider。
+     仅邮箱相同、未验证邮箱或包含密码凭据均不足以证明是同一自然人。
 
 ## 6. 目标数据模型
 
@@ -343,32 +346,36 @@ Push Device Token 应绑定 `auth_user.id`，而不是 Tenant 或 Membership。
 
 ### 12.1 自动合并规则
 
-1. 根据完全相同的非 Credential OAuth `(provider_id, account_id)` 建立身份连通分量。
-2. 每个分量选择一个 canonical user：
+1. 根据完全相同的非 Credential OAuth `(provider_id, account_id)` 建立身份连通边。
+2. 对同一规范化邮箱建立受限桥接边，但必须同时满足：
+   - 该邮箱组内所有旧用户的 `email_verified = true`；
+   - 每个旧用户至少拥有一个 GitHub 或 Google OAuth Account；
+   - 每个旧用户均不含 Credential Account 或未知 Provider Account。
+3. 基于上述边计算身份连通分量，并为每个分量选择一个 canonical user：
    - `superadmin` 优先；
    - 已验证邮箱优先；
    - 较早创建者优先；
    - ID 作为最终稳定排序。
-3. 在删除重复用户前：
+4. 在删除重复用户前：
    - 按每条旧 `auth_user.tenant_id` 创建 canonical user 的 Membership；
    - 重写 Comment 与 Comment Reaction 的 `user_id`；
    - 去重可能冲突的 Reaction；
    - 合并 OAuth Account，按 `updated_at` 保留最新 Token；
    - 汇总 `had_trial`、`superadmin` 与封禁状态；任何永久封禁都按永久封禁保留；
    - 回填可确定的 `creem_subscription.tenant_id`。
-4. 每个 Tenant 从旧 admin 集合中选择最早账号作为 owner，其余旧 admin 迁移为 admin；没有旧 admin 时选择最早 Membership 作为 owner。
+5. 每个 Tenant 从旧 admin 集合中选择最早账号作为 owner，其余旧 admin 迁移为 admin；没有旧 admin 时选择最早 Membership 作为 owner。
 
 ### 12.2 冲突即中止
 
 迁移必须在以下情况抛出错误并整体回滚：
 
-- OAuth 自动合并后仍存在相同规范化邮箱对应多个 canonical user；
+- 精确 OAuth 与受限已验证邮箱桥接完成后，仍存在相同规范化邮箱对应多个 canonical user；
 - 同一 `(provider_id, account_id)` 无法确定唯一 canonical user；
 - 任一 active Tenant 无法生成 owner；
 - 重写后仍存在 Account 或 Reaction 唯一键冲突；
 - 外键引用无法重写。
 
-特别地，不能因为两个未验证 Credential 用户填写了相同邮箱就自动合并。该情况存在账号接管风险，必须在部署前人工审计并解决。
+特别地，即使两个 Credential 用户的邮箱均被标记为已验证，也不得据此自动合并；未知 Provider 同样不得进入邮箱桥接。密码凭据或 Provider 信任边界不同会产生账号接管风险，必须中止迁移并人工审计。
 
 ### 12.3 Session 处理
 
@@ -458,14 +465,15 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 
 ### 16.2 生命周期
 
-| 场景                                        | 预期                                                             |
-| ------------------------------------------- | ---------------------------------------------------------------- |
-| 用户创建第二个 Workspace                    | 保留原 Membership，新 Workspace 为 owner，可切换                 |
-| 删除一个 Workspace                          | 用户和其他 Workspace 不受影响，active workspace 被置空或重新选择 |
-| Mobile Broker 登录无 Membership 用户        | 登录成功，Explorer 可用，active workspace 为空                   |
-| 相同 OAuth Account 历史重复用户             | 安全合并，评论与 Membership 保留                                 |
-| 相同邮箱但无共同可信 OAuth Account          | 迁移中止，不自动合并                                             |
-| 使用 Workspace URL 尝试注册到已有 Workspace | 不创建 Membership                                                |
+| 场景                                                   | 预期                                                             |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| 用户创建第二个 Workspace                               | 保留原 Membership，新 Workspace 为 owner，可切换                 |
+| 删除一个 Workspace                                     | 用户和其他 Workspace 不受影响，active workspace 被置空或重新选择 |
+| Mobile Broker 登录无 Membership 用户                   | 登录成功，Explorer 可用，active workspace 为空                   |
+| 相同 OAuth Account 历史重复用户                        | 安全合并，评论与 Membership 保留                                 |
+| 已验证同邮箱且全部为 GitHub/Google OAuth-only 历史用户 | 安全合并，保留全部不同 OAuth Account 与去重后的 Membership       |
+| 同邮箱但包含 Credential、未验证邮箱或未知 Provider     | 迁移中止，不自动合并                                             |
+| 使用 Workspace URL 尝试注册到已有 Workspace            | 不创建 Membership                                                |
 
 ### 16.3 验证命令
 
@@ -484,18 +492,18 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 - `pnpm --filter web type-check`
 - Mobile TypeScript 检查与现有测试。
 - 在空数据库执行全部 Migration。
-- 在包含跨租户重复 OAuth 用户的构造数据库执行迁移并核对审计结果。
+- 在包含跨租户重复 OAuth 用户，以及生产同型“已验证同邮箱、不同 OAuth Account ID”的构造数据库执行迁移并核对审计结果。
 - 在包含不安全重复邮箱的构造数据库验证 Migration 整体回滚。
 
 当前数据库集成矩阵覆盖：
 
-- 多租户重复 OAuth 身份与跨 Provider 传递式身份连通分量；
+- 多租户重复 OAuth 身份、受限已验证邮箱桥接与跨 Provider 传递式身份连通分量；
 - canonical user 选择、最新 OAuth Token、Credential Account、封禁与 Trial 状态归并；
 - Comment、Reaction、Subscription 的重键、去重与 Workspace 归属；
 - Session 全量失效、全局邮箱及 Provider Account 唯一约束；
 - owner/admin/member 继承、suspended Membership、Platform Superadmin 隔离及跨 Workspace Social Action；
 - active workspace 切换、错误 Session 所有者、无 Membership 与 Workspace 删除后的 `SET NULL`/`CASCADE`；
-- 规范化邮箱冲突、Creem Customer 冲突、Credential Account 冲突和无 Owner 活跃 Workspace 的事务级失败关闭。
+- 已验证 Credential 同邮箱、未知 Provider 同邮箱、Creem Customer、Credential Account 和无 Owner 活跃 Workspace 冲突的事务级失败关闭。
 
 ## 17. 完成定义
 

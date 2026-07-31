@@ -174,6 +174,9 @@ async function seedSuccessfulLegacyState(client: Client): Promise<void> {
     VALUES
       ('alice-alpha', 'Alice Alpha', ' ALICE@example.com ', false, 'cust-alice', true, 'admin', 'tenant-alpha', '2024-01-01', '2024-04-01'),
       ('alice-beta', 'Alice Beta', 'alice@example.com', true, NULL, false, 'user', 'tenant-beta', '2024-02-01', '2024-02-01'),
+      ('oauth-email-alpha-a', 'Verified OAuth', 'oauth-bridge@example.com', true, NULL, false, 'user', 'tenant-alpha', '2024-06-01', '2024-06-01'),
+      ('oauth-email-alpha-b', 'Verified OAuth Alt', ' OAUTH-BRIDGE@example.com ', true, NULL, false, 'user', 'tenant-alpha', '2024-07-01', '2024-07-01'),
+      ('oauth-email-beta', 'Verified OAuth Cross Provider', 'OAuth-Bridge@example.com', true, NULL, false, 'user', 'tenant-beta', '2024-08-01', '2024-08-01'),
       ('bob-beta', 'Bob', 'bob@example.com', true, 'cust-bob', false, 'admin', 'tenant-beta', '2024-01-02', '2024-01-02'),
       ('brenda-beta', 'Brenda', 'brenda@example.com', true, NULL, false, 'admin', 'tenant-beta', '2024-02-02', '2024-02-02'),
       ('operator-gamma', 'Operator', 'ops@example.com', false, NULL, false, 'superadmin', 'tenant-gamma', '2024-03-01', '2024-03-01'),
@@ -205,6 +208,9 @@ async function seedSuccessfulLegacyState(client: Client): Promise<void> {
       ('account-alice-beta-github', 'github-alice', 'github', 'alice-beta', 'tenant-beta', 'canonical-token', NULL, '2024-02-01', '2024-02-01'),
       ('account-alice-alpha-credential', 'alice-alpha', 'credential', 'alice-alpha', 'tenant-alpha', NULL, 'password-alpha', '2024-01-01', '2024-04-01'),
       ('account-alice-beta-credential', 'alice-beta', 'credential', 'alice-beta', 'tenant-beta', NULL, 'password-beta', '2024-02-01', '2024-02-01'),
+      ('account-oauth-email-alpha-a', 'github-oauth-bridge-a', 'github', 'oauth-email-alpha-a', 'tenant-alpha', 'oauth-alpha-a-token', NULL, '2024-06-01', '2024-06-01'),
+      ('account-oauth-email-alpha-b', 'github-oauth-bridge-b', 'github', 'oauth-email-alpha-b', 'tenant-alpha', 'oauth-alpha-b-token', NULL, '2024-07-01', '2024-07-01'),
+      ('account-oauth-email-beta', 'google-oauth-bridge', 'google', 'oauth-email-beta', 'tenant-beta', 'oauth-beta-token', NULL, '2024-08-01', '2024-08-01'),
       ('account-bob-credential', 'bob-beta', 'credential', 'bob-beta', 'tenant-beta', NULL, 'password-bob', '2024-01-02', '2024-01-02'),
       ('account-brenda-credential', 'brenda-beta', 'credential', 'brenda-beta', 'tenant-beta', NULL, 'password-brenda', '2024-02-02', '2024-02-02'),
       ('account-operator-gamma-google', 'google-operator', 'google', 'operator-gamma', 'tenant-gamma', 'operator-canonical-token', NULL, '2024-03-01', '2024-03-01'),
@@ -257,7 +263,7 @@ async function seedSuccessfulLegacyState(client: Client): Promise<void> {
 async function verifyLegacyState(client: Client): Promise<number> {
   let assertions = 0
 
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 12)
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 15)
   assertions += 1
   assert.equal(
     await queryCount(
@@ -270,6 +276,14 @@ async function verifyLegacyState(client: Client): Promise<number> {
   assert.equal(
     await queryCount(client, `SELECT count(*) FROM "auth_user" WHERE lower(trim("email")) = 'alice@example.com'`),
     2,
+  )
+  assertions += 1
+  assert.equal(
+    await queryCount(
+      client,
+      `SELECT count(*) FROM "auth_user" WHERE lower(trim("email")) = 'oauth-bridge@example.com'`,
+    ),
+    3,
   )
   assertions += 1
   assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_session" WHERE "tenant_id" IS NOT NULL'), 3)
@@ -289,9 +303,9 @@ async function verifyLegacyState(client: Client): Promise<number> {
 async function verifySuccessfulMigration(client: Client, expectedMigrationCount: number): Promise<number> {
   let assertions = 0
 
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 8)
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 9)
   assertions += 1
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "tenant_membership"'), 9)
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "tenant_membership"'), 11)
   assertions += 1
   assert.equal(
     await queryCount(client, `SELECT count(*) FROM "tenant_membership" WHERE "role" = 'owner' AND "status" = 'active'`),
@@ -375,6 +389,36 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   assert.deepEqual(aliceMemberships.rows, [
     { tenant_id: 'tenant-alpha', role: 'owner' },
     { tenant_id: 'tenant-beta', role: 'member' },
+  ])
+  assertions += 1
+
+  const trustedEmailUser = await client.query<{ email: string; id: string }>(`
+    SELECT "id", "email"
+    FROM "auth_user"
+    WHERE lower(trim("email")) = 'oauth-bridge@example.com'
+  `)
+  assert.deepEqual(trustedEmailUser.rows, [{ id: 'oauth-email-alpha-a', email: 'oauth-bridge@example.com' }])
+  assertions += 1
+
+  const trustedEmailMemberships = await client.query<{ tenant_id: string }>(`
+    SELECT "tenant_id"
+    FROM "tenant_membership"
+    WHERE "user_id" = 'oauth-email-alpha-a'
+    ORDER BY "tenant_id"
+  `)
+  assert.deepEqual(trustedEmailMemberships.rows, [{ tenant_id: 'tenant-alpha' }, { tenant_id: 'tenant-beta' }])
+  assertions += 1
+
+  const trustedEmailAccounts = await client.query<{ account_id: string; provider_id: string; user_id: string }>(`
+    SELECT "account_id", "provider_id", "user_id"
+    FROM "auth_account"
+    WHERE "user_id" = 'oauth-email-alpha-a'
+    ORDER BY "provider_id", "account_id"
+  `)
+  assert.deepEqual(trustedEmailAccounts.rows, [
+    { account_id: 'github-oauth-bridge-a', provider_id: 'github', user_id: 'oauth-email-alpha-a' },
+    { account_id: 'github-oauth-bridge-b', provider_id: 'github', user_id: 'oauth-email-alpha-a' },
+    { account_id: 'google-oauth-bridge', provider_id: 'google', user_id: 'oauth-email-alpha-a' },
   ])
   assertions += 1
 
@@ -830,14 +874,29 @@ async function seedFailureScenario(client: Client, scenario: string): Promise<vo
       await client.query(`
         INSERT INTO "tenant" ("id", "slug", "name", "status")
         VALUES ('failure-a', 'failure-a', 'Failure A', 'active'), ('failure-b', 'failure-b', 'Failure B', 'active');
-        INSERT INTO "auth_user" ("id", "name", "email", "role", "tenant_id")
+        INSERT INTO "auth_user" ("id", "name", "email", "email_verified", "role", "tenant_id")
         VALUES
-          ('failure-user-a', 'Failure A', ' collision@example.com ', 'admin', 'failure-a'),
-          ('failure-user-b', 'Failure B', 'COLLISION@example.com', 'admin', 'failure-b');
+          ('failure-user-a', 'Failure A', ' collision@example.com ', true, 'admin', 'failure-a'),
+          ('failure-user-b', 'Failure B', 'COLLISION@example.com', true, 'admin', 'failure-b');
         INSERT INTO "auth_account" ("id", "account_id", "provider_id", "user_id", "tenant_id")
         VALUES
           ('failure-account-a', 'failure-user-a', 'credential', 'failure-user-a', 'failure-a'),
           ('failure-account-b', 'failure-user-b', 'credential', 'failure-user-b', 'failure-b');
+      `)
+      return
+    }
+    case 'untrusted-oauth-email-collision': {
+      await client.query(`
+        INSERT INTO "tenant" ("id", "slug", "name", "status")
+        VALUES ('failure-a', 'failure-a', 'Failure A', 'active'), ('failure-b', 'failure-b', 'Failure B', 'active');
+        INSERT INTO "auth_user" ("id", "name", "email", "email_verified", "role", "tenant_id")
+        VALUES
+          ('failure-user-a', 'Failure A', ' untrusted@example.com ', true, 'admin', 'failure-a'),
+          ('failure-user-b', 'Failure B', 'UNTRUSTED@example.com', true, 'admin', 'failure-b');
+        INSERT INTO "auth_account" ("id", "account_id", "provider_id", "user_id", "tenant_id")
+        VALUES
+          ('failure-account-a', 'untrusted-a', 'custom-oauth', 'failure-user-a', 'failure-a'),
+          ('failure-account-b', 'untrusted-b', 'custom-oauth', 'failure-user-b', 'failure-b');
       `)
       return
     }
@@ -885,7 +944,9 @@ async function seedFailureScenario(client: Client, scenario: string): Promise<vo
 
 const expectedFailureMessages: Record<string, string> = {
   'normalized-email-collision':
-    'Global identity migration aborted: duplicate normalized emails remain after trusted OAuth reconciliation.',
+    'Global identity migration aborted: duplicate normalized emails remain after trusted identity reconciliation.',
+  'untrusted-oauth-email-collision':
+    'Global identity migration aborted: duplicate normalized emails remain after trusted identity reconciliation.',
   'creem-customer-collision':
     'Global identity migration aborted: one canonical user has multiple Creem customer identities.',
   'credential-account-collision':

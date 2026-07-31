@@ -15,8 +15,11 @@ CREATE TABLE "tenant_membership" (
 
 ALTER TABLE "creem_subscription" ADD COLUMN "tenant_id" text;--> statement-breakpoint
 
--- Build identity components exclusively from exact, non-credential OAuth identities.
--- Email equality is deliberately not an automatic merge signal.
+-- Build identity components from exact, non-credential OAuth identities and a
+-- narrowly trusted verified-email bridge. The bridge is available only when
+-- every legacy user for that normalized email is verified and owns exclusively
+-- GitHub/Google OAuth accounts. Credential and unknown-provider identities never
+-- merge by email.
 CREATE TEMP TABLE "_identity_user_map" AS
 WITH RECURSIVE
 "oauth_edges" AS (
@@ -29,14 +32,58 @@ WITH RECURSIVE
 		AND "right_account"."account_id" = "left_account"."account_id"
 	WHERE "left_account"."provider_id" <> 'credential'
 ),
+"trusted_oauth_users" AS (
+	SELECT
+		"user"."id" AS "user_id",
+		lower(trim("user"."email")) AS "normalized_email"
+	FROM "auth_user" "user"
+	WHERE "user"."email_verified"
+		AND lower(trim("user"."email")) <> ''
+		AND EXISTS (
+			SELECT 1
+			FROM "auth_account" "account"
+			WHERE "account"."user_id" = "user"."id"
+				AND "account"."provider_id" IN ('github', 'google')
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM "auth_account" "account"
+			WHERE "account"."user_id" = "user"."id"
+				AND "account"."provider_id" NOT IN ('github', 'google')
+		)
+),
+"trusted_email_groups" AS (
+	SELECT lower(trim("user"."email")) AS "normalized_email"
+	FROM "auth_user" "user"
+	LEFT JOIN "trusted_oauth_users" "trusted"
+		ON "trusted"."user_id" = "user"."id"
+	GROUP BY lower(trim("user"."email"))
+	HAVING count(*) > 1
+		AND count("trusted"."user_id") = count(*)
+),
+"trusted_email_edges" AS (
+	SELECT DISTINCT
+		"left_user"."user_id" AS "left_user_id",
+		"right_user"."user_id" AS "right_user_id"
+	FROM "trusted_oauth_users" "left_user"
+	INNER JOIN "trusted_email_groups" "group"
+		ON "group"."normalized_email" = "left_user"."normalized_email"
+	INNER JOIN "trusted_oauth_users" "right_user"
+		ON "right_user"."normalized_email" = "left_user"."normalized_email"
+),
+"identity_edges" AS (
+	SELECT "left_user_id", "right_user_id" FROM "oauth_edges"
+	UNION
+	SELECT "left_user_id", "right_user_id" FROM "trusted_email_edges"
+),
 "reachable"("root_user_id", "user_id") AS (
 	SELECT "id", "id"
 	FROM "auth_user"
 	UNION
-	SELECT "reachable"."root_user_id", "oauth_edges"."right_user_id"
+	SELECT "reachable"."root_user_id", "identity_edges"."right_user_id"
 	FROM "reachable"
-	INNER JOIN "oauth_edges"
-		ON "oauth_edges"."left_user_id" = "reachable"."user_id"
+	INNER JOIN "identity_edges"
+		ON "identity_edges"."left_user_id" = "reachable"."user_id"
 ),
 "components" AS (
 	SELECT "user_id", min("root_user_id") AS "component_id"
@@ -66,7 +113,8 @@ SELECT * FROM "ranked";--> statement-breakpoint
 
 CREATE UNIQUE INDEX "_identity_user_map_old_user" ON "_identity_user_map" ("old_user_id");--> statement-breakpoint
 
--- Fail closed when email equality would be the only evidence connecting two identities.
+-- Fail closed when duplicate email identities remain outside the exact OAuth or
+-- verified trusted-provider reconciliation boundaries.
 DO $$
 BEGIN
 	IF EXISTS (
@@ -78,7 +126,7 @@ BEGIN
 		GROUP BY lower(trim("user"."email"))
 		HAVING count(*) > 1
 	) THEN
-		RAISE EXCEPTION 'Global identity migration aborted: duplicate normalized emails remain after trusted OAuth reconciliation.';
+		RAISE EXCEPTION 'Global identity migration aborted: duplicate normalized emails remain after trusted identity reconciliation.';
 	END IF;
 
 	IF EXISTS (
