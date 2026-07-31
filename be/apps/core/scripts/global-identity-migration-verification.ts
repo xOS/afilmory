@@ -25,19 +25,22 @@ import { WorkspaceMembershipService } from '../src/modules/platform/auth/workspa
 import type { TenantRecord } from '../src/modules/platform/tenant/tenant.types'
 
 const TARGET_MIGRATION_TAG = '0015_glorious_cassandra_nova'
+const REMEDIATION_MIGRATION_TAG = '0016_remove_legacy_social_memberships'
 const TEST_DATABASE_ENV = 'AFILMORY_MIGRATION_TEST_DATABASE_URL'
 const LOCAL_DATABASE_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
 const TENANT_MEMBERSHIP_MIGRATION_PATTERN = /CREATE TABLE "tenant_membership"/
+const TENANT_MEMBERSHIP_REMEDIATION_PATTERN = /DELETE FROM "tenant_membership"/
 const SAFE_DATABASE_IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,62}$/
 const migrationsFolder = fileURLToPath(new URL('../../../packages/db/migrations/', import.meta.url))
 
 interface MigrationJournal {
-  entries: Array<{ idx: number; tag: string }>
+  entries: Array<{ idx: number, tag: string }>
 }
 
 interface MigrationSet {
   legacy: MigrationMeta[]
   target: MigrationMeta
+  remediation: MigrationMeta
 }
 
 interface VerificationReport {
@@ -55,17 +58,27 @@ function loadMigrationSet(): MigrationSet {
   ) as MigrationJournal
   const migrations = readMigrationFiles({ migrationsFolder })
   const targetIndex = journal.entries.findIndex(({ tag }) => tag === TARGET_MIGRATION_TAG)
+  const remediationIndex = journal.entries.findIndex(({ tag }) => tag === REMEDIATION_MIGRATION_TAG)
 
   assert.notEqual(targetIndex, -1, `Migration ${TARGET_MIGRATION_TAG} is missing from the Drizzle journal.`)
+  assert.equal(
+    remediationIndex,
+    targetIndex + 1,
+    `Migration ${REMEDIATION_MIGRATION_TAG} must immediately follow ${TARGET_MIGRATION_TAG}.`,
+  )
   assert.equal(migrations.length, journal.entries.length, 'The migration journal and SQL files are inconsistent.')
 
   const target = migrations[targetIndex]
+  const remediation = migrations[remediationIndex]
   assert(target, `Migration ${TARGET_MIGRATION_TAG} could not be loaded.`)
+  assert(remediation, `Migration ${REMEDIATION_MIGRATION_TAG} could not be loaded.`)
   assert.match(target.sql.join('\n'), TENANT_MEMBERSHIP_MIGRATION_PATTERN)
+  assert.match(remediation.sql.join('\n'), TENANT_MEMBERSHIP_REMEDIATION_PATTERN)
 
   return {
     legacy: migrations.slice(0, targetIndex),
     target,
+    remediation,
   }
 }
 
@@ -107,10 +120,18 @@ async function applyMigration(client: Client, migration: MigrationMeta): Promise
       }
     }
     await client.query('COMMIT')
-  } catch (error) {
+  }
+  catch (error) {
     await client.query('ROLLBACK')
     throw error
   }
+}
+
+async function recordAppliedMigration(client: Client, migration: MigrationMeta): Promise<void> {
+  await client.query(`INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at") VALUES ($1, $2)`, [
+    migration.hash,
+    migration.folderMillis,
+  ])
 }
 
 async function applyLegacyMigrations(client: Client, migrations: MigrationMeta[]): Promise<void> {
@@ -127,10 +148,7 @@ async function applyLegacyMigrations(client: Client, migrations: MigrationMeta[]
     )
   `)
   for (const migration of migrations) {
-    await client.query(`INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at") VALUES ($1, $2)`, [
-      migration.hash,
-      migration.folderMillis,
-    ])
+    await recordAppliedMigration(client, migration)
   }
 }
 
@@ -148,9 +166,10 @@ async function expectUniqueViolation(client: Client, sql: string, values: unknow
   try {
     await assert.rejects(
       client.query(sql, values),
-      (error) => error instanceof Error && 'code' in error && error.code === '23505',
+      error => error instanceof Error && 'code' in error && error.code === '23505',
     )
-  } finally {
+  }
+  finally {
     await client.query('ROLLBACK')
   }
 }
@@ -300,19 +319,117 @@ async function verifyLegacyState(client: Client): Promise<number> {
   return assertions
 }
 
+async function seedReleasedMigrationState(client: Client): Promise<void> {
+  // Model the production window after the originally released 0015 but before
+  // the forward reconciliation. The checked-in 0015 is corrected for clean
+  // replays, so the released false grants are reconstructed explicitly here.
+  await client.query(`
+    INSERT INTO "tenant_membership" (
+      "id", "tenant_id", "user_id", "role", "status", "created_at", "updated_at"
+    )
+    VALUES
+      ('m_' || md5('tenant-beta:alice-beta'), 'tenant-beta', 'alice-beta', 'member', 'active', '2024-02-01', '2024-02-01'),
+      ('m_' || md5('tenant-alpha:oauth-email-alpha-a'), 'tenant-alpha', 'oauth-email-alpha-a', 'member', 'active', '2024-06-01', '2024-07-01'),
+      ('m_' || md5('tenant-beta:oauth-email-alpha-a'), 'tenant-beta', 'oauth-email-alpha-a', 'member', 'active', '2024-08-01', '2024-08-01'),
+      ('m_' || md5('tenant-gamma:carol-gamma'), 'tenant-gamma', 'carol-gamma', 'member', 'active', '2024-01-03', '2024-01-03'),
+      ('m_' || md5('tenant-alpha:eve-alpha'), 'tenant-alpha', 'eve-alpha', 'member', 'active', '2024-01-04', '2024-01-04')
+  `)
+
+  // This pair is one of the false-owner grants proven by the isolated
+  // production-backup audit and embedded in 0016's forward reconciliation.
+  await client.query(`
+    INSERT INTO "tenant" ("id", "slug", "name", "status", "created_at", "updated_at")
+    VALUES (
+      '7386607879218849792', 'audited-false-owner', 'Audited false owner', 'active',
+      '2024-01-01', '2024-01-01'
+    )
+  `)
+  await client.query(`
+    INSERT INTO "auth_user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
+    VALUES (
+      '7389446087650198528', 'Audited social identity', 'audited-social@example.invalid', true,
+      '2024-01-01', '2024-01-01'
+    )
+  `)
+  await client.query(`
+    INSERT INTO "tenant_membership" (
+      "id", "tenant_id", "user_id", "role", "status", "created_at", "updated_at"
+    )
+    VALUES (
+      'm_' || md5('7386607879218849792:7389446087650198528'),
+      '7386607879218849792', '7389446087650198528', 'owner', 'active',
+      '2024-01-01', '2024-01-01'
+    )
+  `)
+
+  // Add one explicit post-migration member to prove 0016 preserves real grants.
+  await client.query(`
+    INSERT INTO "tenant_membership" (
+      "id", "tenant_id", "user_id", "role", "status", "created_at", "updated_at"
+    )
+    VALUES (
+      'membership-eve-gamma-explicit', 'tenant-gamma', 'eve-alpha', 'member', 'active',
+      '2026-07-31', '2026-07-31'
+    )
+  `)
+
+  await client.query(`
+    INSERT INTO "auth_session" (
+      "id", "token", "expires_at", "active_tenant_id", "user_id", "created_at", "updated_at"
+    )
+    VALUES
+      (
+        'session-alice-legacy-member', 'token-alice-legacy-member', '2035-01-01',
+        'tenant-beta', 'alice-beta', '2026-07-31', '2026-07-31'
+      ),
+      (
+        'session-oauth-social-only', 'token-oauth-social-only', '2035-01-01',
+        'tenant-beta', 'oauth-email-alpha-a', '2026-07-31', '2026-07-31'
+      ),
+      (
+        'session-eve-explicit-member', 'token-eve-explicit-member', '2035-01-01',
+        'tenant-alpha', 'eve-alpha', '2026-07-31', '2026-07-31'
+      ),
+      (
+        'session-operator-owner', 'token-operator-owner', '2035-01-01',
+        'tenant-gamma', 'operator-gamma', '2026-07-31', '2026-07-31'
+      ),
+      (
+        'session-audited-false-owner', 'token-audited-false-owner', '2035-01-01',
+        '7386607879218849792', '7389446087650198528', '2026-07-31', '2026-07-31'
+      )
+  `)
+}
+
 async function verifySuccessfulMigration(client: Client, expectedMigrationCount: number): Promise<number> {
   let assertions = 0
 
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 9)
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), 10)
   assertions += 1
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "tenant_membership"'), 11)
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "tenant_membership"'), 5)
   assertions += 1
   assert.equal(
     await queryCount(client, `SELECT count(*) FROM "tenant_membership" WHERE "role" = 'owner' AND "status" = 'active'`),
-    5,
+    3,
   )
   assertions += 1
-  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_session"'), 0)
+  assert.equal(
+    await queryCount(
+      client,
+      `SELECT count(*) FROM "tenant_membership" WHERE "role" = 'member' AND left("id", 2) = 'm_'`,
+    ),
+    0,
+  )
+  assertions += 1
+  assert.equal(
+    await queryCount(
+      client,
+      `SELECT count(*) FROM "tenant_membership" WHERE "role" = 'member' AND left("id", 2) <> 'm_'`,
+    ),
+    1,
+  )
+  assertions += 1
+  assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_session"'), 5)
   assertions += 1
   assert.equal(
     await queryCount(client, 'SELECT count(*) FROM "drizzle"."__drizzle_migrations"'),
@@ -336,7 +453,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   })
   assertions += 1
 
-  const operator = await client.query<{ id: string; role: string; had_trial: boolean }>(
+  const operator = await client.query<{ id: string, role: string, had_trial: boolean }>(
     `SELECT "id", "role", "had_trial" FROM "auth_user" WHERE "id" = 'operator-gamma'`,
   )
   assert.deepEqual(operator.rows[0], { id: 'operator-gamma', role: 'superadmin', had_trial: true })
@@ -365,7 +482,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   assert.equal(await queryCount(client, `SELECT count(*) FROM "auth_user" WHERE "email" <> lower(trim("email"))`), 0)
   assertions += 1
 
-  const owners = await client.query<{ tenant_id: string; user_id: string }>(`
+  const owners = await client.query<{ tenant_id: string, user_id: string }>(`
     SELECT "tenant_id", "user_id"
     FROM "tenant_membership"
     WHERE "role" = 'owner' AND "status" = 'active'
@@ -374,25 +491,42 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   assert.deepEqual(owners.rows, [
     { tenant_id: 'tenant-alpha', user_id: 'alice-beta' },
     { tenant_id: 'tenant-beta', user_id: 'bob-beta' },
-    { tenant_id: 'tenant-delta', user_id: 'operator-gamma' },
-    { tenant_id: 'tenant-epsilon', user_id: 'epsilon-user' },
     { tenant_id: 'tenant-gamma', user_id: 'operator-gamma' },
   ])
   assertions += 1
 
-  const aliceMemberships = await client.query<{ tenant_id: string; role: string }>(`
+  assert.equal(
+    await queryCount(
+      client,
+      `SELECT count(*) FROM "tenant_membership" WHERE "tenant_id" IN ('tenant-delta', 'tenant-epsilon')`,
+    ),
+    0,
+  )
+  assertions += 1
+
+  const auditedWorkspace = await client.query<{ status: string }>(`
+    SELECT "status"
+    FROM "tenant"
+    WHERE "id" = '7386607879218849792'
+  `)
+  assert.deepEqual(auditedWorkspace.rows, [{ status: 'pending' }])
+  assertions += 1
+  assert.equal(
+    await queryCount(client, `SELECT count(*) FROM "tenant_membership" WHERE "tenant_id" = '7386607879218849792'`),
+    0,
+  )
+  assertions += 1
+
+  const aliceMemberships = await client.query<{ tenant_id: string, role: string }>(`
     SELECT "tenant_id", "role"
     FROM "tenant_membership"
     WHERE "user_id" = 'alice-beta'
     ORDER BY "tenant_id"
   `)
-  assert.deepEqual(aliceMemberships.rows, [
-    { tenant_id: 'tenant-alpha', role: 'owner' },
-    { tenant_id: 'tenant-beta', role: 'member' },
-  ])
+  assert.deepEqual(aliceMemberships.rows, [{ tenant_id: 'tenant-alpha', role: 'owner' }])
   assertions += 1
 
-  const trustedEmailUser = await client.query<{ email: string; id: string }>(`
+  const trustedEmailUser = await client.query<{ email: string, id: string }>(`
     SELECT "id", "email"
     FROM "auth_user"
     WHERE lower(trim("email")) = 'oauth-bridge@example.com'
@@ -406,10 +540,25 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
     WHERE "user_id" = 'oauth-email-alpha-a'
     ORDER BY "tenant_id"
   `)
-  assert.deepEqual(trustedEmailMemberships.rows, [{ tenant_id: 'tenant-alpha' }, { tenant_id: 'tenant-beta' }])
+  assert.deepEqual(trustedEmailMemberships.rows, [])
   assertions += 1
 
-  const trustedEmailAccounts = await client.query<{ account_id: string; provider_id: string; user_id: string }>(`
+  const reconciledSessions = await client.query<{ active_workspace: string | null, id: string }>(`
+    SELECT "session"."id", "tenant"."slug" AS "active_workspace"
+    FROM "auth_session" "session"
+    LEFT JOIN "tenant" ON "tenant"."id" = "session"."active_tenant_id"
+    ORDER BY "session"."id"
+  `)
+  assert.deepEqual(reconciledSessions.rows, [
+    { id: 'session-alice-legacy-member', active_workspace: 'alpha' },
+    { id: 'session-audited-false-owner', active_workspace: null },
+    { id: 'session-eve-explicit-member', active_workspace: 'gamma' },
+    { id: 'session-oauth-social-only', active_workspace: null },
+    { id: 'session-operator-owner', active_workspace: 'gamma' },
+  ])
+  assertions += 1
+
+  const trustedEmailAccounts = await client.query<{ account_id: string, provider_id: string, user_id: string }>(`
     SELECT "account_id", "provider_id", "user_id"
     FROM "auth_account"
     WHERE "user_id" = 'oauth-email-alpha-a'
@@ -422,7 +571,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   ])
   assertions += 1
 
-  const aliceGithub = await client.query<{ id: string; user_id: string; access_token: string }>(`
+  const aliceGithub = await client.query<{ id: string, user_id: string, access_token: string }>(`
     SELECT "id", "user_id", "access_token"
     FROM "auth_account"
     WHERE "provider_id" = 'github' AND "account_id" = 'github-alice'
@@ -432,7 +581,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   ])
   assertions += 1
 
-  const operatorAccounts = await client.query<{ account_id: string; provider_id: string; user_id: string }>(`
+  const operatorAccounts = await client.query<{ account_id: string, provider_id: string, user_id: string }>(`
     SELECT "account_id", "provider_id", "user_id"
     FROM "auth_account"
     WHERE "user_id" = 'operator-gamma' AND "provider_id" <> 'credential'
@@ -444,7 +593,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   ])
   assertions += 1
 
-  const aliceCredential = await client.query<{ account_id: string; user_id: string; password: string }>(`
+  const aliceCredential = await client.query<{ account_id: string, user_id: string, password: string }>(`
     SELECT "account_id", "user_id", "password"
     FROM "auth_account"
     WHERE "provider_id" = 'credential' AND "user_id" = 'alice-beta'
@@ -470,7 +619,7 @@ async function verifySuccessfulMigration(client: Client, expectedMigrationCount:
   )
   assertions += 1
 
-  const subscriptions = await client.query<{ id: string; tenant_id: string | null; reference_id: string }>(`
+  const subscriptions = await client.query<{ id: string, tenant_id: string | null, reference_id: string }>(`
     SELECT "id", "tenant_id", "reference_id"
     FROM "creem_subscription"
     ORDER BY "id"
@@ -574,16 +723,25 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
     const memberships = new WorkspaceMembershipService(dbAccessor)
     const guard = new RolesGuard(memberships)
     const workspaceRows = await db.select().from(tenants)
-    const workspaces = new Map(workspaceRows.map((workspace) => [workspace.id, workspace]))
+    const workspaces = new Map(workspaceRows.map(workspace => [workspace.id, workspace]))
     const expiresAt = '2035-01-01T00:00:00.000Z'
 
-    await db.insert(tenantMemberships).values({
-      id: 'membership-global-suspended-beta',
-      tenantId: 'tenant-beta',
-      userId: 'global-legacy',
-      role: 'admin',
-      status: 'suspended',
-    })
+    await db.insert(tenantMemberships).values([
+      {
+        id: 'membership-global-suspended-beta',
+        tenantId: 'tenant-beta',
+        userId: 'global-legacy',
+        role: 'admin',
+        status: 'suspended',
+      },
+      {
+        id: 'membership-alice-beta-explicit',
+        tenantId: 'tenant-beta',
+        userId: 'alice-beta',
+        role: 'member',
+        status: 'active',
+      },
+    ])
     await db.insert(authSessions).values([
       {
         id: 'session-alice',
@@ -622,8 +780,8 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
       },
     ])
 
-    const users = new Map((await db.select().from(authUsers)).map((user) => [user.id, user]))
-    const sessions = new Map((await db.select().from(authSessions)).map((session) => [session.id, session]))
+    const users = new Map((await db.select().from(authUsers)).map(user => [user.id, user]))
+    const sessions = new Map((await db.select().from(authSessions)).map(session => [session.id, session]))
 
     const runGuard = async (input: {
       handler: ProbeMethod
@@ -652,7 +810,7 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
     }
 
     const expectDenied = async (input: Parameters<typeof runGuard>[0], expectedCode: ErrorCode): Promise<void> => {
-      await assert.rejects(runGuard(input), (error) => error instanceof BizException && error.code === expectedCode)
+      await assert.rejects(runGuard(input), error => error instanceof BizException && error.code === expectedCode)
     }
 
     let assertions = 0
@@ -770,8 +928,8 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
     assert.deepEqual(
       aliceMemberships.map(({ role, workspace }) => ({ role, workspaceId: workspace.id })),
       [
-        { role: 'owner', workspaceId: 'tenant-alpha' },
         { role: 'member', workspaceId: 'tenant-beta' },
+        { role: 'owner', workspaceId: 'tenant-alpha' },
       ],
     )
     assertions += 1
@@ -804,7 +962,7 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
         userId: 'alice-beta',
         tenantId: 'tenant-gamma',
       }),
-      (error) => error instanceof BizException && error.code === ErrorCode.AUTH_FORBIDDEN,
+      error => error instanceof BizException && error.code === ErrorCode.AUTH_FORBIDDEN,
     )
     assertions += 1
     await assert.rejects(
@@ -813,7 +971,7 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
         userId: 'global-legacy',
         tenantId: 'tenant-beta',
       }),
-      (error) => error instanceof BizException && error.code === ErrorCode.AUTH_FORBIDDEN,
+      error => error instanceof BizException && error.code === ErrorCode.AUTH_FORBIDDEN,
     )
     assertions += 1
     await assert.rejects(
@@ -822,7 +980,7 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
         userId: 'alice-beta',
         tenantId: 'tenant-alpha',
       }),
-      (error) => error instanceof BizException && error.code === ErrorCode.AUTH_UNAUTHORIZED,
+      error => error instanceof BizException && error.code === ErrorCode.AUTH_UNAUTHORIZED,
     )
     assertions += 1
 
@@ -863,7 +1021,8 @@ async function verifyDatabaseBackedAuthorization(databaseUrl: string, client: Cl
     assertions += 1
 
     return assertions
-  } finally {
+  }
+  finally {
     await pool.end()
   }
 }
@@ -962,7 +1121,7 @@ async function verifyAtomicMigrationFailure(
   const usersBefore = await queryCount(client, 'SELECT count(*) FROM "auth_user"')
   await assert.rejects(
     applyPendingMigrations(client),
-    (error) => error instanceof Error && error.message.includes(expectedFailureMessages[scenario] ?? ''),
+    error => error instanceof Error && error.message.includes(expectedFailureMessages[scenario] ?? ''),
   )
 
   assert.equal(await queryCount(client, 'SELECT count(*) FROM "auth_user"'), usersBefore)
@@ -1024,7 +1183,8 @@ async function main(): Promise<void> {
       try {
         await applyLegacyMigrations(client, migrationSet.legacy)
         await run(client, databaseUrl)
-      } finally {
+      }
+      finally {
         await client.end()
         await admin.query(`DROP DATABASE ${quotedName} WITH (FORCE)`)
         createdDatabases.delete(databaseName)
@@ -1034,8 +1194,14 @@ async function main(): Promise<void> {
     await withFreshDatabase('success', async (client, databaseUrl) => {
       await seedSuccessfulLegacyState(client)
       report.successfulMigrationAssertions += await verifyLegacyState(client)
+
+      // Apply the released migration first, create sessions in the vulnerable
+      // intermediate state, then let Drizzle apply the forward reconciliation.
+      await applyMigration(client, migrationSet.target)
+      await recordAppliedMigration(client, migrationSet.target)
+      await seedReleasedMigrationState(client)
       await applyPendingMigrations(client)
-      report.successfulMigrationAssertions += await verifySuccessfulMigration(client, migrationSet.legacy.length + 1)
+      report.successfulMigrationAssertions += await verifySuccessfulMigration(client, migrationSet.legacy.length + 2)
       report.successfulMigrationAssertions += await verifyPostMigrationConstraints(client)
       report.authorizationAssertions += await verifyDatabaseBackedAuthorization(databaseUrl, client)
     })
@@ -1051,7 +1217,8 @@ async function main(): Promise<void> {
       })
       report.failureScenarios.push(scenario)
     }
-  } finally {
+  }
+  finally {
     for (const databaseName of createdDatabases) {
       await admin.query(`DROP DATABASE ${quoteIdentifier(databaseName)} WITH (FORCE)`)
     }

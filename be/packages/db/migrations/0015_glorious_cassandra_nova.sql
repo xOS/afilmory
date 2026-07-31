@@ -154,7 +154,10 @@ BEGIN
 END
 $$;--> statement-breakpoint
 
--- Preserve each former tenant relationship as a workspace membership.
+-- Only a legacy tenant administrator is evidence of Workspace authorization.
+-- Legacy `user` rows were also created when somebody merely authenticated in a
+-- public Gallery for comments or reactions, so those rows must remain global
+-- identities without receiving a Membership.
 INSERT INTO "tenant_membership" (
 	"id",
 	"tenant_id",
@@ -177,17 +180,18 @@ SELECT
 	max("map"."old_updated_at")
 FROM "_identity_user_map" "map"
 WHERE "map"."old_tenant_id" IS NOT NULL
-GROUP BY "map"."old_tenant_id", "map"."canonical_user_id";--> statement-breakpoint
+GROUP BY "map"."old_tenant_id", "map"."canonical_user_id"
+HAVING bool_or("map"."old_role" IN ('admin', 'superadmin'));--> statement-breakpoint
 
--- Select exactly one owner per workspace. Existing admins are preferred, then the
--- earliest historical membership. This also repairs legacy workspaces without an admin.
+-- Select exactly one owner from the proven legacy administrator set. An active
+-- Workspace without a legacy administrator is intentionally rejected below;
+-- ordinary social identities must never be promoted to repair missing ownership.
 WITH "owner_candidates" AS (
 	SELECT
 		"membership"."id",
 		row_number() OVER (
 			PARTITION BY "membership"."tenant_id"
 			ORDER BY
-				CASE WHEN "membership"."role" = 'admin' THEN 0 ELSE 1 END,
 				"membership"."created_at" ASC,
 				"membership"."id" ASC
 		) AS "owner_rank"

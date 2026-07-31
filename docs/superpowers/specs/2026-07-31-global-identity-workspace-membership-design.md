@@ -358,13 +358,15 @@ Push Device Token 应绑定 `auth_user.id`，而不是 Tenant 或 Membership。
    - 较早创建者优先；
    - ID 作为最终稳定排序。
 4. 在删除重复用户前：
-   - 按每条旧 `auth_user.tenant_id` 创建 canonical user 的 Membership；
+   - 仅当某个 `(tenant_id, canonical_user)` 分组至少包含一条旧 `admin` 或 `superadmin` 记录时，才创建 Membership；
+   - 旧 `role=user` 仅表示该全局身份曾在目标 Gallery 完成认证，不构成 Workspace 授权证据；
    - 重写 Comment 与 Comment Reaction 的 `user_id`；
    - 去重可能冲突的 Reaction；
    - 合并 OAuth Account，按 `updated_at` 保留最新 Token；
    - 汇总 `had_trial`、`superadmin` 与封禁状态；任何永久封禁都按永久封禁保留；
    - 回填可确定的 `creem_subscription.tenant_id`。
-5. 每个 Tenant 从旧 admin 集合中选择最早账号作为 owner，其余旧 admin 迁移为 admin；没有旧 admin 时选择最早 Membership 作为 owner。
+5. 每个 Tenant 只从旧 admin/superadmin 集合中选择最早账号作为 owner，其余旧 admin 迁移为 admin。
+6. active Tenant 若无法从旧 admin/superadmin 生成 owner，迁移必须失败关闭并进入人工审计；不得将普通 `user` 或社交登录身份自动提升为 owner。
 
 ### 12.2 冲突即中止
 
@@ -397,6 +399,34 @@ Push Device Token 应绑定 `auth_user.id`，而不是 Tenant 或 Membership。
 - 所有 `*.baseDomain` Host 属于同一认证信任区。平台不得在该信任区内托管可执行的租户 HTML；用户媒体下载必须使用不可执行内容策略或隔离域，以降低 Cookie Tossing 与 Login CSRF 风险。
 
 Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Global User，但浏览器不会跨两个 registrable domain 共享 Cookie。若未来要求 Custom Domain 无感单点登录，应通过平台 Auth Broker 的一次性交换码完成，不得扩大 Cookie Domain。
+
+### 12.5 已发布迁移的前向权限修复
+
+0015 首次部署版本曾错误地把所有旧 `auth_user.tenant_id` 关系转换为 Membership，并在没有旧管理员时把最早的普通用户提升为 owner。该问题不得通过运行时兼容逻辑掩盖，必须由 0016 执行一次性、可审计的前向修复。
+
+对 `2026-07-31T15:08:20.893Z` 迁移前生产备份进行隔离恢复并按 0015 的身份连通算法重建授权证据后，结果如下：
+
+| 审计项                                           | 数量 |
+| ------------------------------------------------ | ---: |
+| 旧 `(tenant, canonical user)` 关系               |  663 |
+| 有旧 admin/superadmin 证据的合法授权             |  553 |
+| 仅有旧 `user` 的非授权关系                       |  110 |
+| 被错误创建为 member                              |   83 |
+| 被错误兜底提升为 owner                           |   27 |
+| 生产中缺失的合法 owner/admin 授权                |    0 |
+| 异常 owner 所属 pending Tenant                   |   26 |
+| 异常 owner 所属 active Tenant                    |    1 |
+| 异常 owner Tenant 的 Session/照片/配置/域名/订阅 |    0 |
+
+0016 必须按以下顺序执行：
+
+1. 识别 0015 生成的全部 `m_<md5>` member，以及备份审计确认的 27 个错误 owner 精确 `(tenant_id, user_id)` 对；
+2. 对 active workspace 指向待撤销 Membership 的 Session，优先重定位到该用户仍然拥有的 active owner/admin，其次为显式创建的 member；无剩余 Membership 时置为 `null`；
+3. 删除待撤销 Membership，不删除 Global User、OAuth Account、评论或 Reaction；
+4. 若撤销错误 owner 后某个 active Tenant 不再有 owner，则将其恢复为 `pending`；
+5. 在同一事务内验证：不存在残留的迁移生成 member、每个非空 active Session 都有匹配的 active Membership、每个 active Tenant 都有 active owner；任一不变量失败则整体回滚。
+
+0015 同时修正为干净重放语义，避免从迁移前备份恢复时再次生成普通用户 Membership；生产数据库依靠 0016 修复既有状态，不重跑历史数据变换。
 
 ## 13. Workspace 删除语义
 
@@ -466,15 +496,18 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 
 ### 16.2 生命周期
 
-| 场景                                                   | 预期                                                             |
-| ------------------------------------------------------ | ---------------------------------------------------------------- |
-| 用户创建第二个 Workspace                               | 保留原 Membership，新 Workspace 为 owner，可切换                 |
-| 删除一个 Workspace                                     | 用户和其他 Workspace 不受影响，active workspace 被置空或重新选择 |
-| Mobile Broker 登录无 Membership 用户                   | 登录成功，Explorer 可用，active workspace 为空                   |
-| 相同 OAuth Account 历史重复用户                        | 安全合并，评论与 Membership 保留                                 |
-| 已验证同邮箱且全部为 GitHub/Google OAuth-only 历史用户 | 安全合并，保留全部不同 OAuth Account 与去重后的 Membership       |
-| 同邮箱但包含 Credential、未验证邮箱或未知 Provider     | 迁移中止，不自动合并                                             |
-| 使用 Workspace URL 尝试注册到已有 Workspace            | 不创建 Membership                                                |
+| 场景                                                   | 预期                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| 用户创建第二个 Workspace                               | 保留原 Membership，新 Workspace 为 owner，可切换                   |
+| 删除一个 Workspace                                     | 用户和其他 Workspace 不受影响，active workspace 被置空或重新选择   |
+| Mobile Broker 登录无 Membership 用户                   | 登录成功，Explorer 可用，active workspace 为空                     |
+| 相同 OAuth Account 历史重复用户                        | 安全合并，评论与 Membership 保留                                   |
+| 已验证同邮箱且全部为 GitHub/Google OAuth-only 历史用户 | 安全合并，保留全部不同 OAuth Account 与去重后的 Membership         |
+| 同邮箱但包含 Credential、未验证邮箱或未知 Provider     | 迁移中止，不自动合并                                               |
+| 使用 Workspace URL 尝试注册到已有 Workspace            | 不创建 Membership                                                  |
+| 旧普通用户仅在其他 Gallery 登录/评论                   | 合并为 Global User，但不创建目标 Gallery Membership                |
+| 已发布 0015 错误 member 的 Session                     | 重定位到合法 Workspace；无合法 Membership 时 active workspace 为空 |
+| 已发布 0015 错误 owner 且无其他 owner                  | 撤销 Membership；active Tenant 回到 pending                        |
 
 ### 16.3 验证命令
 
@@ -485,7 +518,7 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
     pnpm --filter @afilmory/core test:global-identity-migration
   ```
 
-  该命令只接受 `localhost`、`127.0.0.1` 或 `::1`，为每个场景创建独立临时数据库，并在结束时强制删除。它通过正式的 `drizzle-orm/node-postgres/migrator` 执行 0015，验证 Migration Journal 与 SQL 处于同一事务边界。
+  该命令只接受 `localhost`、`127.0.0.1` 或 `::1`，为每个场景创建独立临时数据库，并在结束时强制删除。它通过正式的 `drizzle-orm/node-postgres/migrator` 执行 0015 与 0016，重建首次发布 0015 的错误授权状态，并验证前向撤权、Session 重定位、Migration Journal 与事务回滚边界。
 
 - Core 定向 Vitest：授权策略、Membership、Session 切换、注册与删除。
 - `pnpm --filter @afilmory/core build`
@@ -502,7 +535,7 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 - canonical user 选择、最新 OAuth Token、Credential Account、封禁与 Trial 状态归并；
 - Comment、Reaction、Subscription 的重键、去重与 Workspace 归属；
 - Session 全量失效、全局邮箱及 Provider Account 唯一约束；
-- owner/admin/member 继承、suspended Membership、Platform Superadmin 隔离及跨 Workspace Social Action；
+- 仅 admin/superadmin 继承 Membership、普通社交身份不继承授权、已发布错误 member/owner 的前向撤权、suspended Membership、Platform Superadmin 隔离及跨 Workspace Social Action；
 - active workspace 切换、错误 Session 所有者、无 Membership 与 Workspace 删除后的 `SET NULL`/`CASCADE`；
 - 已验证 Credential 同邮箱、未知 Provider 同邮箱、Creem Customer、Credential Account 和无 Owner 活跃 Workspace 冲突的事务级失败关闭。
 
