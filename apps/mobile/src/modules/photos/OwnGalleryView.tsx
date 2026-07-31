@@ -6,8 +6,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SAAS_BASE_DOMAIN } from '@/api/client'
 import { getIntlLocale, useTranslation } from '@/i18n'
 import { signOut, useAuth } from '@/modules/auth/sessionStore'
+import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
-import { livePhotoVideoUrl } from '@/modules/galleries/videoSource'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
 import { presentNativePhotoFilters, presentNativeProfile } from '@/native/photoSheets'
@@ -66,17 +66,7 @@ function NativeGallery({ slug }: { slug: string }) {
 
   const items = useMemo(
     () =>
-      filtered.map(photo => ({
-        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
-        id: photo.id,
-        url: photo.thumbnailUrl,
-        originalUrl: photo.originalUrl,
-        thumbHash: photo.thumbHash,
-        aspectRatio: photo.aspectRatio,
-        width: photo.width,
-        height: photo.height,
-        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
-      })),
+      filtered.map(photo => buildPhotoMasonryItem(photo, t('photo.accessibility', { id: photo.title || photo.id }))),
     [filtered, t],
   )
 

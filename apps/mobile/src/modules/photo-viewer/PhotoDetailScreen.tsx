@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { getIntlLocale, useTranslation } from '@/i18n'
 import { photoCommentsPage } from '@/modules/comments/photoCommentsPage'
 import { usePhotoCommentCount } from '@/modules/comments/usePhotoCommentCount'
-import { livePhotoVideoUrl } from '@/modules/galleries/videoSource'
+import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { supportsPhotoInspector } from '@/modules/shell/adaptiveLayout'
 import { buildNativePhotoInfoPayload, NativePhotoInfoPanel, presentNativePhotoInfo } from '@/native/photoSheets'
 import { usePageRuntime } from '@/presentation'
@@ -55,17 +55,8 @@ export function PhotoDetailScreen() {
 
   const items = useMemo(
     () =>
-      session?.photos.map(photo => ({
-        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
-        id: photo.id,
-        url: photo.thumbnailUrl,
-        originalUrl: photo.originalUrl,
-        thumbHash: photo.thumbHash,
-        aspectRatio: photo.aspectRatio,
-        width: photo.width,
-        height: photo.height,
-        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
-      })) ?? [],
+      session?.photos.map(photo =>
+        buildPhotoMasonryItem(photo, t('photo.accessibility', { id: photo.title || photo.id }))) ?? [],
     [session, t],
   )
 

@@ -6,11 +6,11 @@ export interface PhotoMasonryItem {
   id: string
   url: string
   originalUrl: string
-  thumbHash: string | null
+  thumbHash?: string
   aspectRatio: number
   width: number
   height: number
-  livePhotoVideoUrl: string | null
+  livePhotoVideoUrl?: string
 }
 
 export interface PhotoPressEvent {

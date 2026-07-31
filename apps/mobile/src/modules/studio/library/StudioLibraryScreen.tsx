@@ -8,7 +8,7 @@ import { Alert, StyleSheet, View } from 'react-native'
 
 import { useTranslation } from '@/i18n'
 import { useAuth } from '@/modules/auth/sessionStore'
-import { livePhotoVideoUrl } from '@/modules/galleries/videoSource'
+import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
 import { useTheme } from '@/theme/useTheme'
@@ -54,17 +54,7 @@ function StudioLibraryContent() {
   )
   const masonryItems = useMemo(
     () =>
-      photos.map(photo => ({
-        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
-        aspectRatio: photo.aspectRatio,
-        height: photo.height,
-        id: photo.id,
-        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
-        originalUrl: photo.originalUrl,
-        thumbHash: photo.thumbHash,
-        url: photo.thumbnailUrl,
-        width: photo.width,
-      })),
+      photos.map(photo => buildPhotoMasonryItem(photo, t('photo.accessibility', { id: photo.title || photo.id }))),
     [photos, t],
   )
   const openPhoto = useOpenPhotoViewer(photos, auth.session?.activeWorkspace?.slug ?? null)

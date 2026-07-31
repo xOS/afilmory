@@ -9,8 +9,8 @@ import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
+import { buildPhotoMasonryItem } from './photoMasonryItem'
 import { useGalleryManifest } from './useGalleryManifest'
-import { livePhotoVideoUrl } from './videoSource'
 
 export function GalleryMasonry({ slug }: { slug: string }) {
   const { palette } = useTheme()
@@ -21,17 +21,7 @@ export function GalleryMasonry({ slug }: { slug: string }) {
   const handlePhotoContextMenu = usePhotoContextMenu(photos)
   const items = useMemo(
     () =>
-      photos.map(photo => ({
-        accessibilityLabel: t('photo.accessibility', { id: photo.title || photo.id }),
-        id: photo.id,
-        url: photo.thumbnailUrl,
-        originalUrl: photo.originalUrl,
-        thumbHash: photo.thumbHash,
-        aspectRatio: photo.aspectRatio,
-        width: photo.width,
-        height: photo.height,
-        livePhotoVideoUrl: livePhotoVideoUrl(photo.video),
-      })),
+      photos.map(photo => buildPhotoMasonryItem(photo, t('photo.accessibility', { id: photo.title || photo.id }))),
     [photos, t],
   )
 

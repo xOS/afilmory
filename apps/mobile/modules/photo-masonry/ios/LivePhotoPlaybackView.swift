@@ -74,7 +74,6 @@ final class LivePhotoPlaybackView: UIView {
     playbackGeneration += 1
     let generation = playbackGeneration
     setPlaying(true)
-    player.cancelPendingPrerolls()
     player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
       guard finished else { return }
       DispatchQueue.main.async {
@@ -112,6 +111,10 @@ final class LivePhotoPlaybackView: UIView {
     self.player = player
     playerLayer.player = player
 
+    // AVPlayer performs its own preroll when playback starts. Calling
+    // preroll/cancelPendingPrerolls while the remote item is still `.unknown`
+    // raises NSInvalidArgumentException instead of reporting an async failure.
+
     layerReadinessObservation = playerLayer.observe(
       \.isReadyForDisplay,
       options: [.new]
@@ -139,8 +142,6 @@ final class LivePhotoPlaybackView: UIView {
       guard let self, self.player?.currentItem === item else { return }
       self.stopPlayback(animated: true)
     }
-
-    player.preroll(atRate: 1) { _ in }
   }
 
   private func tearDownPlayer() {
@@ -152,7 +153,6 @@ final class LivePhotoPlaybackView: UIView {
       NotificationCenter.default.removeObserver(playbackEndObserver)
     }
     playbackEndObserver = nil
-    player?.cancelPendingPrerolls()
     player?.pause()
     player?.replaceCurrentItem(with: nil)
     playerLayer.player = nil
