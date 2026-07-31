@@ -278,6 +278,7 @@ interface AuthSessionProjection {
 ### 10.1 OAuth 与邮箱登录
 
 - Better Auth 使用普通全局 Drizzle Adapter。
+- Better Auth Admin 插件必须在 `roles` 中显式注册 `user` 与 `superadmin`，其中 `superadmin` 复用完整 Admin Access Control；仅设置 `adminRoles` 不足以注册自定义角色。
 - 删除 Tenant-aware Adapter 与 Mobile Broker 的重复账号选择逻辑。
 - OAuth callback 仍可保留 Tenant Slug State，用于回到发起登录的 Host；该 State 不参与身份匹配和授权。
 - Mobile Broker 可创建或登录全局身份。没有 Membership 的用户仍可使用 Explorer 和 Social Action，但 `activeWorkspace = null`。

@@ -24,6 +24,7 @@ import { injectable } from 'tsyringe'
 import { extractTenantSlugFromHost } from '../tenant/tenant-host.utils'
 import type { AuthModuleOptions, SocialProviderOptions, SocialProvidersConfig } from './auth.config'
 import { AuthConfig } from './auth.config'
+import { AUTH_ADMIN_PLUGIN_OPTIONS } from './auth-admin.policy'
 import { resolveAuthCookieScope } from './auth-cookie.policy'
 import { WorkspaceMembershipService } from './workspace-membership.service'
 
@@ -245,11 +246,7 @@ export class AuthProvider implements OnModuleInit {
       },
       plugins: [
         expo(),
-        admin({
-          adminRoles: ['superadmin'],
-          defaultRole: 'user',
-          defaultBanReason: 'Spamming',
-        }),
+        admin(AUTH_ADMIN_PLUGIN_OPTIONS),
         ...(env.CREEM_API_KEY && env.CREEM_WEBHOOK_SECRET
           ? [
               creem({
