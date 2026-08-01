@@ -1,4 +1,3 @@
-import { StatusBar } from 'expo-status-bar'
 import type {
   PhotoDetailActionEvent,
   PhotoDetailIndexChangeEvent,
@@ -152,7 +151,6 @@ export function PhotoDetailScreen() {
   if (!session || !currentPhoto) {
     return (
       <View style={[styles.root, styles.missing]}>
-        <StatusBar style="light" />
         <Text style={styles.missingTitle}>{t('photo.unavailable')}</Text>
         <Pressable accessibilityRole="button" onPress={cancel}>
           <Text style={styles.missingAction}>{t('common.goBack')}</Text>
