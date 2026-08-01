@@ -160,10 +160,13 @@ final class PhotoDetailToolbar: UIToolbar {
     commentBadge.layer.cornerRadius = size.height / 2
   }
 
+  // Adjacency is what merges a glass background in a UIToolbar; a flexible space
+  // between two items breaks it. Info and comments sit next to each other so they
+  // read as one surface, with share and reactions spaced off to their own circles.
   private func updateItems() {
     var barItems: [UIBarButtonItem] = [shareItem, .flexibleSpace(), infoItem]
     if socialActionsEnabled {
-      barItems += [.flexibleSpace(), commentsItem, .flexibleSpace(), reactionsItem]
+      barItems += [commentsItem, .flexibleSpace(), reactionsItem]
     }
     setItems(barItems, animated: false)
     commentBadge.isEnabledForBar = socialActionsEnabled
