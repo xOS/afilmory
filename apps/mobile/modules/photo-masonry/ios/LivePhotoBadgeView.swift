@@ -79,7 +79,10 @@ final class LivePhotoBadgeView: UIButton {
   private static let chevronSpacing: CGFloat = 3
   private static let foreground = UIColor.white.withAlphaComponent(0.75)
 
-  private let backgroundView = UIVisualEffectView(effect: UIGlassEffect(style: .clear))
+  // `.clear` reads as truer glass but adds no dimming, and the 75%-white caption
+  // loses the backdrop over a saturated frame. `.regular` is what the rest of the
+  // chrome floats on.
+  private let backgroundView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   private let glyphView = UIImageView()
   private let captionLabel = UILabel()
   private let chevronView = UIImageView()

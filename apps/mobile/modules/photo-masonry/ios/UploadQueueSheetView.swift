@@ -102,10 +102,15 @@ enum UploadQueuePresenter {
 
   @MainActor
   static func present(from presenter: UIViewController, localization: UploadQueueLocalization) {
-    guard current == nil else { return }
+    if let current, current.presentingViewController != nil {
+      return
+    }
 
     let model = UploadQueueViewModel()
-    var navigation: UINavigationController?
+    // Weak: the sheet view retains this closure, so a strong capture of the
+    // navigation controller would cycle and keep `current` alive forever,
+    // swallowing every later FAB tap.
+    weak var navigation: UINavigationController?
     let hostingController = UIHostingController(
       rootView: UploadQueueSheetView(model: model, localization: localization) { job in
         let logHost = UIHostingController(
