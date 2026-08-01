@@ -135,18 +135,11 @@ struct PhotoInfoInspectorView: View {
   @ViewBuilder
   var body: some View {
     if showsHeader {
-      if #available(iOS 26.0, *) {
-        PhotoInfoSheetView(info: info)
-          .safeAreaBar(edge: .top, spacing: 0) {
-            header
-          }
-          .scrollEdgeEffectStyle(.soft, for: .top)
-      } else {
-        PhotoInfoSheetView(info: info)
-          .safeAreaInset(edge: .top, spacing: 0) {
-            header
-          }
-      }
+      PhotoInfoSheetView(info: info)
+        .safeAreaBar(edge: .top, spacing: 0) {
+          header
+        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
     } else {
       PhotoInfoCompactView(info: info, bottomContentInset: bottomContentInset)
     }

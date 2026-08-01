@@ -427,14 +427,9 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
 
   private static func makeGlassSurface(interactive: Bool = false) -> UIVisualEffectView {
     let surface = UIVisualEffectView()
-    if #available(iOS 26.0, *) {
-      let effect = UIGlassEffect(style: .regular)
-      effect.isInteractive = interactive
-      surface.effect = effect
-    } else {
-      surface.effect = UIBlurEffect(style: .systemChromeMaterialDark)
-      surface.contentView.backgroundColor = UIColor.black.withAlphaComponent(0.18)
-    }
+    let effect = UIGlassEffect(style: .regular)
+    effect.isInteractive = interactive
+    surface.effect = effect
     surface.clipsToBounds = true
     surface.layer.cornerCurve = .continuous
     return surface

@@ -82,9 +82,7 @@ final class PhotoCell: UICollectionViewCell {
     selectionCheck.contentMode = .center
     selectionBadge.addSubview(selectionCheck)
 
-    if #available(iOS 13.4, *) {
-      addInteraction(UIPointerInteraction(delegate: self))
-    }
+    addInteraction(UIPointerInteraction(delegate: self))
   }
 
   @available(*, unavailable)
@@ -144,7 +142,7 @@ final class PhotoCell: UICollectionViewCell {
     contentView.accessibilityValue = photo.hasLivePhoto ? livePhotoAccessibilityLabel : nil
     setNeedsLayout()
     configureSelection(selectionMode: selectionMode, selected: selected)
-    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let scale = window?.windowScene?.screen.scale ?? traitCollection.displayScale
     let targetHeight = targetWidth / max(photo.aspectRatio, 0.01)
     let pixelSize = CGSize(width: targetWidth * scale, height: targetHeight * scale)
     imageView.sd_setImage(
@@ -181,7 +179,6 @@ final class PhotoCell: UICollectionViewCell {
   }
 }
 
-@available(iOS 13.4, *)
 extension PhotoCell: UIPointerInteractionDelegate {
   func pointerInteraction(
     _ interaction: UIPointerInteraction,

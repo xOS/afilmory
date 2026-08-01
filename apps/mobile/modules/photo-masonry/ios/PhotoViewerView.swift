@@ -378,7 +378,7 @@ final class PhotoViewerView: ExpoView {
   }
 
   private func configureZoomTransition() {
-    guard #available(iOS 18.0, *), let screen = findScreen() else { return }
+    guard let screen = findScreen() else { return }
     guard configuredScreen !== screen
       || configuredTransitionId != transitionId
       || configuredInfoPresented != infoPresented

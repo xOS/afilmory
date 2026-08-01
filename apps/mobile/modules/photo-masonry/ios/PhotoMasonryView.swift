@@ -190,14 +190,12 @@ final class PhotoMasonryView: ExpoView {
     collectionView.contentInsetAdjustmentBehavior = .always
     collectionView.showsVerticalScrollIndicator = false
     collectionView.alwaysBounceVertical = true
-    if #available(iOS 26.0, *) {
-      collectionView.topEdgeEffect.style = .soft
+    collectionView.topEdgeEffect.style = .soft
 
-      let interaction = UIScrollEdgeElementContainerInteraction()
-      interaction.scrollView = collectionView
-      interaction.edge = .top
-      overlayView.addInteraction(interaction)
-    }
+    let interaction = UIScrollEdgeElementContainerInteraction()
+    interaction.scrollView = collectionView
+    interaction.edge = .top
+    overlayView.addInteraction(interaction)
     collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: PhotoCell.reuseIdentifier)
 
     refreshControl.tintColor = .white
@@ -317,29 +315,27 @@ final class PhotoMasonryView: ExpoView {
     // Apple's floating control clusters are a glass container holding individual glass
     // elements, which is what makes adjacent controls merge as they near each other and
     // deform under touch. Two standalone .glass() button configurations render neither.
-    if #available(iOS 26.0, *) {
-      let clusterEffect = UIGlassContainerEffect()
-      clusterEffect.spacing = chromeControlGap
-      controlCluster.effect = clusterEffect
-      overlayView.addSubview(controlCluster)
+    let clusterEffect = UIGlassContainerEffect()
+    clusterEffect.spacing = chromeControlGap
+    controlCluster.effect = clusterEffect
+    overlayView.addSubview(controlCluster)
 
-      for glass in [profileGlass, filterGlass] {
-        // The glass element is the surface only; its own interactive behaviour would
-        // swallow touches before they reach the button hosted in its content view.
-        let effect = UIGlassEffect(style: .regular)
-        effect.isInteractive = true
-        glass.effect = effect
-        glass.clipsToBounds = true
-        glass.layer.cornerCurve = .circular
-        controlCluster.contentView.addSubview(glass)
-      }
+    for glass in [profileGlass, filterGlass] {
+      // The glass element is the surface only; its own interactive behaviour would
+      // swallow touches before they reach the button hosted in its content view.
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = true
+      glass.effect = effect
+      glass.clipsToBounds = true
+      glass.layer.cornerCurve = .circular
+      controlCluster.contentView.addSubview(glass)
     }
 
     profileButton.addTarget(self, action: #selector(handleProfilePress), for: .touchUpInside)
     profileButton.accessibilityIdentifier = "photo-masonry-profile"
     profileButton.accessibilityLabel = profileAccessibilityLabel
     profileButton.configuration = makeControlConfiguration()
-    glassHost(for: profileGlass).addSubview(profileButton)
+    profileGlass.contentView.addSubview(profileButton)
 
     profileInitialLabel.font = .systemFont(ofSize: 14, weight: .bold)
     profileInitialLabel.textAlignment = .center
@@ -354,7 +350,7 @@ final class PhotoMasonryView: ExpoView {
 
     filterButton.addTarget(self, action: #selector(handleFilterPress), for: .touchUpInside)
     filterButton.accessibilityIdentifier = "photo-masonry-filters"
-    glassHost(for: filterGlass).addSubview(filterButton)
+    filterGlass.contentView.addSubview(filterButton)
 
     filterBadge.backgroundColor = .systemBlue
     filterBadge.clipsToBounds = true
@@ -371,35 +367,17 @@ final class PhotoMasonryView: ExpoView {
     updateChromeVisibility()
   }
 
-  private func glassHost(for glass: UIVisualEffectView) -> UIView {
-    if #available(iOS 26.0, *) {
-      return glass.contentView
-    }
-    return overlayView
-  }
-
   // The circular controls draw no background of their own — the glass element behind them
-  // is the surface. Pre-26 they fall back to carrying their own opaque capsule.
+  // is the surface.
   private func makeControlConfiguration() -> UIButton.Configuration {
-    if #available(iOS 26.0, *) {
-      var configuration = UIButton.Configuration.plain()
-      configuration.background.backgroundColor = .clear
-      configuration.baseForegroundColor = .white
-      return configuration
-    }
-    var configuration = UIButton.Configuration.gray()
-    configuration.buttonSize = .medium
-    configuration.cornerStyle = .capsule
+    var configuration = UIButton.Configuration.plain()
+    configuration.background.backgroundColor = .clear
+    configuration.baseForegroundColor = .white
     return configuration
   }
 
   private func makeChromeConfiguration(prominent: Bool = false) -> UIButton.Configuration {
-    var configuration: UIButton.Configuration
-    if #available(iOS 26.0, *) {
-      configuration = prominent ? .prominentGlass() : .glass()
-    } else {
-      configuration = .gray()
-    }
+    var configuration: UIButton.Configuration = prominent ? .prominentGlass() : .glass()
     if prominent {
       // Prominent glass takes its fill from the tint, which would otherwise resolve to the
       // system accent. A neutral translucent black keeps it glass while giving the fixed
@@ -601,24 +579,19 @@ final class PhotoMasonryView: ExpoView {
     let filterX = bounds.width - chromeEdgeInset - chromeControlSize
     let profileX = filterX - chromeControlGap - chromeControlSize
 
-    if #available(iOS 26.0, *) {
-      controlCluster.frame = CGRect(
-        x: profileX,
-        y: controlY,
-        width: chromeControlSize * 2 + chromeControlGap,
-        height: chromeControlSize
-      )
-      let circle = CGRect(x: 0, y: 0, width: chromeControlSize, height: chromeControlSize)
-      profileGlass.frame = circle
-      filterGlass.frame = circle.offsetBy(dx: chromeControlSize + chromeControlGap, dy: 0)
-      profileGlass.layer.cornerRadius = chromeControlSize / 2
-      filterGlass.layer.cornerRadius = chromeControlSize / 2
-      profileButton.frame = profileGlass.contentView.bounds
-      filterButton.frame = filterGlass.contentView.bounds
-    } else {
-      filterButton.frame = CGRect(x: filterX, y: controlY, width: chromeControlSize, height: chromeControlSize)
-      profileButton.frame = CGRect(x: profileX, y: controlY, width: chromeControlSize, height: chromeControlSize)
-    }
+    controlCluster.frame = CGRect(
+      x: profileX,
+      y: controlY,
+      width: chromeControlSize * 2 + chromeControlGap,
+      height: chromeControlSize
+    )
+    let circle = CGRect(x: 0, y: 0, width: chromeControlSize, height: chromeControlSize)
+    profileGlass.frame = circle
+    filterGlass.frame = circle.offsetBy(dx: chromeControlSize + chromeControlGap, dy: 0)
+    profileGlass.layer.cornerRadius = chromeControlSize / 2
+    filterGlass.layer.cornerRadius = chromeControlSize / 2
+    profileButton.frame = profileGlass.contentView.bounds
+    filterButton.frame = filterGlass.contentView.bounds
 
     let avatarInset = (chromeControlSize - avatarImageSize) / 2
     let avatarFrame = profileButton.bounds.insetBy(dx: avatarInset, dy: avatarInset)
@@ -1041,7 +1014,6 @@ extension PhotoMasonryView: UICollectionViewDelegate {
     ])
   }
 
-  @available(iOS 16.0, *)
   func collectionView(
     _ collectionView: UICollectionView,
     contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
@@ -1060,7 +1032,6 @@ extension PhotoMasonryView: UICollectionViewDelegate {
     makeContextMenuConfiguration(at: indexPath)
   }
 
-  @available(iOS 16.0, *)
   func collectionView(
     _ collectionView: UICollectionView,
     contextMenuConfiguration: UIContextMenuConfiguration,
@@ -1069,7 +1040,6 @@ extension PhotoMasonryView: UICollectionViewDelegate {
     contextMenuPreview(at: indexPath)
   }
 
-  @available(iOS 16.0, *)
   func collectionView(
     _ collectionView: UICollectionView,
     contextMenuConfiguration: UIContextMenuConfiguration,
