@@ -10,7 +10,7 @@ interface FormattedCaptureDate {
   time: string
 }
 
-type HeaderPhoto = Pick<GalleryPhoto, 'dateTaken' | 'title'>
+type HeaderPhoto = Pick<GalleryPhoto, 'city' | 'dateTaken' | 'location' | 'title'>
 
 const DAY_IN_MILLISECONDS = 86_400_000
 const dateFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -71,27 +71,29 @@ function formatCaptureDate(value: string | null, locale: string, now: Date): For
   return { day, time: formatterForTime(locale).format(date) }
 }
 
+function resolvePlace(photo: HeaderPhoto): string {
+  const locationCity = photo.location?.city?.trim()
+  if (locationCity) {
+    return locationCity
+  }
+  const city = photo.city?.trim()
+  if (city) {
+    return city
+  }
+  return photo.location?.country?.trim() || ''
+}
+
 export function buildPhotoHeaderModel(
   photo: HeaderPhoto,
-  currentIndex: number,
-  total: number,
   locale: string,
   fallbackTitle: string,
   now = new Date(),
 ): PhotoHeaderModel {
   const captureDate = formatCaptureDate(photo.dateTaken, locale, now)
-  const explicitTitle = photo.title.trim()
-  const position = total > 1 ? `${Math.min(Math.max(currentIndex, 0), total - 1) + 1} / ${total}` : ''
-
-  if (explicitTitle) {
-    return {
-      title: explicitTitle,
-      subtitle: [captureDate ? `${captureDate.day}, ${captureDate.time}` : '', position].filter(Boolean).join(' · '),
-    }
-  }
+  const place = resolvePlace(photo)
 
   return {
-    title: captureDate?.day || fallbackTitle,
-    subtitle: [captureDate?.time || '', position].filter(Boolean).join(' · '),
+    title: captureDate?.day || photo.title.trim() || fallbackTitle,
+    subtitle: [captureDate?.time || '', place].filter(Boolean).join(' · '),
   }
 }

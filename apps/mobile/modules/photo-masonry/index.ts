@@ -71,7 +71,6 @@ export interface PhotoDetailStrings {
   close: string
   comments: string
   info: string
-  more: string
   next: string
   previous: string
   reaction: string

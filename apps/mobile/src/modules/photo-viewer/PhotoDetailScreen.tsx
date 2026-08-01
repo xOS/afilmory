@@ -58,8 +58,8 @@ export function PhotoDetailScreen() {
   )
 
   const metadataJSON = useMemo(() => {
-    const metadata: PhotoDetailMetadataItem[] = (session?.photos ?? []).map((photo, index) => {
-      const header = buildPhotoHeaderModel(photo, index, session?.photos.length ?? 0, intlLocale, t('page.photo'))
+    const metadata: PhotoDetailMetadataItem[] = (session?.photos ?? []).map((photo) => {
+      const header = buildPhotoHeaderModel(photo, intlLocale, t('page.photo'))
       const info = buildNativePhotoInfoPayload(buildPhotoInfoSheetModel(photo, t, intlLocale))
       return {
         id: photo.id,
@@ -76,7 +76,6 @@ export function PhotoDetailScreen() {
       close: t('photo.close'),
       comments: t('photo.comments'),
       info: t('photo.info'),
-      more: t('photo.more'),
       next: t('photo.next'),
       previous: t('photo.previous'),
       reaction: t('photo.reaction.open'),
@@ -159,7 +158,6 @@ export function PhotoDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
       <NativePhotoDetailView
         commentCount={commentCount ?? -1}
         initialIndex={session.initialIndex}
