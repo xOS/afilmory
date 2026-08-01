@@ -1,7 +1,7 @@
 # Native upload pipeline — decision record
 
 Status: agreed. Drop `expo-image-picker`; the pipeline moves to Swift end to end,
-including the upload itself (fork B below).
+including the upload itself. No backend change is required.
 
 ## Why the JS picker is being dropped
 
@@ -20,83 +20,95 @@ Every `uri:` in that file resolves through `generateUrl` or an already-cached
 copy. There is no option that yields a `ph://` identifier. Two consequences:
 
 1. Picking 50 × 25 MB RAW duplicates 1.25 GB into `Caches/` before a byte is sent.
-2. `Caches/` is reclaimable. A long queue can outlive its own input files — the
-   queue detects this (`payloads.get(id)` misses → "The picked file is no longer
-   available") but cannot prevent it.
+2. `Caches/` is reclaimable. A long queue can outlive its own input files.
 
 Owning selection in Swift keeps `PHAsset` identifiers and removes the copy.
 
 ## What is NOT a problem
 
-Image bytes never cross the bridge today, so "large images over the bridge" is
-not the motivation. Verified in React Native's own source:
+**Image bytes never cross the bridge today.** Verified in React Native's source:
+`Libraries/Network/FormData.js:91-100` returns a `{uri}` part as
+`{...value, headers, fieldName}` — JS reads no file data — and
+`Libraries/Network/RCTNetworking.mm:90` has native read the uri and stream the
+file. So "large images over the bridge" is not the motivation for this work; the
+disk duplication above is.
 
-- `Libraries/Network/FormData.js:91-100` — a `{uri}` part is returned as
-  `{...value, headers, fieldName}`; JS reads no file data.
-- `Libraries/Network/RCTNetworking.mm:90` — native reads `_parts[i]["uri"]` and
-  streams the file itself.
+**Swift can consume SSE.** An earlier draft of this document claimed a background
+`URLSession` cannot read a streaming response and concluded the server needed a
+submit → `taskId` → poll contract. That was wrong and is retracted.
+`URLSessionDataTask` with `URLSessionDataDelegate.urlSession(_:dataTask:didReceive:)`
+receives bytes incrementally — that is how a native SSE client is written.
 
-The Swift review sheet is likewise strings-only in both directions.
+The one real restriction is narrow: a **background-configured** session does not
+support data tasks, only upload and download tasks. Upload tasks still deliver
+the response body to the data delegate, so even there the SSE bytes arrive; what
+is unreliable is their *timing*, since callbacks are held until the app is woken
+or relaunched. During that window nobody is watching a progress bar anyway, and
+the final outcome still arrives.
 
-## Open fork — resolve before wiring the module
+**`be/apps/core` therefore needs no changes.** The existing SSE endpoint is
+consumed directly from Swift.
 
-Once Swift owns selection it holds `PHAsset`, not a file, and handing that off
-splits two ways:
+## What moving to Swift commits us to
 
-**A. Keep uploading through RN `FormData`, passing `ph://`.**
-`RCTNetworking.mm:91` rewrites a `ph:` prefix to `RCTNetworkingPHUploadHackScheme`,
-so RN can read PhotoKit assets directly. Queue, retry and the SSE progress
-contract stay untouched. Unverified: Live Photo pairing, RAW, and iCloud assets
-that are not downloaded locally. The scheme is named "hack" in RN's own source —
-treat support as unproven until a spike says otherwise.
+1. **The queue moves into Swift.** `uploadQueue.ts` / `uploadQueueModel.ts` were
+   built around an in-JS serial runner driving `sendSseRequest`. Authority for
+   retry, cancel and ordering becomes native; JS keeps at most a mirror of
+   native task state for rendering.
+2. **Hand every task to the daemon rather than stepping the queue from app code.**
+   A serial "start the next job when this one finishes" loop depends on app
+   runtime that a suspended app does not have. Enqueue all upload tasks to the
+   background session and let `nsurlsessiond` schedule them. This gives up strict
+   serial ordering, which measurement says costs little: per-request overhead is
+   ~80 ms against ~1.4 s of per-file server work, so batching versus one-at-a-time
+   differed by ~5% (9.11 s vs 8.63 s for six files).
+3. **Swift receives the session cookie across the bridge.** JS passes it down,
+   keeping `authStorage.ts` the single keychain reader. But a background session
+   can resume after the app is reclaimed, when no JS exists to supply a fresh
+   value, and a cookie handed over hours earlier may have rotated. Native must
+   persist what it was given and reload it on a background relaunch — holding
+   only an in-memory copy is what breaks.
+4. **Retry classification is re-expressed natively.** Keep the tested behaviour:
+   4xx is terminal, transport failures and 5xx retry with backoff. Port the
+   behaviour, not the code.
+5. **`uploadTags.ts` stays in JS.** The server only trims the directory field, so
+   path sanitisation is client-side and must match the dashboard exactly. JS
+   computes the directory string and passes it down; Swift must not reimplement
+   the sanitiser.
 
-**B. Upload from Swift.** `PHAssetResourceManager.writeData(for:toFile:)` streams
-into `URLSession`, so there is no copy and no bridge at all. But a background
-`URLSession` cannot consume a streaming response, which reopens the decision
-already taken in `2026-08-01-local-docker-dev-env-design.md` — foreground-only
-reliability was chosen precisely to avoid rewriting the server's SSE progress
-endpoint into submit-then-poll.
+## Live Activity / Dynamic Island
 
-**B was chosen.** It knowingly overturns the foreground-only decision, so that
-earlier spec's Verification item 10 no longer describes the intended design.
+A Live Activity is a **presentation surface**, not an execution grant. It does
+not keep the app running and cannot hold the queue open. What keeps an upload
+alive in the background is the background `URLSession` above.
 
-### What B commits us to
+The two do pair well: background transfers are invisible otherwise, and task
+completion briefly wakes the app via
+`application(_:handleEventsForBackgroundURLSession:)` — enough runtime to update
+the activity. With one request per photo, each completion is a natural update
+tick.
 
-1. **The server needs a non-streaming progress contract.** A background
-   `URLSession` cannot consume a streaming response, so `POST /photos/assets/upload`
-   must gain a submit → `taskId` → poll path alongside (or instead of) its SSE
-   response. This is a `be/apps/core` change, not just a mobile one.
-2. **The queue moves into Swift.** `uploadQueue.ts` / `uploadQueueModel.ts` were
-   built around an in-JS serial runner driving `sendSseRequest`. Under B the
-   authority for retry, cancel and ordering is native; JS keeps at most a mirror
-   of native task state for rendering.
-3. **Swift receives the session cookie across the bridge.** JS passes it down
-   with the upload request rather than Swift reading the keychain, keeping
-   `authStorage.ts` the single reader of that key.
+Treat it as a separate increment, after background upload works. It needs a
+Widget Extension target, which in an Expo prebuild project means a config plugin
+or a hand-maintained target, and touches the existing release pipeline. Live
+Activities also have an active-duration ceiling (~8 h) and update-frequency
+budgets.
 
-   The catch is specific to B: a background `URLSession` can resume after the
-   app has been reclaimed, when no JS exists to ask for a fresh value. A cookie
-   handed over hours earlier may have rotated, and the whole resumed batch
-   401s with nobody able to repair it. So native must persist what it was given
-   and be able to reload it on a background relaunch — holding only an in-memory
-   copy is what breaks. Passing it down is fine; treating it as request-scoped
-   is not.
-4. **Retry classification must be re-expressed natively.** The rule worth keeping
-   is the tested one: 4xx is terminal, transport failures and 5xx retry with
-   backoff. Port the behaviour, not the code.
-5. `uploadTags.ts` still owns directory derivation. JS computes the directory
-   string and passes it down; Swift must not reimplement the sanitiser.
+## Carried over
 
-## Carried over regardless of the fork
+- `UploadReviewSheetView.swift` is written but never compiled, and its
+  `UploadReviewImage` decodes whole images via `Data(contentsOf:)` before
+  thumbnailing. Replace with `CGImageSourceCreateThumbnailAtIndex` +
+  `kCGImageSourceThumbnailMaxPixelSize`; a grid of 25 MB RAWs will otherwise
+  spike memory.
+- `PhotoSheetsModule` still needs a `presentUploadReview` function.
+- Cancel, failure and retry paths have never run against a real upload — only
+  unit tests. Still owed after the rewrite.
 
-- `uploadTags.ts` and its tests stay in JS. The server only trims the directory
-  field, so path sanitisation is client-side and must match the dashboard
-  exactly; do not reimplement it in Swift.
-- `uploadQueue.ts` / `uploadQueueModel.ts` are UI-independent and survive either
-  option under fork A.
-- `UploadReviewSheetView.swift` currently decodes whole images via
-  `Data(contentsOf:)` before thumbnailing. Replace with
-  `CGImageSourceCreateThumbnailAtIndex` + `kCGImageSourceThumbnailMaxPixelSize`;
-  a grid of 25 MB RAWs will otherwise spike memory. Independent of the fork.
-- The native sheet is written but not wired: `PhotoSheetsModule` still needs
-  `presentUploadReview`, and nothing has been compiled yet.
+## Unverified
+
+- Timing of response delivery for upload tasks in a background session.
+- Whether re-uploading after a lost response is idempotent.
+  `collectExistingPhotoRecords` matches on `storageKey`, which suggests an update
+  rather than a duplicate, but this has not been exercised.
+- Reading `ph://` assets that are in iCloud but not downloaded locally.
