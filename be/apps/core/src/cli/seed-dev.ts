@@ -1,15 +1,38 @@
+import { readdir, readFile } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 import { stdout } from 'node:process'
+import { fileURLToPath } from 'node:url'
 
+import { photoAssets } from '@afilmory/db'
 import { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3'
+import { HttpContext } from '@tsuki-hono/common'
+import { eq } from 'drizzle-orm'
+import type { Context } from 'hono'
 
 import { APP_GLOBAL_PREFIX } from '../app.constants'
 import { createConfiguredApp } from '../app.factory'
-import { PgPoolProvider } from '../database/database.provider'
+import { DbAccessor, PgPoolProvider } from '../database/database.provider'
 import { logger } from '../helpers/logger.helper'
 import { StorageSettingService } from '../modules/configuration/storage-setting/storage-setting.service'
 import { SystemSettingService } from '../modules/configuration/system-setting/system-setting.service'
+import { PhotoAssetService } from '../modules/content/photo/assets/photo-asset.service'
+import type { UploadAssetInput } from '../modules/content/photo/assets/photo-asset.types'
+import { resolveFileSizeLimitBytes } from '../modules/content/photo/assets/photo-upload-limits'
+import { ROOT_TENANT_SLUG } from '../modules/platform/tenant/tenant.constants'
 import { TenantService } from '../modules/platform/tenant/tenant.service'
+import type { TenantRecord } from '../modules/platform/tenant/tenant.types'
 import { RedisProvider } from '../redis/redis.provider'
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.avif': 'image/avif',
+  '.heic': 'image/heic',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.mov': 'video/quicktime',
+  '.mp4': 'video/mp4',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+}
 
 const SEED_FLAG = '--seed-dev'
 
@@ -18,6 +41,7 @@ const DEFAULTS = {
   bucket: 'afilmory-dev',
   endpoint: 'http://localhost:9300',
   gatewayUrl: 'http://localhost:1841',
+  photosDir: fileURLToPath(new URL('../../../../../photos/', import.meta.url)),
   region: 'us-east-1',
   secretAccessKey: 'rustfsadmin',
 } as const
@@ -27,6 +51,7 @@ export interface SeedDevCliOptions {
   bucket: string
   endpoint: string
   gatewayUrl: string
+  photosDir: string
   region: string
   secretAccessKey: string
   slug: string | null
@@ -37,6 +62,7 @@ const VALUE_FLAGS = {
   '--bucket': 'bucket',
   '--endpoint': 'endpoint',
   '--gateway-url': 'gatewayUrl',
+  '--photos-dir': 'photosDir',
   '--region': 'region',
   '--secret-key': 'secretAccessKey',
   '--slug': 'slug',
@@ -147,12 +173,13 @@ export async function handleSeedDevCli(options: SeedDevCliOptions): Promise<void
     summary.push(`oauthGatewayUrl = ${options.gatewayUrl}`)
 
     if (options.slug) {
-      const tenantId = await resolveTenantId(container.resolve(TenantService), options.slug)
-      await configureTenantStorage(container.resolve(StorageSettingService), tenantId, options)
+      const tenant = await resolveTenant(container.resolve(TenantService), options.slug)
+      await configureTenantStorage(container.resolve(StorageSettingService), tenant.id, options)
       summary.push(`workspace ${options.slug} storage -> ${options.endpoint}/${options.bucket}`)
+      summary.push(...(await seedPhotos(container, tenant, options)))
     }
     else {
-      summary.push('no --slug given, skipped workspace storage configuration')
+      summary.push('no --slug given, skipped workspace storage and photos')
     }
 
     stdout.write(`\nLocal dev seed complete\n${summary.map(line => `  - ${line}`).join('\n')}\n\n`)
@@ -176,12 +203,90 @@ export async function handleSeedDevCli(options: SeedDevCliOptions): Promise<void
   }
 }
 
-async function resolveTenantId(tenantService: TenantService, slug: string): Promise<string> {
+async function resolveTenant(tenantService: TenantService, slug: string): Promise<TenantRecord> {
   const tenant = await tenantService.resolve({ slug }, { noThrow: true })
   if (!tenant) {
     throw new Error(`No workspace found for slug "${slug}". Sign in and create it first, then re-run with --slug.`)
   }
-  return tenant.tenant.id
+  if (slug === ROOT_TENANT_SLUG) {
+    throw new Error(
+      `The root workspace is excluded from the discovery feed, so photos seeded into it never surface in the app. Use a regular workspace slug.`,
+    )
+  }
+  return tenant.tenant
+}
+
+async function seedPhotos(
+  container: ReturnType<Awaited<ReturnType<typeof createConfiguredApp>>['getContainer']>,
+  tenant: TenantRecord,
+  options: SeedDevCliOptions,
+): Promise<string[]> {
+  const photoAssetService = container.resolve(PhotoAssetService)
+  const db = container.resolve(DbAccessor).get()
+
+  let entries: string[]
+  try {
+    entries = await readdir(options.photosDir)
+  }
+  catch {
+    return [`photos directory ${options.photosDir} not found, skipped`]
+  }
+
+  const candidates = entries.filter(name => extname(name).toLowerCase() in CONTENT_TYPES).sort()
+  if (candidates.length === 0) {
+    return [`no seedable files in ${options.photosDir}`]
+  }
+
+  // Keyed by basename, not storage key: a Live Photo's .mov is folded into the
+  // still's manifest rather than getting its own row, so matching on the full
+  // key would re-upload every video on a second run.
+  const rows = await db
+    .select({ storageKey: photoAssets.storageKey })
+    .from(photoAssets)
+    .where(eq(photoAssets.tenantId, tenant.id))
+  const existing = new Set(
+    rows
+      .map(row => row.storageKey)
+      .filter((key): key is string => Boolean(key))
+      .map(key => basename(key, extname(key)).toLowerCase()),
+  )
+
+  // Both the size-limit lookup and the upload read the tenant from
+  // AsyncLocalStorage, which only a real request normally populates.
+  const honoContext = { req: { method: 'POST', path: '/cli/seed-dev' } } as unknown as Context
+  return await HttpContext.run(honoContext, async () => {
+    HttpContext.assign({ tenant: { tenant } })
+
+    const fileSizeLimitBytes = resolveFileSizeLimitBytes(await photoAssetService.getUploadSizeLimitBytes())
+    const inputs: UploadAssetInput[] = []
+    const skipped: string[] = []
+
+    for (const filename of candidates) {
+      if (existing.has(basename(filename, extname(filename)).toLowerCase())) {
+        continue
+      }
+      const buffer = await readFile(join(options.photosDir, filename))
+      if (buffer.byteLength > fileSizeLimitBytes) {
+        skipped.push(`${filename} (${Math.round(buffer.byteLength / 1024 / 1024)} MB)`)
+        continue
+      }
+      inputs.push({ buffer, contentType: CONTENT_TYPES[extname(filename).toLowerCase()], filename })
+    }
+
+    const notes: string[] = []
+    if (inputs.length === 0) {
+      notes.push(`photos already seeded in ${tenant.slug}`)
+    }
+    else {
+      await photoAssetService.uploadAssets(inputs)
+      notes.push(`uploaded ${inputs.length} file(s) into ${tenant.slug}`)
+    }
+
+    if (skipped.length > 0) {
+      notes.push(`skipped over the ${Math.round(fileSizeLimitBytes / 1024 / 1024)} MB limit: ${skipped.join(', ')}`)
+    }
+    return notes
+  })
 }
 
 async function configureTenantStorage(

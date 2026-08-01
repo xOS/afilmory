@@ -35,7 +35,7 @@ Alternatives considered and rejected: Cloudflare Tunnel exposing the whole stack
 | `core` runtime | Host process (`pnpm dev:be`), not containerized |
 | Domain / TLS | `*.localhost` over plain HTTP — no tunnel, no proxy, no certs, no domain |
 | OAuth | Existing dev-only client, callback `http://localhost:1841/api/auth/callback/github` |
-| Content seed | Real upload pipeline, not a DB dump |
+| Content seed | Real upload pipeline, in-process via the same service the HTTP endpoint calls |
 | App switch | Dev Lab page (`__DEV__`-gated), persisted |
 
 ## Topology
@@ -102,15 +102,26 @@ Run: `pnpm --filter @afilmory/core seed:dev [-- --slug <workspace>]`.
 
 **Global step (always).** Creates the bucket via `@aws-sdk/client-s3` (already a `core` dependency, so no CLI container) with `forcePathStyle`, then sets system setting `oauthGatewayUrl` = `http://localhost:1841`, which `buildGatewayRedirectUri` concatenates into the registered callback.
 
-**Workspace step (`--slug`).** Writes `builder.storage.providers` + `builder.storage.activeProvider` for that workspace: provider `s3`, endpoint `http://localhost:9300`, bucket, region, credentials.
+**Workspace step (`--slug`).** Writes `builder.storage.providers`, `builder.storage.activeProvider`, and `photo.storage.secureAccess` for that workspace: provider `s3`, endpoint `http://localhost:9300`, bucket, region, credentials.
+
+Two settings that look optional are not:
+
+- `photo.storage.secureAccess = true` — with it off, the manifest hands out unsigned bucket URLs that a fresh RustFS bucket answers with 403.
+- a **public-read bucket policy**, applied alongside bucket creation — even with secure access on, only `originalUrl` is routed through `/api/storage/sign`; thumbnails are emitted as raw bucket URLs, so a private bucket renders the whole grid as broken images.
+
+**Photo step (also `--slug`).** Uploads everything in `photos/` (override with `--photos-dir`) through `PhotoAssetService.uploadAssets` — the same call the HTTP endpoint makes, so EXIF, thumbnails, blurhash and Live Photo pairing all run for real. It goes in-process rather than over HTTP because the endpoint is multipart-plus-SSE and needs a session; `HttpContext.run` + `HttpContext.assign({ tenant })` supplies the tenant that `requireTenantContext()` expects, and the size-limit lookup has to sit inside that scope too.
+
+Idempotency is keyed on **basename**, not storage key: a Live Photo's `.mov` is folded into the still's manifest instead of getting its own row, so matching full keys would re-upload every video on a second run. Files over the per-file limit are skipped and named in the summary rather than failing the batch.
+
+`--slug root` is rejected outright: `featured-galleries.service.ts:101` filters the root workspace out of discovery, so photos seeded there never surface in the app.
 
 Storage settings are **tenant-scoped** — `SettingService.resolveTenantId` falls back to `getTenantContext()`, which does not exist in a CLI process. `SettingEntryInput` carries `options.tenantId`, which takes precedence, so the seed passes the tenant id explicitly instead of faking an AsyncLocalStorage context. This also means the workspace must already exist: storage cannot be configured before there is a tenant to configure it for.
 
 Both steps are idempotent — bucket creation falls back to `HeadBucket`, and setting writes are upserts.
 
-**Not implemented: content seeding.** Creating a dev user, registering a workspace, and uploading `photos/` is deliberately out of scope for this pass. `AuthRegistrationService.registerTenant` requires a tenant context and a `Headers` object, and `POST /api/photos/assets/upload` is a multipart endpoint returning an SSE progress stream — both are HTTP-shaped and do not fit the in-process CLI. The workspace is created through the normal sign-in flow instead, and `seed:dev --slug <it>` is run afterwards.
+**Still out of scope: workspace creation.** `AuthRegistrationService.registerTenant` needs a tenant context and a `Headers` object, so the workspace is created through the normal sign-in flow and `seed:dev --slug <it>` is run afterwards.
 
-**Identity caveat** (still open, now deferred with content seeding): whether Better Auth links an email/password user to a later GitHub/Google sign-in by email. No `accountLinking` block is configured.
+**Identity caveat** (open): whether Better Auth links an email/password user to a later GitHub/Google sign-in by email. No `accountLinking` block is configured.
 
 ### 3. App: environment module
 
@@ -189,7 +200,10 @@ Done:
 
 Blocked on missing data, not on the environment:
 
-9. **Image render end to end** — the local database has zero photos, and content seeding is not implemented.
+9. Image render end to end: `seed:dev --slug beta` on an empty workspace uploaded 8 files into 6 photos with 2 Live Photo pairings, and the app — signed out, on Local — renders Explore → "Alpha Gallery · 6 photos" → a full masonry with Live Photo badges, all served from RustFS.
+
+Blocked on credentials:
+
 10. **GitHub OAuth** — the local database holds `fake-github-client-id`; the real dev client credentials have to be configured first.
 
 ## Open items
