@@ -6,19 +6,37 @@ final class PhotoDetailToolbar: UIToolbar {
   var onComments: (() -> Void)?
   var onReactions: (() -> Void)?
 
+  private static let reactionsAccessibilityIdentifier = "photo-detail-reactions"
+  // The face.smiling family is drawn the wrong way round: the base symbol is the
+  // solid glyph and `.fill` is the outlined one.
+  private static let reactionsActiveSymbol = "face.smiling"
+  private static let reactionsInactiveSymbol = "face.smiling.fill"
+
   private let shareItem = UIBarButtonItem(image: UIImage(systemName: "square.and.arrow.up"), style: .plain, target: nil, action: nil)
   private let infoItem = UIBarButtonItem(image: UIImage(systemName: "info.circle"), style: .plain, target: nil, action: nil)
-  private let reactionsItem = UIBarButtonItem(image: UIImage(systemName: "face.smiling"), style: .plain, target: nil, action: nil)
+  private let reactionsItem = UIBarButtonItem(
+    image: UIImage(systemName: PhotoDetailToolbar.reactionsInactiveSymbol),
+    style: .plain,
+    target: nil,
+    action: nil
+  )
   private let commentsButton = PhotoDetailCommentsButton()
   private lazy var commentsItem = UIBarButtonItem(customView: commentsButton)
 
   private var socialActionsEnabled = true
+
+  var shareBarButtonItem: UIBarButtonItem { shareItem }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
 
     overrideUserInterfaceStyle = .dark
     tintColor = .white
+
+    shareItem.accessibilityIdentifier = "photo-detail-share"
+    infoItem.accessibilityIdentifier = "photo-detail-info"
+    reactionsItem.accessibilityIdentifier = Self.reactionsAccessibilityIdentifier
+    commentsButton.accessibilityIdentifier = "photo-detail-comments"
 
     let appearance = UIToolbarAppearance()
     appearance.configureWithTransparentBackground()
@@ -49,7 +67,9 @@ final class PhotoDetailToolbar: UIToolbar {
   }
 
   func setReactionsActive(_ active: Bool) {
-    reactionsItem.image = UIImage(systemName: active ? "face.smiling.fill" : "face.smiling")
+    reactionsItem.image = UIImage(
+      systemName: active ? Self.reactionsActiveSymbol : Self.reactionsInactiveSymbol
+    )
   }
 
   func setCommentCount(_ count: Int) {
@@ -70,6 +90,27 @@ final class PhotoDetailToolbar: UIToolbar {
 
   func setReactionsAccessibilityLabel(_ label: String) {
     reactionsItem.accessibilityLabel = label
+  }
+
+  // UIKit exposes no view for a plain UIBarButtonItem; the identifier it forwards
+  // onto its backing button is the only public handle on the item's geometry.
+  func reactionsItemCenterX(in view: UIView) -> CGFloat? {
+    guard socialActionsEnabled,
+          let itemView = firstDescendant(withAccessibilityIdentifier: Self.reactionsAccessibilityIdentifier)
+    else { return nil }
+    return itemView.convert(itemView.bounds, to: view).midX
+  }
+
+  private func firstDescendant(withAccessibilityIdentifier identifier: String) -> UIView? {
+    var queue = subviews
+    while !queue.isEmpty {
+      let candidate = queue.removeFirst()
+      if candidate.accessibilityIdentifier == identifier {
+        return candidate
+      }
+      queue.append(contentsOf: candidate.subviews)
+    }
+    return nil
   }
 
   private func updateItems() {

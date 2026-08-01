@@ -22,6 +22,7 @@ final class PhotoDetailNavigationBar: UINavigationBar {
     standardAppearance = appearance
     scrollEdgeAppearance = appearance
 
+    backButtonItem.accessibilityIdentifier = "photo-detail-back"
     backButtonItem.primaryAction = UIAction { [weak self] _ in self?.onRequestClose?() }
     item.leftBarButtonItem = backButtonItem
     setItems([item], animated: false)

@@ -11,7 +11,6 @@ struct PhotoDetailStrings: Decodable {
   var close = ""
   var comments = ""
   var info = ""
-  var more = ""
   var next = ""
   var previous = ""
   var reaction = ""

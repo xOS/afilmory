@@ -12,6 +12,7 @@ final class PhotoViewerView: ExpoView {
   var onNativeIndexChange: ((MasonryPhoto, Int) -> Void)?
   var onNativeInfoRequest: (() -> Void)?
   var onNativeRequestClose: (() -> Void)?
+  var onNativeZoomChange: ((Bool) -> Void)?
 
   var keyboardCloseTitle = ""
   var keyboardInfoTitle = ""
@@ -58,6 +59,7 @@ final class PhotoViewerView: ExpoView {
   private var collectionView: UICollectionView!
   private var currentIndex = 0
   private var hasPositionedInitialPhoto = false
+  private var reportedZoomState = false
   private lazy var infoPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleInfoPan))
   private weak var configuredScreen: RNSScreen?
   private var configuredInfoPresented: Bool?
@@ -281,8 +283,11 @@ final class PhotoViewerView: ExpoView {
 
   private func updatePagingEnabled() {
     let currentCell = currentCell()
-    collectionView.isScrollEnabled = !(currentCell?.isZoomed ?? false)
-      && !(currentCell?.blocksPaging ?? false)
+    let zoomed = currentCell?.isZoomed ?? false
+    collectionView.isScrollEnabled = !zoomed && !(currentCell?.blocksPaging ?? false)
+    guard zoomed != reportedZoomState else { return }
+    reportedZoomState = zoomed
+    onNativeZoomChange?(zoomed)
   }
 
   private func makeKeyCommand(
