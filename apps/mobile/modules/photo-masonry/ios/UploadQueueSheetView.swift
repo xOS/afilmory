@@ -104,8 +104,16 @@ enum UploadQueuePresenter {
   static func present(from presenter: UIViewController, localization: UploadQueueLocalization) {
     guard current == nil else { return }
 
+    let model = UploadQueueViewModel()
+    var navigation: UINavigationController?
     let hostingController = UIHostingController(
-      rootView: UploadQueueSheetView(model: UploadQueueViewModel(), localization: localization)
+      rootView: UploadQueueSheetView(model: model, localization: localization) { job in
+        let logHost = UIHostingController(
+          rootView: UploadJobLogView(model: model, jobId: job.id)
+        )
+        logHost.navigationItem.title = job.name
+        navigation?.pushViewController(logHost, animated: true)
+      }
     )
     hostingController.navigationItem.title = localization.title
     hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(
@@ -126,6 +134,7 @@ enum UploadQueuePresenter {
     )
 
     let navigationController = UINavigationController(rootViewController: hostingController)
+    navigation = navigationController
     navigationController.navigationBar.prefersLargeTitles = false
     navigationController.modalPresentationStyle = .pageSheet
     if let sheet = navigationController.sheetPresentationController {
@@ -168,13 +177,16 @@ enum UploadQueuePresenter {
 struct UploadQueueSheetView: View {
   @ObservedObject var model: UploadQueueViewModel
   let localization: UploadQueueLocalization
+  let onOpenLogs: (UploadJobState) -> Void
 
   var body: some View {
     let summary = model.summary
     List {
       Section {
-        ForEach(model.jobs, id: \.id) { job in
-          UploadQueueRow(job: job, localization: localization)
+        // Newest first: review usually targets the upload that just happened,
+        // and a medium-detent sheet only shows the first few rows.
+        ForEach(model.jobs.reversed(), id: \.id) { job in
+          UploadQueueRow(job: job, localization: localization, onOpenLogs: onOpenLogs)
         }
       } header: {
         VStack(alignment: .leading, spacing: 10) {
@@ -241,9 +253,14 @@ struct UploadQueueSheetView: View {
 private struct UploadQueueRow: View {
   let job: UploadJobState
   let localization: UploadQueueLocalization
+  let onOpenLogs: (UploadJobState) -> Void
 
   private var isActive: Bool {
     job.status.isActive
+  }
+
+  private var hasLogs: Bool {
+    !(job.serverLogs ?? []).isEmpty
   }
 
   var body: some View {
@@ -270,8 +287,8 @@ private struct UploadQueueRow: View {
             .tint(.accentColor)
         }
 
-        if let serverMessage = job.serverMessage, isActive {
-          Text(serverMessage)
+        if let latestServerLog = job.latestServerLog, isActive {
+          Text(latestServerLog)
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
             .lineLimit(2)
@@ -289,8 +306,20 @@ private struct UploadQueueRow: View {
       Spacer(minLength: 8)
 
       trailingControl
+
+      if hasLogs {
+        Image(systemName: "chevron.right")
+          .font(.caption2.weight(.semibold))
+          .foregroundStyle(.tertiary)
+      }
     }
     .padding(.vertical, 2)
+    .contentShape(Rectangle())
+    .onTapGesture {
+      if hasLogs {
+        onOpenLogs(job)
+      }
+    }
   }
 
   private var statusText: String {
@@ -338,6 +367,70 @@ private struct UploadQueueRow: View {
       Image(systemName: "checkmark.circle.fill")
         .font(.title3)
         .foregroundStyle(.green)
+    }
+  }
+}
+
+struct UploadJobLogView: View {
+  @ObservedObject var model: UploadQueueViewModel
+  let jobId: String
+
+  private var job: UploadJobState? {
+    model.jobs.first { $0.id == jobId }
+  }
+
+  var body: some View {
+    let logs = job?.serverLogs ?? []
+    ScrollViewReader { proxy in
+      List {
+        if let job {
+          Section {
+            HStack(spacing: 6) {
+              if job.bytes > 0 {
+                Text(ByteCountFormatter.string(fromByteCount: job.bytes, countStyle: .file))
+              }
+              Text(job.status.rawValue.uppercased())
+                .foregroundStyle(job.status == .failed ? Color.red : job.status == .done ? Color.green : Color.secondary)
+              if let error = job.error {
+                Text(error).foregroundStyle(.red).lineLimit(1)
+              }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .listRowSeparator(.hidden)
+          }
+        }
+        Section {
+          ForEach(Array(logs.enumerated()), id: \.offset) { index, line in
+            Text(line.message)
+              .font(.caption.monospaced())
+              .foregroundStyle(color(for: line.level))
+              .listRowSeparator(.hidden)
+              .listRowInsets(EdgeInsets(top: 3, leading: 20, bottom: 3, trailing: 20))
+              .id(index)
+          }
+        }
+      }
+      .listStyle(.plain)
+      .onChange(of: logs.count) { _, count in
+        guard count > 0 else { return }
+        withAnimation {
+          proxy.scrollTo(count - 1, anchor: .bottom)
+        }
+      }
+    }
+  }
+
+  private func color(for level: String) -> Color {
+    switch level {
+    case "error":
+      return .red
+    case "warn":
+      return .orange
+    case "success":
+      return .green
+    default:
+      return .primary
     }
   }
 }

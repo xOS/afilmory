@@ -15,6 +15,11 @@ enum UploadJobStatus: String, Codable {
   }
 }
 
+struct UploadServerLogLine: Codable, Hashable {
+  var message: String
+  var level: String
+}
+
 struct UploadJobState: Codable {
   let id: String
   let assetId: String
@@ -24,10 +29,14 @@ struct UploadJobState: Codable {
   var progress: Double
   var attempt: Int
   var error: String?
-  var serverMessage: String?
+  var serverLogs: [UploadServerLogLine]?
   var endpoint: String
   var directory: String?
   var boundary: String
+
+  var latestServerLog: String? {
+    serverLogs?.last?.message
+  }
 }
 
 struct UploadEnqueueItemRecord: Record {

@@ -207,7 +207,7 @@ final class UploadCenter: NSObject {
     jobs[index].status = .queued
     jobs[index].attempt = 1
     jobs[index].error = nil
-    jobs[index].serverMessage = nil
+    jobs[index].serverLogs = nil
     jobs[index].progress = 0
     if FileManager.default.fileExists(atPath: Self.bodyURL(id).path) {
       startTaskLocked(jobId: id, delay: 0)
@@ -322,7 +322,6 @@ final class UploadCenter: NSObject {
       jobs[index].status = .done
       jobs[index].progress = 1
       jobs[index].error = nil
-      jobs[index].serverMessage = nil
       try? FileManager.default.removeItem(at: Self.bodyURL(jobId))
       persistLocked()
       scheduleEmitLocked()
@@ -397,9 +396,15 @@ final class UploadCenter: NSObject {
         job.progress = 0.5 + min(1, current / total) * 0.5
       }
     case "log":
-      if let message = (payload["payload"] as? [String: Any])?["message"] as? String {
+      if let body = payload["payload"] as? [String: Any], let message = body["message"] as? String {
+        let line = UploadServerLogLine(message: message, level: (body["level"] as? String) ?? "info")
         updateJobLocked(jobId) { job in
-          job.serverMessage = message
+          var logs = job.serverLogs ?? []
+          logs.append(line)
+          if logs.count > 200 {
+            logs.removeFirst(logs.count - 200)
+          }
+          job.serverLogs = logs
         }
       }
     case "complete":
