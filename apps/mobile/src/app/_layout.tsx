@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 import { waitForEnvironment } from '@/api/environment'
 import { i18n } from '@/i18n'
+import { waitForAuthStorage } from '@/modules/auth/authStorage'
 import { hydrateAuth } from '@/modules/auth/sessionStore'
 import { PresentationHost } from '@/presentation'
 import { useTheme as useAppTheme } from '@/theme/useTheme'
@@ -21,7 +22,7 @@ export default function RootLayout() {
   // Nothing may issue a request before the API environment override resolves,
   // otherwise the first fetch races against the production default.
   useEffect(() => {
-    void waitForEnvironment().then(async () => {
+    void Promise.all([waitForEnvironment(), waitForAuthStorage()]).then(async () => {
       setEnvironmentReady(true)
       await hydrateAuth()
     })
