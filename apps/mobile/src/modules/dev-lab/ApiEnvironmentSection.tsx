@@ -9,6 +9,7 @@ import {
   getActiveEnvironment,
   persistEnvironment,
 } from '@/api/environment'
+import { signInWithPassword, useAuth } from '@/modules/auth/sessionStore'
 import type { Palette } from '@/theme/palette'
 import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -43,6 +44,10 @@ export function ApiEnvironmentSection() {
   const active = getActiveEnvironment()
   const [draft, setDraft] = useState<ApiEnvironment>(active)
   const [probe, setProbe] = useState<ProbeState>({ kind: 'idle' })
+  const auth = useAuth()
+  const [email, setEmail] = useState('root@local.host')
+  const [password, setPassword] = useState('')
+  const [signInNote, setSignInNote] = useState<string | null>(null)
 
   const isDirty
     = draft.scheme !== active.scheme
@@ -148,6 +153,27 @@ export function ApiEnvironmentSection() {
           {`${probe.ok ? 'reachable' : 'failed'} · ${probe.label}`}
         </Text>
       ) : null}
+
+      <View style={styles.fields}>
+        <Text style={styles.fieldLabel}>
+          {auth.status === 'signedIn' ? `SIGNED IN AS ${auth.session?.user.email ?? ''}` : 'PASSWORD SIGN-IN'}
+        </Text>
+        <Field label="Email" onChangeText={setEmail} placeholder="root@local.host" styles={styles} value={email} />
+        <Field label="Password" onChangeText={setPassword} placeholder="password" styles={styles} value={password} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setSignInNote('signing in…')
+            void signInWithPassword(email.trim(), password)
+              .then(() => setSignInNote('signed in'))
+              .catch((error: unknown) => setSignInNote(error instanceof Error ? error.message : 'sign-in failed'))
+          }}
+          style={styles.secondaryAction}
+        >
+          <Text style={styles.secondaryActionLabel}>Sign in</Text>
+        </Pressable>
+        {signInNote ? <Text style={styles.probeResult}>{signInNote}</Text> : null}
+      </View>
     </View>
   )
 }

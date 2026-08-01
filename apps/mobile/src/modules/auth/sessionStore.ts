@@ -83,6 +83,21 @@ export async function signInWithProvider(provider: AuthProviderId): Promise<void
   setSignedIn(session, cookie)
 }
 
+// Dev-only: the local stack has no usable third-party OAuth credentials, so
+// email/password (enabled backend-side) is the only way into it.
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const result = await getAuthClient().signIn.email({ email, password })
+  if (result.error) {
+    throw new Error(result.error.message ?? 'Sign-in failed.')
+  }
+  const cookie = getAuthClient().getCookie()
+  const session = await fetchSession(cookie)
+  if (!session) {
+    throw new Error('Sign-in did not produce a session.')
+  }
+  setSignedIn(session, cookie)
+}
+
 export async function signOut(): Promise<void> {
   await getAuthClient()
     .signOut()

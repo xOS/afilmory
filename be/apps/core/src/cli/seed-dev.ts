@@ -3,10 +3,10 @@ import { basename, extname, join } from 'node:path'
 import { stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { photoAssets } from '@afilmory/db'
+import { authUsers, photoAssets, tenantMemberships } from '@afilmory/db'
 import { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3'
 import { HttpContext } from '@tsuki-hono/common'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { Context } from 'hono'
 
 import { APP_GLOBAL_PREFIX } from '../app.constants'
@@ -176,6 +176,7 @@ export async function handleSeedDevCli(options: SeedDevCliOptions): Promise<void
       const tenant = await resolveTenant(container.resolve(TenantService), options.slug)
       await configureTenantStorage(container.resolve(StorageSettingService), tenant.id, options)
       summary.push(`workspace ${options.slug} storage -> ${options.endpoint}/${options.bucket}`)
+      summary.push(await reportOwner(container, tenant))
       summary.push(...(await seedPhotos(container, tenant, options)))
     }
     else {
@@ -214,6 +215,25 @@ async function resolveTenant(tenantService: TenantService, slug: string): Promis
     )
   }
   return tenant.tenant
+}
+
+// Studio's management calls are membership-gated, so the summary names the
+// account to sign in as. Taking ownership here is not an option: a unique
+// index allows only one active owner per workspace.
+async function reportOwner(
+  container: ReturnType<Awaited<ReturnType<typeof createConfiguredApp>>['getContainer']>,
+  tenant: TenantRecord,
+): Promise<string> {
+  const db = container.resolve(DbAccessor).get()
+  const [owner] = await db
+    .select({ email: authUsers.email })
+    .from(tenantMemberships)
+    .innerJoin(authUsers, eq(authUsers.id, tenantMemberships.userId))
+    .where(and(eq(tenantMemberships.tenantId, tenant.id), eq(tenantMemberships.role, 'owner')))
+    .limit(1)
+  return owner
+    ? `sign in as ${owner.email} to manage ${tenant.slug} in Studio`
+    : `${tenant.slug} has no owner; Studio mutations will be rejected`
 }
 
 async function seedPhotos(
