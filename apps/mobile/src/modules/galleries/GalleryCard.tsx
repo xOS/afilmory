@@ -122,7 +122,7 @@ function CoverImage({
       />
       {photo.isLivePhoto ? (
         <View pointerEvents="none" style={styles.livePhotoBadge}>
-          <SymbolView name="livephoto" size={14} tintColor="#fff" weight="semibold" />
+          <SymbolView name="livephoto" size={16} tintColor="#fff" weight="medium" />
         </View>
       ) : null}
     </View>
@@ -152,13 +152,15 @@ function createStyles(palette: Palette) {
     coverEmpty: { backgroundColor: palette.bgElement },
     livePhotoBadge: {
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.56)',
-      borderRadius: 11,
       height: 22,
       justifyContent: 'center',
-      left: 7,
+      left: 6,
       position: 'absolute',
-      top: 7,
+      shadowColor: '#000',
+      shadowOffset: { height: 1, width: 0 },
+      shadowOpacity: 0.45,
+      shadowRadius: 2.5,
+      top: 6,
       width: 22,
     },
     info: {

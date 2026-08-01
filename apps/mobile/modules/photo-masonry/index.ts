@@ -13,16 +13,69 @@ export interface PhotoMasonryItem {
   livePhotoVideoUrl?: string
 }
 
+interface NativeViewFrame {
+  height: number
+  width: number
+  x: number
+  y: number
+}
+
 export interface PhotoPressEvent {
   id: string
   index: number
   transitionId: string
-  frame: { x: number, y: number, width: number, height: number }
+  frame: NativeViewFrame
 }
 
 export interface PhotoViewerIndexChangeEvent {
   id: string
   index: number
+}
+
+export interface PhotoViewerInfoGestureEvent {
+  state: 'began' | 'cancelled' | 'changed' | 'ended'
+  translationY: number
+  velocityY: number
+}
+
+export interface PhotoDetailIndexChangeEvent {
+  id: string
+  index: number
+}
+
+export interface PhotoDetailActionEvent {
+  id: string
+  index: number
+}
+
+export interface PhotoDetailReactionEvent extends PhotoDetailActionEvent {
+  reaction: string
+}
+
+export interface PhotoDetailMetadataItem {
+  id: string
+  infoJSON: string
+  subtitle: string
+  title: string
+}
+
+export interface PhotoDetailReactionItem {
+  accessibilityLabel: string
+  active: boolean
+  count: number
+  pending: boolean
+  reaction: string
+}
+
+export interface PhotoDetailStrings {
+  close: string
+  comments: string
+  info: string
+  more: string
+  next: string
+  previous: string
+  reaction: string
+  share: string
 }
 
 export interface VisibleRangeEvent {
@@ -54,7 +107,7 @@ export interface PhotoContextMenuActionEvent {
 }
 
 export interface PresentationAnchorEvent {
-  frame: { x: number, y: number, width: number, height: number }
+  frame: NativeViewFrame
 }
 
 export interface PhotoMapItem {
@@ -107,7 +160,7 @@ export interface PhotoMasonryViewProps extends ViewProps {
   filterActive?: boolean
   filterAccessibilityLabel?: string
   filterCount?: number
-  livePhotoBadgeTitle?: string
+  livePhotoAccessibilityLabel?: string
   selectionEnabled?: boolean
   selectionMode?: boolean
   selectedPhotoIds?: string[]
@@ -132,16 +185,35 @@ export interface PhotoViewerViewProps extends ViewProps {
   keyboardInfoTitle?: string
   keyboardNextTitle?: string
   keyboardPreviousTitle?: string
-  livePhotoAccessibilityHint?: string
-  livePhotoBadgeTitle?: string
+  livePhotoStringsJSON?: string
+  infoPresented?: boolean
   interactiveDismissEnabled?: boolean
   onIndexChange?: (event: { nativeEvent: PhotoViewerIndexChangeEvent }) => void
+  onInfoGesture?: (event: { nativeEvent: PhotoViewerInfoGestureEvent }) => void
   onInfoRequest?: () => void
+  onRequestClose?: () => void
+}
+
+export interface NativePhotoDetailViewProps extends ViewProps {
+  photos: PhotoMasonryItem[]
+  initialIndex: number
+  transitionId: string
+  metadataJSON: string
+  stringsJSON: string
+  livePhotoStringsJSON: string
+  commentCount: number
+  reactionItemsJSON: string
+  socialActionsEnabled: boolean
+  onCommentsRequest?: (event: { nativeEvent: PhotoDetailActionEvent }) => void
+  onIndexChange?: (event: { nativeEvent: PhotoDetailIndexChangeEvent }) => void
+  onReactionRequest?: (event: { nativeEvent: PhotoDetailReactionEvent }) => void
   onRequestClose?: () => void
 }
 
 export const PhotoMasonryView = requireNativeView<PhotoMasonryViewProps>('PhotoMasonry')
 
 export const PhotoViewerView = requireNativeView<PhotoViewerViewProps>('PhotoViewer')
+
+export const NativePhotoDetailView = requireNativeView<NativePhotoDetailViewProps>('PhotoDetail')
 
 export const PhotoMapView = requireNativeView<PhotoMapViewProps>('PhotoMap')

@@ -1,20 +1,14 @@
 import { GlassContainer, GlassView } from 'expo-glass-effect'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AccessibilityInfo, Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useCallback, useEffect } from 'react'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { Easing, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 
 import { useTranslation } from '@/i18n'
 import { font } from '@/theme/tokens'
 
-import { addPhotoReaction, fetchPhotoReactionCounts } from './photoReactionApi'
-import type { PhotoReaction, PhotoReactionState } from './photoReactionState'
-import {
-  createPhotoReactionState,
-  mergePhotoReactionCounts,
-  PHOTO_REACTIONS,
-  rollbackLocalPhotoReaction,
-  toggleLocalPhotoReaction,
-} from './photoReactionState'
+import type { PhotoReaction } from './photoReactionState'
+import { PHOTO_REACTIONS } from './photoReactionState'
+import { usePhotoReactions } from './usePhotoReactions'
 
 interface PhotoReactionRailProps {
   gallerySlug: string
@@ -35,41 +29,12 @@ export function PhotoReactionRail({
   visible,
 }: PhotoReactionRailProps) {
   const { t } = useTranslation()
-  const [state, setState] = useState<PhotoReactionState>(createPhotoReactionState)
-  const [pendingReactions, setPendingReactions] = useState<ReadonlySet<PhotoReaction>>(() => new Set())
-  const stateRef = useRef(state)
-  const pendingRef = useRef(new Set<PhotoReaction>())
+  const { activeReactions, addReaction, counts, pendingReactions } = usePhotoReactions(gallerySlug, photoId)
   const revealProgress = useSharedValue(visible ? 1 : 0)
   const revealStyle = useAnimatedStyle(() => ({
     opacity: revealProgress.get(),
     transform: [{ translateY: -8 * (1 - revealProgress.get()) }, { scale: 0.96 + 0.04 * revealProgress.get() }],
   }))
-
-  const commitState = useCallback((update: (current: PhotoReactionState) => PhotoReactionState) => {
-    const next = update(stateRef.current)
-    stateRef.current = next
-    setState(next)
-  }, [])
-
-  const commitPending = useCallback(() => {
-    setPendingReactions(new Set(pendingRef.current))
-  }, [])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void fetchPhotoReactionCounts(gallerySlug, photoId, controller.signal)
-      .then((counts) => {
-        if (!controller.signal.aborted) {
-          commitState(current => mergePhotoReactionCounts(current, counts))
-        }
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) {
-          console.error('Failed to load photo reactions', error)
-        }
-      })
-    return () => controller.abort()
-  }, [commitState, gallerySlug, photoId])
 
   useEffect(() => {
     revealProgress.set(
@@ -83,38 +48,18 @@ export function PhotoReactionRail({
 
   const handleReaction = useCallback(
     (reaction: PhotoReaction) => {
-      if (pendingRef.current.has(reaction)) {
+      if (pendingReactions.has(reaction)) {
         return
       }
-
-      const wasActive = stateRef.current.activeReactions.includes(reaction)
-      commitState(current => toggleLocalPhotoReaction(current, reaction))
+      addReaction(reaction)
       onReactionSelected()
-      if (wasActive) {
-        return
-      }
-
-      pendingRef.current.add(reaction)
-      commitPending()
-      void addPhotoReaction(gallerySlug, photoId, reaction)
-        .then(() => AccessibilityInfo.announceForAccessibility(t('photo.reaction.success')))
-        .catch((error) => {
-          console.error('Failed to add photo reaction', error)
-          commitState(current => rollbackLocalPhotoReaction(current, reaction))
-          Alert.alert(t('photo.reaction.failed'))
-          AccessibilityInfo.announceForAccessibility(t('photo.reaction.failed'))
-        })
-        .finally(() => {
-          pendingRef.current.delete(reaction)
-          commitPending()
-        })
     },
-    [commitPending, commitState, gallerySlug, onReactionSelected, photoId, t],
+    [addReaction, onReactionSelected, pendingReactions],
   )
 
   const items = PHOTO_REACTIONS.map((reaction) => {
-    const count = state.counts[reaction] ?? 0
-    const active = state.activeReactions.includes(reaction)
+    const count = counts[reaction] ?? 0
+    const active = activeReactions.includes(reaction)
     const pending = pendingReactions.has(reaction)
     const button = (
       <Pressable

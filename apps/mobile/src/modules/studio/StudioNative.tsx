@@ -1,6 +1,6 @@
-import { Button, ContentUnavailableView, Form, Host, ProgressView, Section, Text, VStack } from '@expo/ui/swift-ui'
-import { buttonStyle, frame, padding } from '@expo/ui/swift-ui/modifiers'
-import type { ReactNode } from 'react'
+import { Button, ContentUnavailableView, Host, ProgressView, Text, VStack } from '@expo/ui/swift-ui'
+import { buttonStyle, controlSize, fixedSize, frame, padding } from '@expo/ui/swift-ui/modifiers'
+import type { ComponentProps, ReactNode } from 'react'
 import { useCallback } from 'react'
 import type { LayoutChangeEvent } from 'react-native'
 import { StyleSheet, View } from 'react-native'
@@ -32,38 +32,62 @@ export function StudioHost({
   )
 }
 
+const OPTICAL_CENTER_LIFT = 40
+
+export function StudioPlaceholder({
+  action,
+  description,
+  systemImage,
+  title,
+}: {
+  action?: { label: string, onPress: () => void }
+  description: string
+  systemImage: ComponentProps<typeof ContentUnavailableView>['systemImage']
+  title: string
+}) {
+  return (
+    <StudioHost>
+      <VStack
+        spacing={8}
+        modifiers={[
+          padding({ bottom: OPTICAL_CENTER_LIFT * 2, horizontal: 24 }),
+          frame({ maxHeight: Infinity, maxWidth: Infinity }),
+        ]}
+      >
+        <ContentUnavailableView
+          description={description}
+          modifiers={[fixedSize({ horizontal: false, vertical: true })]}
+          systemImage={systemImage}
+          title={title}
+        />
+        {action ? (
+          <Button
+            label={action.label}
+            modifiers={[buttonStyle('borderedProminent'), controlSize('large')]}
+            onPress={action.onPress}
+          />
+        ) : null}
+      </VStack>
+    </StudioHost>
+  )
+}
+
 export function StudioAccessBoundary({ children }: { children: ReactNode }) {
   const auth = useAuth()
   const { t } = useTranslation()
 
   if (auth.status === 'loading') {
-    return (
-      <StudioHost>
-        <VStack modifiers={[frame({ maxHeight: Infinity, maxWidth: Infinity })]}>
-          <ProgressView />
-        </VStack>
-      </StudioHost>
-    )
+    return <StudioLoadingState />
   }
 
   if (auth.status === 'signedOut') {
     return (
-      <StudioHost>
-        <Form>
-          <Section>
-            <ContentUnavailableView
-              description={t('studio.access.signedOut.description')}
-              systemImage="lock"
-              title={t('studio.access.signedOut.title')}
-            />
-            <Button
-              label={t('common.signIn')}
-              modifiers={[buttonStyle('borderedProminent')]}
-              onPress={() => void present(signInPage)}
-            />
-          </Section>
-        </Form>
-      </StudioHost>
+      <StudioPlaceholder
+        action={{ label: t('common.signIn'), onPress: () => void present(signInPage) }}
+        description={t('studio.access.signedOut.description')}
+        systemImage="lock"
+        title={t('studio.access.signedOut.title')}
+      />
     )
   }
 
@@ -71,15 +95,11 @@ export function StudioAccessBoundary({ children }: { children: ReactNode }) {
   const canManage = membership?.role === 'admin' || membership?.role === 'owner'
   if (!canManage || auth.session?.activeWorkspace?.status !== 'active') {
     return (
-      <StudioHost>
-        <VStack modifiers={[frame({ maxHeight: Infinity, maxWidth: Infinity }), padding({ horizontal: 24 })]}>
-          <ContentUnavailableView
-            description={t('studio.access.admin.description')}
-            systemImage="person.badge.shield.checkmark"
-            title={t('studio.access.admin.title')}
-          />
-        </VStack>
-      </StudioHost>
+      <StudioPlaceholder
+        description={t('studio.access.admin.description')}
+        systemImage="person.badge.shield.checkmark"
+        title={t('studio.access.admin.title')}
+      />
     )
   }
 
@@ -89,25 +109,21 @@ export function StudioAccessBoundary({ children }: { children: ReactNode }) {
 export function StudioErrorState({ message, onRetry }: { message?: string, onRetry: () => void }) {
   const { t } = useTranslation()
   return (
-    <StudioHost>
-      <Form>
-        <Section>
-          <ContentUnavailableView
-            description={message ?? t('studio.error.description')}
-            systemImage="exclamationmark.triangle"
-            title={t('studio.error.title')}
-          />
-          <Button label={t('common.retry')} onPress={onRetry} />
-        </Section>
-      </Form>
-    </StudioHost>
+    <StudioPlaceholder
+      action={{ label: t('common.retry'), onPress: onRetry }}
+      description={message ?? t('studio.error.description')}
+      systemImage="exclamationmark.triangle"
+      title={t('studio.error.title')}
+    />
   )
 }
 
 export function StudioLoadingState() {
   return (
     <StudioHost>
-      <VStack modifiers={[frame({ maxHeight: Infinity, maxWidth: Infinity })]}>
+      <VStack
+        modifiers={[padding({ bottom: OPTICAL_CENTER_LIFT * 2 }), frame({ maxHeight: Infinity, maxWidth: Infinity })]}
+      >
         <ProgressView />
       </VStack>
     </StudioHost>

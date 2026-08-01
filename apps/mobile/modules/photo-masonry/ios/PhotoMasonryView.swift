@@ -125,10 +125,10 @@ final class PhotoMasonryView: ExpoView {
     didSet { updateFilterButton() }
   }
 
-  var livePhotoBadgeTitle = "LIVE" {
+  var livePhotoAccessibilityLabel = "Live Photo" {
     didSet {
       for case let cell as PhotoCell in collectionView.visibleCells {
-        cell.setLivePhotoBadgeTitle(livePhotoBadgeTitle)
+        cell.setLivePhotoAccessibilityLabel(livePhotoAccessibilityLabel)
       }
     }
   }
@@ -998,7 +998,7 @@ extension PhotoMasonryView: UICollectionViewDataSource {
     cell.configure(
       with: photo,
       targetWidth: layout.itemWidth,
-      livePhotoBadgeTitle: livePhotoBadgeTitle,
+      livePhotoAccessibilityLabel: livePhotoAccessibilityLabel,
       selectionMode: selectionMode,
       selected: selectedPhotoIds.contains(photo.id)
     )

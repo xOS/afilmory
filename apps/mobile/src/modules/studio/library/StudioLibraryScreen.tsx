@@ -1,5 +1,3 @@
-import { Button, ContentUnavailableView, Form, Section } from '@expo/ui/swift-ui'
-import { buttonStyle } from '@expo/ui/swift-ui/modifiers'
 import { Stack } from 'expo-router'
 import type { PhotoPressEvent, SelectionChangeEvent, SelectionModeChangeEvent } from 'photo-masonry'
 import { PhotoMasonryView } from 'photo-masonry'
@@ -15,7 +13,7 @@ import { useTheme } from '@/theme/useTheme'
 
 import { deletePhotoAssets, getPhotoAssetSummary, listPhotoAssets, updatePhotoAssetTags } from '../api'
 import { parseTags, photoAssetToGalleryPhoto } from '../format'
-import { StudioAccessBoundary, StudioErrorState, StudioHost, StudioLoadingState } from '../StudioNative'
+import { StudioAccessBoundary, StudioErrorState, StudioLoadingState, StudioPlaceholder } from '../StudioNative'
 import type { PhotoAssetListItem, PhotoAssetSummary } from '../types'
 import { useRemoteResource } from '../useRemoteResource'
 import type { UploadProgress } from './upload'
@@ -225,22 +223,12 @@ function StudioLibraryContent() {
       </Stack.Toolbar>
 
       {photos.length === 0 ? (
-        <StudioHost>
-          <Form>
-            <Section>
-              <ContentUnavailableView
-                description={t('studio.library.empty.description')}
-                systemImage="photo.on.rectangle.angled"
-                title={t('studio.library.empty.title')}
-              />
-              <Button
-                label={t('studio.upload.action')}
-                modifiers={[buttonStyle('borderedProminent')]}
-                onPress={() => void handleUpload()}
-              />
-            </Section>
-          </Form>
-        </StudioHost>
+        <StudioPlaceholder
+          action={{ label: t('studio.upload.action'), onPress: () => void handleUpload() }}
+          description={t('studio.library.empty.description')}
+          systemImage="photo.on.rectangle.angled"
+          title={t('studio.library.empty.title')}
+        />
       ) : (
         <PhotoMasonryView
           contextMenuInfoTitle={t('photo.info')}
@@ -248,7 +236,7 @@ function StudioLibraryContent() {
           contextMenuShareTitle={t('photo.share')}
           extraBottomInset={20}
           gap={3}
-          livePhotoBadgeTitle={t('photo.livePhoto')}
+          livePhotoAccessibilityLabel={t('photo.livePhoto')}
           photos={masonryItems}
           refreshing={resource.refreshing}
           selectionEnabled

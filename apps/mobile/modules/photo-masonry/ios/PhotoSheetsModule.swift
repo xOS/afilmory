@@ -16,6 +16,10 @@ public final class PhotoSheetsModule: Module {
       Prop("infoJSON") { (view: PhotoInfoPanelView, infoJSON: String) in
         view.setInfoJSON(infoJSON)
       }
+
+      Prop("showsHeader") { (view: PhotoInfoPanelView, showsHeader: Bool) in
+        view.setShowsHeader(showsHeader)
+      }
     }
 
     AsyncFunction("presentPhotoInfo") { (info: PhotoInfoSheetRecord, promise: Promise) in
@@ -202,6 +206,7 @@ final class PhotoInfoPanelView: ExpoView {
   let onClose = EventDispatcher()
 
   private var info: PhotoInfoSheetRecord = .init()
+  private var showsHeader = true
   private var hostingController: UIHostingController<PhotoInfoInspectorView>!
 
   required init(appContext: AppContext? = nil) {
@@ -233,24 +238,21 @@ final class PhotoInfoPanelView: ExpoView {
   }
 
   func setInfoJSON(_ infoJSON: String) {
-    guard let data = infoJSON.data(using: .utf8),
-          let jsonObject = try? JSONSerialization.jsonObject(with: data),
-          let dictionary = Self.normalizeJSONValue(jsonObject) as? [String: Any],
-          let appContext
+    guard let appContext,
+          let decoded = PhotoInfoSheetRecord.decode(json: infoJSON, appContext: appContext)
     else { return }
+    info = decoded
+    hostingController.rootView = makeRootView()
+  }
 
-    do {
-      info = try PhotoInfoSheetRecord(from: dictionary, appContext: appContext)
-      hostingController.rootView = makeRootView()
-    } catch {
-      #if DEBUG
-      print("PhotoInfoPanelView failed to decode infoJSON: \(error)")
-      #endif
-    }
+  func setShowsHeader(_ showsHeader: Bool) {
+    guard self.showsHeader != showsHeader else { return }
+    self.showsHeader = showsHeader
+    hostingController.rootView = makeRootView()
   }
 
   private func makeRootView() -> PhotoInfoInspectorView {
-    PhotoInfoInspectorView(info: info) { [weak self] in
+    PhotoInfoInspectorView(info: info, showsHeader: showsHeader) { [weak self] in
       self?.onClose([:])
     }
   }
@@ -268,20 +270,4 @@ final class PhotoInfoPanelView: ExpoView {
     }
   }
 
-  private static func normalizeJSONValue(_ value: Any) -> Any? {
-    if value is NSNull {
-      return nil
-    }
-    if let dictionary = value as? [String: Any] {
-      return dictionary.reduce(into: [String: Any]()) { result, element in
-        if let normalized = normalizeJSONValue(element.value) {
-          result[element.key] = normalized
-        }
-      }
-    }
-    if let array = value as? [Any] {
-      return array.compactMap(normalizeJSONValue)
-    }
-    return value
-  }
 }

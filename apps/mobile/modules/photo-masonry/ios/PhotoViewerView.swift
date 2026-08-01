@@ -5,16 +5,39 @@ import UIKit
 
 final class PhotoViewerView: ExpoView {
   let onIndexChange = EventDispatcher()
+  let onInfoGesture = EventDispatcher()
   let onInfoRequest = EventDispatcher()
   let onRequestClose = EventDispatcher()
+
+  var onNativeIndexChange: ((MasonryPhoto, Int) -> Void)?
+  var onNativeInfoRequest: (() -> Void)?
+  var onNativeRequestClose: (() -> Void)?
 
   var keyboardCloseTitle = ""
   var keyboardInfoTitle = ""
   var keyboardNextTitle = ""
   var keyboardPreviousTitle = ""
-  var livePhotoAccessibilityHint = ""
-  var livePhotoBadgeTitle = ""
   var interactiveDismissEnabled = true
+  var infoPresented = false {
+    didSet {
+      guard infoPresented != oldValue else { return }
+      configureZoomTransitionWhenReady()
+    }
+  }
+
+  var livePhotoStringsJSON = "" {
+    didSet {
+      guard livePhotoStringsJSON != oldValue else { return }
+      livePhotoStrings = LivePhotoBadgeStrings.decoded(from: livePhotoStringsJSON)
+      collectionView.reloadData()
+    }
+  }
+
+  private var livePhotoStrings = LivePhotoBadgeStrings()
+  // Playback modes deliberately live for the length of the viewer session only:
+  // Afilmory photos are remote and shareable, so there is no per-asset store to
+  // persist them into the way the Photos library does.
+  private var livePhotoModes: [String: LivePhotoPlaybackMode] = [:]
 
   var initialIndex = 0 {
     didSet {
@@ -35,7 +58,9 @@ final class PhotoViewerView: ExpoView {
   private var collectionView: UICollectionView!
   private var currentIndex = 0
   private var hasPositionedInitialPhoto = false
+  private lazy var infoPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleInfoPan))
   private weak var configuredScreen: RNSScreen?
+  private var configuredInfoPresented: Bool?
   private var configuredTransitionId = ""
   private var prefetchTokens: [Int: SDWebImagePrefetchToken] = [:]
 
@@ -57,6 +82,12 @@ final class PhotoViewerView: ExpoView {
     collectionView.showsHorizontalScrollIndicator = false
     collectionView.register(PhotoViewerCell.self, forCellWithReuseIdentifier: PhotoViewerCell.reuseIdentifier)
     addSubview(collectionView)
+
+    infoPanGestureRecognizer.cancelsTouchesInView = false
+    infoPanGestureRecognizer.delegate = self
+    infoPanGestureRecognizer.maximumNumberOfTouches = 1
+    addGestureRecognizer(infoPanGestureRecognizer)
+    collectionView.panGestureRecognizer.require(toFail: infoPanGestureRecognizer)
   }
 
   override func layoutSubviews() {
@@ -183,6 +214,7 @@ final class PhotoViewerView: ExpoView {
     if emit {
       onIndexChange(["id": photo.id, "index": currentIndex])
     }
+    onNativeIndexChange?(photo, currentIndex)
     updateVisibleCellActivity()
     prefetchNeighborPhotos()
   }
@@ -250,7 +282,7 @@ final class PhotoViewerView: ExpoView {
   private func updatePagingEnabled() {
     let currentCell = currentCell()
     collectionView.isScrollEnabled = !(currentCell?.isZoomed ?? false)
-      && !(currentCell?.isPlayingLivePhoto ?? false)
+      && !(currentCell?.blocksPaging ?? false)
   }
 
   private func makeKeyCommand(
@@ -287,11 +319,30 @@ final class PhotoViewerView: ExpoView {
   }
 
   @objc private func requestClose() {
+    onNativeRequestClose?()
     onRequestClose([:])
   }
 
   @objc private func requestInfo() {
+    onNativeInfoRequest?()
     onInfoRequest([:])
+  }
+
+  @objc private func handleInfoPan(_ gesture: UIPanGestureRecognizer) {
+    let translation = gesture.translation(in: self).y
+    let velocity = gesture.velocity(in: self).y
+    switch gesture.state {
+    case .began:
+      onInfoGesture(["state": "began", "translationY": translation, "velocityY": velocity])
+    case .changed:
+      onInfoGesture(["state": "changed", "translationY": translation, "velocityY": velocity])
+    case .ended:
+      onInfoGesture(["state": "ended", "translationY": translation, "velocityY": velocity])
+    case .cancelled:
+      onInfoGesture(["state": "cancelled", "translationY": translation, "velocityY": velocity])
+    default:
+      break
+    }
   }
 
   private func targetRect(in viewController: UIViewController) -> CGRect? {
@@ -328,7 +379,18 @@ final class PhotoViewerView: ExpoView {
 
   private func configureZoomTransition() {
     guard #available(iOS 18.0, *), let screen = findScreen() else { return }
-    guard configuredScreen !== screen || configuredTransitionId != transitionId else { return }
+    guard configuredScreen !== screen
+      || configuredTransitionId != transitionId
+      || configuredInfoPresented != infoPresented
+    else { return }
+
+    if infoPresented {
+      screen.preferredTransition = nil
+      configuredScreen = screen
+      configuredTransitionId = transitionId
+      configuredInfoPresented = infoPresented
+      return
+    }
 
     let activeTransitionId = transitionId
     let options = UIViewController.Transition.ZoomOptions()
@@ -339,7 +401,7 @@ final class PhotoViewerView: ExpoView {
       guard let self else { return false }
       return self.interactiveDismissEnabled
         && !(self.currentCell()?.isZoomed ?? false)
-        && !(self.currentCell()?.isPlayingLivePhoto ?? false)
+        && !(self.currentCell()?.blocksPaging ?? false)
     }
     screen.preferredTransition = .zoom(options: options) { _ in
       PhotoTransitionRegistry.shared.sourceView(id: activeTransitionId)
@@ -347,6 +409,28 @@ final class PhotoViewerView: ExpoView {
 
     configuredScreen = screen
     configuredTransitionId = transitionId
+    configuredInfoPresented = infoPresented
+  }
+
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard gestureRecognizer === infoPanGestureRecognizer else {
+      return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+    guard !(currentCell()?.isZoomed ?? false), !(currentCell()?.blocksPaging ?? false) else {
+      return false
+    }
+    let translation = infoPanGestureRecognizer.translation(in: self)
+    let velocity = infoPanGestureRecognizer.velocity(in: self)
+    let direction = abs(translation.x) + abs(translation.y) > 0.5 ? translation : velocity
+    guard abs(direction.y) > abs(direction.x) * 1.12 else { return false }
+    return true
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool {
+    gestureRecognizer === infoPanGestureRecognizer || otherGestureRecognizer === infoPanGestureRecognizer
   }
 
   private func findScreen() -> RNSScreen? {
@@ -359,7 +443,30 @@ final class PhotoViewerView: ExpoView {
     }
     return nil
   }
+
+  func configureExternalInfoGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+    infoPanGestureRecognizer.isEnabled = false
+    collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
+  }
+
+  func allowsInfoGesture() -> Bool {
+    !(currentCell()?.isZoomed ?? false) && !(currentCell()?.blocksPaging ?? false)
+  }
+
+  func mediaBottomInset(in viewportSize: CGSize) -> CGFloat {
+    guard photos.indices.contains(currentIndex), viewportSize.width > 0, viewportSize.height > 0 else {
+      return 0
+    }
+    let aspectRatio = PhotoViewerImageSizing.aspectRatio(for: photos[currentIndex])
+    var renderedHeight = viewportSize.width / aspectRatio
+    if renderedHeight > viewportSize.height {
+      renderedHeight = viewportSize.height
+    }
+    return max(0, (viewportSize.height - renderedHeight) / 2)
+  }
 }
+
+extension PhotoViewerView: UIGestureRecognizerDelegate {}
 
 extension PhotoViewerView: UICollectionViewDataSource {
   func collectionView(
@@ -385,11 +492,15 @@ extension PhotoViewerView: UICollectionViewDataSource {
       guard let self, cell === self.currentCell() else { return }
       self.updatePagingEnabled()
     }
+    cell.onLivePhotoModeChange = { [weak self] photoId, mode in
+      self?.livePhotoModes[photoId] = mode
+    }
+    let photo = photos[indexPath.item]
     cell.configure(
-      with: photos[indexPath.item],
+      with: photo,
       viewportSize: collectionView.bounds.size,
-      livePhotoBadgeTitle: livePhotoBadgeTitle,
-      livePhotoAccessibilityHint: livePhotoAccessibilityHint
+      livePhotoStrings: livePhotoStrings,
+      livePhotoMode: livePhotoModes[photo.id] ?? .live
     )
     cell.setActive(indexPath.item == currentIndex)
     return cell

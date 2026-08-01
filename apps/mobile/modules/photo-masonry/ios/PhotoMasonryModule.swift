@@ -128,8 +128,8 @@ public class PhotoMasonryModule: Module {
         view.filterCount = count
       }
 
-      Prop("livePhotoBadgeTitle") { (view: PhotoMasonryView, title: String) in
-        view.livePhotoBadgeTitle = title
+      Prop("livePhotoAccessibilityLabel") { (view: PhotoMasonryView, label: String) in
+        view.livePhotoAccessibilityLabel = label
       }
 
       Prop("selectionEnabled") { (view: PhotoMasonryView, enabled: Bool) in

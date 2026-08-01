@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import CoreGraphics
+import Foundation
 
 struct PresentationAnchorRecord: Record {
   @Field var x: Double = 0
@@ -63,6 +64,34 @@ struct PhotoInfoSheetRecord: Record {
   @Field var mapLocation: PhotoMapLocationRecord?
   @Field var emptyMessage: String?
   @Field var localization: PhotoInfoLocalizationRecord = .init()
+}
+
+extension PhotoInfoSheetRecord {
+  static func decode(json: String, appContext: AppContext) -> PhotoInfoSheetRecord? {
+    guard let data = json.data(using: .utf8),
+          let jsonObject = try? JSONSerialization.jsonObject(with: data),
+          let dictionary = normalizeJSONValue(jsonObject) as? [String: Any]
+    else { return nil }
+
+    return try? PhotoInfoSheetRecord(from: dictionary, appContext: appContext)
+  }
+
+  private static func normalizeJSONValue(_ value: Any) -> Any? {
+    if value is NSNull {
+      return nil
+    }
+    if let dictionary = value as? [String: Any] {
+      return dictionary.reduce(into: [String: Any]()) { result, element in
+        if let normalized = normalizeJSONValue(element.value) {
+          result[element.key] = normalized
+        }
+      }
+    }
+    if let array = value as? [Any] {
+      return array.compactMap(normalizeJSONValue)
+    }
+    return value
+  }
 }
 
 struct PhotoFilterDatePresetRecord: Record, Identifiable {

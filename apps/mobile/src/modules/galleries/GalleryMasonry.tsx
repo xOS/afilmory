@@ -61,7 +61,7 @@ export function GalleryMasonry({ slug }: { slug: string }) {
       defaultColumnCount={2}
       extraBottomInset={96}
       gap={4}
-      livePhotoBadgeTitle={t('photo.livePhoto')}
+      livePhotoAccessibilityLabel={t('photo.livePhoto')}
       photos={items}
       style={styles.masonry}
       onPhotoContextMenuAction={handlePhotoContextMenu}

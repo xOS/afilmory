@@ -48,7 +48,13 @@ export interface NativePhotoInfoSheetPayload extends NativePhotoInfoSheet {
 
 export interface NativePhotoInfoPanelProps extends ViewProps {
   infoJSON: string
+  showsHeader?: boolean
   onClose?: () => void
+}
+
+interface NativePhotoFilterDatePreset {
+  label: string
+  value: string
 }
 
 interface NativePhotoFilterLocalization {
@@ -60,7 +66,7 @@ interface NativePhotoFilterLocalization {
   cancel: string
   customRange: string
   date: string
-  datePresets: Array<{ label: string, value: string }>
+  datePresets: NativePhotoFilterDatePreset[]
   done: string
   from: string
   lens: string

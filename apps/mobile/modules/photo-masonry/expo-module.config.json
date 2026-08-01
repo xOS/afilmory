@@ -1,6 +1,12 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["PhotoMapModule", "PhotoMasonryModule", "PhotoViewerModule", "PhotoSheetsModule"]
+    "modules": [
+      "PhotoDetailModule",
+      "PhotoMapModule",
+      "PhotoMasonryModule",
+      "PhotoViewerModule",
+      "PhotoSheetsModule"
+    ]
   }
 }

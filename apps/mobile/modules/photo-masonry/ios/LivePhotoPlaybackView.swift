@@ -1,6 +1,17 @@
 import AVFoundation
 import UIKit
 
+enum LivePhotoPlaybackMode: String, CaseIterable {
+  case live
+  case loop
+  case bounce
+  case off
+
+  var repeatsUntilStopped: Bool {
+    self == .loop || self == .bounce
+  }
+}
+
 /// Streams the paired MOV resource used by an Afilmory Live Photo.
 ///
 /// Afilmory's manifest guarantees a logical image/video pair, but it does not
@@ -10,15 +21,25 @@ import UIKit
 final class LivePhotoPlaybackView: UIView {
   override class var layerClass: AnyClass { AVPlayerLayer.self }
 
+  private static let crossfadeDuration: TimeInterval = 0.3
+
   var onPlaybackStateChange: ((Bool) -> Void)?
 
   private(set) var isPlaying = false
+
+  var mode: LivePhotoPlaybackMode = .live {
+    didSet {
+      guard mode != oldValue, mode == .off else { return }
+      stopPlayback(animated: true)
+    }
+  }
 
   private var isActive = false
   private var playbackGeneration = 0
   private var videoURL: URL?
   private var player: AVPlayer?
   private var playbackEndObserver: NSObjectProtocol?
+  private var reverseProgressObserver: Any?
   private var layerReadinessObservation: NSKeyValueObservation?
   private var itemStatusObservation: NSKeyValueObservation?
 
@@ -67,7 +88,7 @@ final class LivePhotoPlaybackView: UIView {
 
   @discardableResult
   func startPlayback() -> Bool {
-    guard isActive, videoURL != nil else { return false }
+    guard isActive, mode != .off, videoURL != nil else { return false }
     preparePlayer()
     guard let player else { return false }
 
@@ -93,10 +114,16 @@ final class LivePhotoPlaybackView: UIView {
 
   func stopPlayback(animated: Bool = true) {
     playbackGeneration += 1
+    let generation = playbackGeneration
+    stopReverseProgressObserver()
     player?.pause()
-    player?.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
     setPlaying(false)
-    hideVideo(animated: animated)
+    // Rewinding while the layer is still on screen snaps the last frame back to
+    // the first one mid-crossfade, so the seek waits until the fade has landed.
+    hideVideo(animated: animated) { [weak self] in
+      guard let self, self.playbackGeneration == generation else { return }
+      self.player?.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
   }
 
   private func preparePlayer() {
@@ -140,11 +167,67 @@ final class LivePhotoPlaybackView: UIView {
       queue: .main
     ) { [weak self] _ in
       guard let self, self.player?.currentItem === item else { return }
-      self.stopPlayback(animated: true)
+      self.handlePlaybackReachedEnd()
     }
   }
 
+  private func handlePlaybackReachedEnd() {
+    guard isPlaying else { return }
+    switch mode {
+    case .live, .off:
+      stopPlayback(animated: true)
+    case .loop:
+      replayFromStart()
+    case .bounce:
+      playInReverse()
+    }
+  }
+
+  private func replayFromStart() {
+    guard let player else { return }
+    let generation = playbackGeneration
+    player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+      guard finished, let self, self.playbackGeneration == generation, self.isPlaying else {
+        return
+      }
+      self.player?.play()
+    }
+  }
+
+  // Reverse playback needs a seekable item; progressive-download MP4s qualify but
+  // HLS does not, so bounce degrades to a plain loop rather than stalling.
+  private func playInReverse() {
+    guard let player, player.currentItem?.canPlayReverse == true else {
+      replayFromStart()
+      return
+    }
+    startReverseProgressObserver()
+    player.rate = -1
+  }
+
+  private func startReverseProgressObserver() {
+    guard reverseProgressObserver == nil, let player else { return }
+    reverseProgressObserver = player.addPeriodicTimeObserver(
+      forInterval: CMTime(value: 1, timescale: 30),
+      queue: .main
+    ) { [weak self] time in
+      guard let self, let player = self.player, player.rate < 0, time.seconds <= 0.05 else {
+        return
+      }
+      self.stopReverseProgressObserver()
+      guard self.isPlaying else { return }
+      self.replayFromStart()
+    }
+  }
+
+  private func stopReverseProgressObserver() {
+    guard let reverseProgressObserver else { return }
+    player?.removeTimeObserver(reverseProgressObserver)
+    self.reverseProgressObserver = nil
+  }
+
   private func tearDownPlayer() {
+    stopReverseProgressObserver()
     layerReadinessObservation?.invalidate()
     layerReadinessObservation = nil
     itemStatusObservation?.invalidate()
@@ -165,29 +248,39 @@ final class LivePhotoPlaybackView: UIView {
     onPlaybackStateChange?(playing)
   }
 
+  // The crossfade is linear, so scaling the duration by the remaining distance
+  // keeps a constant rate when a fade is reversed mid-flight. `alpha` already
+  // holds the target during an in-flight fade, hence the presentation layer.
+  private var displayedAlpha: CGFloat {
+    guard let presentation = layer.presentation() else { return alpha }
+    return CGFloat(presentation.opacity)
+  }
+
   private func revealVideo() {
-    guard alpha != 1 else { return }
+    guard alpha != 1 || displayedAlpha != 1 else { return }
     UIView.animate(
-      withDuration: 0.12,
+      withDuration: Self.crossfadeDuration * Double(1 - displayedAlpha),
       delay: 0,
-      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveLinear]
     ) {
       self.alpha = 1
     }
   }
 
-  private func hideVideo(animated: Bool) {
-    guard alpha != 0 else { return }
+  private func hideVideo(animated: Bool, completion: @escaping () -> Void) {
     let changes = { self.alpha = 0 }
-    if animated {
-      UIView.animate(
-        withDuration: 0.12,
-        delay: 0,
-        options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
-        animations: changes
-      )
-    } else {
+    guard animated else {
       UIView.performWithoutAnimation(changes)
+      completion()
+      return
+    }
+    UIView.animate(
+      withDuration: Self.crossfadeDuration * Double(displayedAlpha),
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveLinear],
+      animations: changes
+    ) { _ in
+      completion()
     }
   }
 }

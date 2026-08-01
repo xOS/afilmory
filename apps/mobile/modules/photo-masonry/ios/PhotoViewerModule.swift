@@ -5,7 +5,7 @@ public class PhotoViewerModule: Module {
     Name("PhotoViewer")
 
     View(PhotoViewerView.self) {
-      Events("onIndexChange", "onInfoRequest", "onRequestClose")
+      Events("onIndexChange", "onInfoGesture", "onInfoRequest", "onRequestClose")
 
       Prop("photos") { (view: PhotoViewerView, photos: [MasonryPhoto]) in
         view.setPhotos(photos)
@@ -35,17 +35,18 @@ public class PhotoViewerModule: Module {
         view.keyboardPreviousTitle = title
       }
 
-      Prop("livePhotoAccessibilityHint") { (view: PhotoViewerView, hint: String) in
-        view.livePhotoAccessibilityHint = hint
+      Prop("livePhotoStringsJSON") { (view: PhotoViewerView, json: String) in
+        view.livePhotoStringsJSON = json
       }
 
-      Prop("livePhotoBadgeTitle") { (view: PhotoViewerView, title: String) in
-        view.livePhotoBadgeTitle = title
+      Prop("infoPresented") { (view: PhotoViewerView, presented: Bool) in
+        view.infoPresented = presented
       }
 
       Prop("interactiveDismissEnabled") { (view: PhotoViewerView, enabled: Bool) in
         view.interactiveDismissEnabled = enabled
       }
+
     }
   }
 }

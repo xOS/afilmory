@@ -1,5 +1,10 @@
+import PhotosUI
 import SDWebImage
 import UIKit
+
+enum LivePhotoBadgeArtwork {
+  static let overContent: UIImage? = PHLivePhotoView.livePhotoBadgeImage(options: .overContent)
+}
 
 enum ThumbHashCache {
   private static let cache = NSCache<NSString, UIImage>()
@@ -37,11 +42,11 @@ final class PhotoCell: UICollectionViewCell {
   static let reuseIdentifier = "PhotoCell"
 
   private let imageView = UIImageView()
-  private let liveBadge = UIButton(type: .system)
+  private let liveBadge = UIImageView()
   private let selectionShade = UIView()
   private let selectionBadge = UIView()
   private let selectionCheck = UIImageView()
-  private var livePhotoBadgeTitle = "LIVE"
+  private var livePhotoAccessibilityLabel = "Live Photo"
 
   var transitionSourceView: UIView { imageView }
 
@@ -53,14 +58,8 @@ final class PhotoCell: UICollectionViewCell {
     imageView.sd_imageTransition = .fade(duration: 0.15)
     contentView.addSubview(imageView)
 
-    var liveConfiguration = UIButton.Configuration.filled()
-    liveConfiguration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.62)
-    liveConfiguration.baseForegroundColor = .white
-    liveConfiguration.cornerStyle = .capsule
-    liveConfiguration.image = UIImage(systemName: "livephoto")
-    liveConfiguration.imagePadding = 4
-    liveConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
-    liveBadge.configuration = liveConfiguration
+    liveBadge.image = LivePhotoBadgeArtwork.overContent
+    liveBadge.contentMode = .center
     liveBadge.isHidden = true
     liveBadge.isUserInteractionEnabled = false
     contentView.addSubview(liveBadge)
@@ -133,16 +132,16 @@ final class PhotoCell: UICollectionViewCell {
   func configure(
     with photo: MasonryPhoto,
     targetWidth: CGFloat,
-    livePhotoBadgeTitle: String,
+    livePhotoAccessibilityLabel: String,
     selectionMode: Bool,
     selected: Bool
   ) {
     contentView.isAccessibilityElement = true
     contentView.accessibilityLabel = photo.accessibilityLabel
     contentView.accessibilityTraits.insert(.button)
-    self.livePhotoBadgeTitle = livePhotoBadgeTitle
+    self.livePhotoAccessibilityLabel = livePhotoAccessibilityLabel
     liveBadge.isHidden = !photo.hasLivePhoto
-    contentView.accessibilityValue = photo.hasLivePhoto ? livePhotoBadgeTitle : nil
+    contentView.accessibilityValue = photo.hasLivePhoto ? livePhotoAccessibilityLabel : nil
     setNeedsLayout()
     configureSelection(selectionMode: selectionMode, selected: selected)
     let scale = window?.screen.scale ?? UIScreen.main.scale
@@ -156,30 +155,17 @@ final class PhotoCell: UICollectionViewCell {
     )
   }
 
-  func setLivePhotoBadgeTitle(_ title: String) {
-    livePhotoBadgeTitle = title
+  func setLivePhotoAccessibilityLabel(_ label: String) {
+    livePhotoAccessibilityLabel = label
     if !liveBadge.isHidden {
-      contentView.accessibilityValue = title
-      setNeedsLayout()
+      contentView.accessibilityValue = label
     }
   }
 
   private func layoutLivePhotoBadge() {
     guard !liveBadge.isHidden else { return }
-    let showsTitle = contentView.bounds.width >= 124
-    if var configuration = liveBadge.configuration {
-      configuration.title = showsTitle ? livePhotoBadgeTitle : nil
-      configuration.imagePadding = showsTitle ? 4 : 0
-      liveBadge.configuration = configuration
-    }
-    let availableWidth = max(contentView.bounds.width - 14, 28)
-    let fittingSize = liveBadge.sizeThatFits(CGSize(width: availableWidth, height: 26))
-    liveBadge.frame = CGRect(
-      x: 7,
-      y: 7,
-      width: min(max(fittingSize.width, 28), availableWidth),
-      height: 26
-    )
+    let size = liveBadge.image?.size ?? CGSize(width: 24, height: 24)
+    liveBadge.frame = CGRect(origin: CGPoint(x: 6, y: 6), size: size)
   }
 
   func configureSelection(selectionMode: Bool, selected: Bool) {

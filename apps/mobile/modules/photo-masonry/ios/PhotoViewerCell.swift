@@ -49,7 +49,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   private let previewImageView = UIImageView()
   private let detailImageView = UIImageView()
   private let livePhotoPlaybackView = LivePhotoPlaybackView()
-  private let livePhotoBadge = UIButton(type: .system)
+  private let livePhotoBadge = LivePhotoBadgeView()
   private let livePhotoHaptics = UIImpactFeedbackGenerator(style: .medium)
   private lazy var livePhotoLongPress = UILongPressGestureRecognizer(
     target: self,
@@ -65,13 +65,17 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
 
   var onZoomStateChange: ((Bool) -> Void)?
   var onLivePhotoPlaybackStateChange: ((Bool) -> Void)?
+  var onLivePhotoModeChange: ((String, LivePhotoPlaybackMode) -> Void)?
 
   var isZoomed: Bool {
     scrollView.zoomScale > scrollView.minimumZoomScale + 0.01
   }
 
-  var isPlayingLivePhoto: Bool {
-    livePhotoPlaybackView.isPlaying
+  // Only a held finger may lock paging. Playback also runs unattended (on entry
+  // and from the badge), and locking on that would freeze the pager after every
+  // swipe for the length of the clip.
+  var blocksPaging: Bool {
+    isHoldingLivePhoto
   }
 
   override init(frame: CGRect) {
@@ -108,31 +112,21 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
 
     livePhotoPlaybackView.onPlaybackStateChange = { [weak self] playing in
       guard let self else { return }
-      self.updateLivePhotoBadge(playing: playing)
+      self.animateLivePhotoBadgeVisibility()
       self.onLivePhotoPlaybackStateChange?(playing)
     }
     imageContainerView.addSubview(livePhotoPlaybackView)
 
-    var badgeConfiguration = UIButton.Configuration.filled()
-    badgeConfiguration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.58)
-    badgeConfiguration.baseForegroundColor = .white
-    badgeConfiguration.cornerStyle = .capsule
-    badgeConfiguration.image = UIImage(systemName: "livephoto")
-    badgeConfiguration.imagePadding = 5
-    badgeConfiguration.contentInsets = NSDirectionalEdgeInsets(
-      top: 6,
-      leading: 10,
-      bottom: 6,
-      trailing: 10
-    )
-    livePhotoBadge.configuration = badgeConfiguration
     livePhotoBadge.isHidden = true
-    livePhotoBadge.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
-    livePhotoBadge.addTarget(
-      self,
-      action: #selector(toggleLivePhotoPlayback),
-      for: .touchUpInside
-    )
+    livePhotoBadge.onSelectMode = { [weak self] mode in
+      guard let self, let photo = self.photo else { return }
+      self.livePhotoPlaybackView.mode = mode
+      self.onLivePhotoModeChange?(photo.id, mode)
+      self.updateLivePhotoBadgeVisibility()
+      self.setNeedsLayout()
+      guard mode.repeatsUntilStopped else { return }
+      self.livePhotoPlaybackView.startPlayback()
+    }
     contentView.addSubview(livePhotoBadge)
 
     let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
@@ -175,9 +169,9 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     wasZoomed = false
     onZoomStateChange = nil
     onLivePhotoPlaybackStateChange = nil
+    onLivePhotoModeChange = nil
     livePhotoBadge.isHidden = true
-    livePhotoBadge.accessibilityLabel = nil
-    livePhotoBadge.accessibilityHint = nil
+    livePhotoBadge.alpha = 1
     scrollView.setZoomScale(1, animated: false)
     scrollView.panGestureRecognizer.isEnabled = false
   }
@@ -185,21 +179,20 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   func configure(
     with photo: MasonryPhoto,
     viewportSize: CGSize,
-    livePhotoBadgeTitle: String,
-    livePhotoAccessibilityHint: String
+    livePhotoStrings: LivePhotoBadgeStrings,
+    livePhotoMode: LivePhotoPlaybackMode
   ) {
     let mediaChanged = self.photo?.id != photo.id
       || self.photo?.livePhotoVideoUrl != photo.livePhotoVideoUrl
     self.photo = photo
     imageContainerView.accessibilityLabel = photo.accessibilityLabel
-    imageContainerView.accessibilityHint = photo.hasLivePhoto ? livePhotoAccessibilityHint : nil
-    if var configuration = livePhotoBadge.configuration {
-      configuration.title = livePhotoBadgeTitle
-      livePhotoBadge.configuration = configuration
-    }
-    livePhotoBadge.accessibilityLabel = livePhotoBadgeTitle
-    livePhotoBadge.accessibilityHint = livePhotoAccessibilityHint
+    imageContainerView.accessibilityHint =
+      photo.hasLivePhoto ? livePhotoStrings.accessibilityHint : nil
+    livePhotoBadge.strings = livePhotoStrings
+    livePhotoBadge.setMode(livePhotoMode)
+    livePhotoPlaybackView.mode = livePhotoMode
     livePhotoBadge.isHidden = !photo.hasLivePhoto
+    updateLivePhotoBadgeVisibility()
     livePhotoPlaybackView.configure(videoURL: photo.livePhotoVideoUrl.flatMap(URL.init(string:)))
     setNeedsLayout()
 
@@ -232,6 +225,8 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
       isHoldingLivePhoto = false
     }
     livePhotoPlaybackView.setActive(active)
+    guard active, photo?.hasLivePhoto == true, !isZoomed else { return }
+    livePhotoPlaybackView.startPlayback()
   }
 
   func loadTier(forZoomScale zoomScale: CGFloat, viewportSize: CGSize) {
@@ -340,32 +335,38 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
 
   private func layoutLivePhotoBadge() {
     guard !livePhotoBadge.isHidden else { return }
-    let availableWidth = max(contentView.bounds.width - 24, 44)
-    let fittingSize = livePhotoBadge.sizeThatFits(CGSize(width: availableWidth, height: 32))
-    let badgeWidth = min(max(fittingSize.width, 44), availableWidth)
+    let availableWidth = max(contentView.bounds.width - 32, 44)
+    let fittingSize = livePhotoBadge.sizeThatFits(
+      CGSize(width: availableWidth, height: .greatestFiniteMagnitude)
+    )
     let imageTop = scrollView.contentInset.top + 10
     let safeTop = contentView.safeAreaInsets.top + 10
     livePhotoBadge.frame = CGRect(
-      x: (contentView.bounds.width - badgeWidth) / 2,
+      x: 16,
       y: max(imageTop, safeTop),
-      width: badgeWidth,
-      height: 32
+      width: min(fittingSize.width, availableWidth),
+      height: fittingSize.height
     )
-    updateLivePhotoBadgeVisibility()
   }
 
+  // Looping modes never finish on their own, so hiding the badge while they run
+  // would strand the user with no way back to the mode menu.
   private func updateLivePhotoBadgeVisibility() {
-    livePhotoBadge.alpha = isZoomed ? 0 : 1
-    livePhotoBadge.isUserInteractionEnabled = !isZoomed
+    let playingOnce = livePhotoPlaybackView.isPlaying
+      && !livePhotoPlaybackView.mode.repeatsUntilStopped
+    let concealed = isZoomed || playingOnce
+    livePhotoBadge.alpha = concealed ? 0 : 1
+    livePhotoBadge.isUserInteractionEnabled = !concealed
   }
 
-  private func updateLivePhotoBadge(playing: Bool) {
-    guard var configuration = livePhotoBadge.configuration else { return }
-    configuration.baseBackgroundColor =
-      playing
-      ? UIColor.systemBlue.withAlphaComponent(0.82)
-      : UIColor.black.withAlphaComponent(0.58)
-    livePhotoBadge.configuration = configuration
+  private func animateLivePhotoBadgeVisibility() {
+    UIView.animate(
+      withDuration: 0.3,
+      delay: 0,
+      options: [.beginFromCurrentState, .curveLinear]
+    ) {
+      self.updateLivePhotoBadgeVisibility()
+    }
   }
 
   private func beginLivePhotoPlayback() {
@@ -409,12 +410,4 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     }
   }
 
-  @objc private func toggleLivePhotoPlayback() {
-    isHoldingLivePhoto = false
-    if livePhotoPlaybackView.isPlaying {
-      livePhotoPlaybackView.stopPlayback(animated: true)
-    } else {
-      beginLivePhotoPlayback()
-    }
-  }
 }
