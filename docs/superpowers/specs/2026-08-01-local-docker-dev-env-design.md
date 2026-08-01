@@ -202,9 +202,16 @@ Blocked on missing data, not on the environment:
 
 9. Image render end to end: `seed:dev --slug beta` on an empty workspace uploaded 8 files into 6 photos with 2 Live Photo pairings, and the app — signed out, on Local — renders Explore → "Alpha Gallery · 6 photos" → a full masonry with Live Photo badges, all served from RustFS.
 
+10. Studio management against Local, signed in as `alice@test.dev` (owner of `alpha`):
+    - **Delete → "Delete files too"** removes both the `photo_asset` row and the RustFS object (6 → 5).
+    - **Upload** re-adds the same file through the PHPicker and runs the full derive pipeline: `5606×3737`, EXIF `ILCE-7M3`, `dateTaken`, thumbHash, HDR flag, and a thumbnail served from RustFS (200, 172 KB).
+    - **Edit tags** rewrites the storage key into a tag path (`DSCF0038.avif` → `local-test/anya/DSCF0038.avif`) and moves the object rather than orphaning it; the grid re-renders from the new URL.
+
+    Reaching this needed two auth fixes, both of which affect production, not just the local stack — see `fix(mobile): persist the auth session across launches`. `@better-auth/expo` filters `Set-Cookie` on a `cookiePrefix` that defaulted to `better-auth` while the server issues `afilmory-global.session_token`, so the session was never stored; and its `getCookie()` reads storage synchronously, which `expo-secure-store` cannot do on Simulator builds, so every relaunch fell back to signed-out.
+
 Blocked on credentials:
 
-10. **GitHub OAuth** — the local database holds `fake-github-client-id`; the real dev client credentials have to be configured first.
+11. **GitHub OAuth** — the local database holds `fake-github-client-id`; the real dev client credentials have to be configured first.
 
 ## Open items
 
