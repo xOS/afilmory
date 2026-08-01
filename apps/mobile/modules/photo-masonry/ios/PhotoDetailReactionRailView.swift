@@ -2,7 +2,9 @@ import UIKit
 
 private let reactionItemDiameter: CGFloat = 40
 private let reactionItemSpacing: CGFloat = 8
-private let reactionContainerInset = UIEdgeInsets(top: 3, left: 4, bottom: 3, right: 4)
+private let reactionContainerInset = UIEdgeInsets(top: 5, left: 4, bottom: 3, right: 4)
+private let reactionBadgeMinHeight: CGFloat = 16
+private let reactionBadgeHorizontalPadding: CGFloat = 5
 
 final class PhotoDetailReactionRailView: UIView {
   var onSelect: ((String) -> Void)?
@@ -10,6 +12,7 @@ final class PhotoDetailReactionRailView: UIView {
 
   private let container = UIVisualEffectView()
   private var itemGlasses: [UIVisualEffectView] = []
+  private var itemBadges: [PhotoDetailReactionBadge] = []
   private var items: [PhotoDetailReactionItem] = []
   private var presented = false
 
@@ -35,9 +38,18 @@ final class PhotoDetailReactionRailView: UIView {
     container.frame = bounds
 
     var x = reactionContainerInset.left
-    for glass in itemGlasses {
-      glass.frame = CGRect(x: x, y: reactionContainerInset.top, width: reactionItemDiameter, height: reactionItemDiameter)
+    for (glass, badge) in zip(itemGlasses, itemBadges) {
+      let itemFrame = CGRect(x: x, y: reactionContainerInset.top, width: reactionItemDiameter, height: reactionItemDiameter)
+      glass.frame = itemFrame
       glass.contentView.subviews.first?.frame = glass.contentView.bounds
+
+      if !badge.isHidden {
+        let height = reactionBadgeMinHeight
+        let width = max(height, badge.intrinsicContentSize.width + reactionBadgeHorizontalPadding * 2)
+        badge.frame = CGRect(x: itemFrame.maxX - width + 3, y: itemFrame.minY - 4, width: width, height: height)
+        badge.layer.cornerRadius = height / 2
+      }
+
       x += reactionItemDiameter + reactionItemSpacing
     }
   }
@@ -65,6 +77,8 @@ final class PhotoDetailReactionRailView: UIView {
     self.items = items
     itemGlasses.forEach { $0.removeFromSuperview() }
     itemGlasses.removeAll()
+    itemBadges.forEach { $0.removeFromSuperview() }
+    itemBadges.removeAll()
 
     for item in items {
       let button = PhotoDetailReactionButton(item: item)
@@ -82,6 +96,10 @@ final class PhotoDetailReactionRailView: UIView {
       glass.contentView.addSubview(button)
       container.contentView.addSubview(glass)
       itemGlasses.append(glass)
+
+      let badge = PhotoDetailReactionBadge(count: item.count)
+      container.contentView.addSubview(badge)
+      itemBadges.append(badge)
     }
     setNeedsLayout()
   }
@@ -122,11 +140,6 @@ final class PhotoDetailReactionRailView: UIView {
 }
 
 private final class PhotoDetailReactionButton: UIButton {
-  private static let badgeMinHeight: CGFloat = 16
-  private static let badgeHorizontalPadding: CGFloat = 5
-
-  private let countLabel = UILabel()
-
   init(item: PhotoDetailReactionItem) {
     super.init(frame: .zero)
 
@@ -141,36 +154,36 @@ private final class PhotoDetailReactionButton: UIButton {
     isEnabled = !item.pending
     alpha = item.pending ? 0.66 : 1
     backgroundColor = item.active ? UIColor.systemBlue.withAlphaComponent(0.24) : .clear
-    clipsToBounds = false
     layer.cornerCurve = .circular
     layer.cornerRadius = reactionItemDiameter / 2
-
-    countLabel.backgroundColor = UIColor.black.withAlphaComponent(0.72)
-    countLabel.clipsToBounds = true
-    countLabel.font = .monospacedDigitSystemFont(
-      ofSize: UIFont.preferredFont(forTextStyle: .caption2).pointSize,
-      weight: .semibold
-    )
-    countLabel.isAccessibilityElement = false
-    countLabel.layer.cornerCurve = .continuous
-    countLabel.text = item.count > 999 ? "999+" : "\(item.count)"
-    countLabel.textAlignment = .center
-    countLabel.textColor = .white
-    countLabel.isHidden = item.count <= 0
-    addSubview(countLabel)
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) is not supported")
   }
+}
 
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    guard !countLabel.isHidden else { return }
-    let height = Self.badgeMinHeight
-    let width = max(height, countLabel.intrinsicContentSize.width + Self.badgeHorizontalPadding * 2)
-    countLabel.frame = CGRect(x: bounds.maxX - width + 3, y: -4, width: width, height: height)
-    countLabel.layer.cornerRadius = height / 2
+private final class PhotoDetailReactionBadge: UILabel {
+  init(count: Int) {
+    super.init(frame: .zero)
+
+    backgroundColor = UIColor.black.withAlphaComponent(0.72)
+    clipsToBounds = true
+    font = .monospacedDigitSystemFont(
+      ofSize: UIFont.preferredFont(forTextStyle: .caption2).pointSize,
+      weight: .semibold
+    )
+    isAccessibilityElement = false
+    layer.cornerCurve = .continuous
+    textAlignment = .center
+    textColor = .white
+    text = count > 999 ? "999+" : "\(count)"
+    isHidden = count <= 0
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is not supported")
   }
 }
