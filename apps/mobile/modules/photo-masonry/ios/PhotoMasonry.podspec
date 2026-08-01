@@ -6,7 +6,7 @@ Pod::Spec.new do |s|
   s.author         = 'Afilmory'
   s.homepage       = 'https://github.com/Afilmory/afilmory'
   s.license        = { type: 'MIT' }
-  s.platforms      = { ios: '15.1' }
+  s.platforms      = { ios: '26.0' }
   s.source         = { git: '' }
   s.static_framework = true
 
