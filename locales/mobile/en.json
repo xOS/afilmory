@@ -85,6 +85,8 @@
   "page.photo": "Photo",
   "page.signIn": "Sign in",
   "photo.accessibility": "Photo {{id}}",
+  "photo.captureDay.today": "Today",
+  "photo.captureDay.yesterday": "Yesterday",
   "photo.close": "Close photo",
   "photo.comments": "View comments",
   "photo.info": "Photo information",

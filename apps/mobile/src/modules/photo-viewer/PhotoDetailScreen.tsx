@@ -58,8 +58,13 @@ export function PhotoDetailScreen() {
   )
 
   const metadataJSON = useMemo(() => {
+    const headerStrings = {
+      fallbackTitle: t('page.photo'),
+      today: t('photo.captureDay.today'),
+      yesterday: t('photo.captureDay.yesterday'),
+    }
     const metadata: PhotoDetailMetadataItem[] = (session?.photos ?? []).map((photo) => {
-      const header = buildPhotoHeaderModel(photo, intlLocale, t('page.photo'))
+      const header = buildPhotoHeaderModel(photo, intlLocale, headerStrings)
       const info = buildNativePhotoInfoPayload(buildPhotoInfoSheetModel(photo, t, intlLocale))
       return {
         id: photo.id,
