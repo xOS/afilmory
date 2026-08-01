@@ -70,11 +70,17 @@ earlier spec's Verification item 10 no longer describes the intended design.
    built around an in-JS serial runner driving `sendSseRequest`. Under B the
    authority for retry, cancel and ordering is native; JS keeps at most a mirror
    of native task state for rendering.
-3. **Swift needs the session cookie.** The Better Auth cookie currently lives in
-   JS memory (`getAuthCookie()`), hydrated from the keychain by `authStorage.ts`.
-   Native upload tasks must either receive it per request or read the keychain
-   directly. Whichever is picked, it becomes a second reader of that value —
-   keep the storage key in one place.
+3. **Swift receives the session cookie across the bridge.** JS passes it down
+   with the upload request rather than Swift reading the keychain, keeping
+   `authStorage.ts` the single reader of that key.
+
+   The catch is specific to B: a background `URLSession` can resume after the
+   app has been reclaimed, when no JS exists to ask for a fresh value. A cookie
+   handed over hours earlier may have rotated, and the whole resumed batch
+   401s with nobody able to repair it. So native must persist what it was given
+   and be able to reload it on a background relaunch — holding only an in-memory
+   copy is what breaks. Passing it down is fine; treating it as request-scoped
+   is not.
 4. **Retry classification must be re-expressed natively.** The rule worth keeping
    is the tested one: 4xx is terminal, transport failures and 5xx retry with
    backoff. Port the behaviour, not the code.
