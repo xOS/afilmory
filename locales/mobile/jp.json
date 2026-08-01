@@ -85,6 +85,8 @@
   "page.photo": "写真",
   "page.signIn": "ログイン",
   "photo.accessibility": "写真 {{id}}",
+  "photo.captureDay.today": "今日",
+  "photo.captureDay.yesterday": "昨日",
   "photo.close": "写真を閉じる",
   "photo.comments": "コメントを表示",
   "photo.info": "写真情報",

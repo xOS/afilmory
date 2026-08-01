@@ -85,6 +85,8 @@
   "page.photo": "사진",
   "page.signIn": "로그인",
   "photo.accessibility": "사진 {{id}}",
+  "photo.captureDay.today": "오늘",
+  "photo.captureDay.yesterday": "어제",
   "photo.close": "사진 닫기",
   "photo.comments": "댓글 보기",
   "photo.info": "사진 정보",

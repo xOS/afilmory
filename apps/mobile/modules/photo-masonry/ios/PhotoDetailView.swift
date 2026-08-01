@@ -167,6 +167,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     viewer.onNativeZoomChange = { [weak self] zoomed in
       guard let self else { return }
       visibility.zoomed = zoomed
+      if zoomed {
+        setReactionRailPresented(false, animated: true)
+      }
       applyVisibility(animated: true)
       applyScreenTraits()
     }
@@ -285,6 +288,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   @objc private func handleUserTap() {
     guard visibility.allowsImmersiveToggle else { return }
     visibility.userHidden.toggle()
+    if visibility.userHidden {
+      setReactionRailPresented(false, animated: true)
+    }
     applyVisibility(animated: true)
     applyScreenTraits()
   }

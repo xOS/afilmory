@@ -85,6 +85,8 @@
   "page.photo": "照片",
   "page.signIn": "登入",
   "photo.accessibility": "照片 {{id}}",
+  "photo.captureDay.today": "今天",
+  "photo.captureDay.yesterday": "昨天",
   "photo.close": "關閉照片",
   "photo.comments": "查看留言",
   "photo.info": "照片資訊",
