@@ -6,6 +6,7 @@ export interface UploadJob {
   id: string
   name: string
   bytes: number
+  previewUri: string
   status: UploadJobStatus
   progress: number
   attempt: number
@@ -15,7 +16,9 @@ export interface UploadJob {
 export interface UploadJobPayload {
   assets: readonly ImagePickerAsset[]
   bytes: number
+  directory: string | null
   name: string
+  previewUri: string
 }
 
 export interface UploadQueueSummary {
@@ -33,7 +36,10 @@ const RETRY_DELAYS_MS = [1000, 3000]
 // One job per picked photo, carrying its paired video: the server matches Live
 // Photo videos to stills by base name within a single request, so splitting a
 // pair across jobs would land the video as an unmatched orphan.
-export function groupAssetsIntoJobs(assets: readonly ImagePickerAsset[]): UploadJobPayload[] {
+export function groupAssetsIntoJobs(
+  assets: readonly ImagePickerAsset[],
+  directory: string | null = null,
+): UploadJobPayload[] {
   const jobs: UploadJobPayload[] = []
   const seen = new Set<string>()
 
@@ -53,7 +59,9 @@ export function groupAssetsIntoJobs(assets: readonly ImagePickerAsset[]): Upload
     jobs.push({
       assets: files,
       bytes: files.reduce((total, file) => total + (file.fileSize ?? 0), 0),
+      directory,
       name: asset.fileName ?? `afilmory-upload-${jobs.length + 1}`,
+      previewUri: asset.uri,
     })
   }
 

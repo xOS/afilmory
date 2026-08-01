@@ -17,9 +17,12 @@ import { parseTags, photoAssetToGalleryPhoto } from '../format'
 import { StudioAccessBoundary, StudioErrorState, StudioLoadingState, StudioPlaceholder } from '../StudioNative'
 import type { PhotoAssetListItem, PhotoAssetSummary } from '../types'
 import { useRemoteResource } from '../useRemoteResource'
+import { rememberRecentTags } from './recentTags'
 import { pickPhotosForUpload } from './upload'
+import { UploadFab } from './UploadFab'
 import { enqueueUploads, onQueueDrained, summarizeQueue, useUploadQueue } from './uploadQueue'
-import { uploadQueuePage } from './uploadQueuePage'
+import { uploadReviewPage } from './uploadReviewPage'
+import { deriveDirectoryFromTags } from './uploadTags'
 
 interface LibraryData {
   assets: PhotoAssetListItem[]
@@ -76,6 +79,16 @@ function StudioLibraryContent() {
     setSelectionMode(event.nativeEvent.active)
   }, [])
 
+  const availableTags = useMemo(() => {
+    const seen = new Set<string>()
+    for (const asset of resource.data?.assets ?? []) {
+      for (const tag of asset.manifest.data.tags ?? []) {
+        seen.add(tag.toLowerCase())
+      }
+    }
+    return [...seen]
+  }, [resource.data?.assets])
+
   const handleUpload = useCallback(async () => {
     if (mutating) {
       return
@@ -85,14 +98,17 @@ function StudioLibraryContent() {
       if (picked.length === 0) {
         return
       }
-      if (enqueueUploads(picked) > 1) {
-        void present(uploadQueuePage)
+      const review = await present(uploadReviewPage, { assets: picked, availableTags })
+      if (review.status !== 'completed') {
+        return
       }
+      rememberRecentTags(review.value.tags)
+      enqueueUploads(review.value.assets, deriveDirectoryFromTags(review.value.tags))
     }
     catch (error) {
       Alert.alert(t('studio.upload.failed'), error instanceof Error ? error.message : t('studio.error.description'))
     }
-  }, [mutating, t])
+  }, [availableTags, mutating, t])
 
   const handleEditTags = useCallback(() => {
     const selectedAssets = resource.data?.assets.filter(asset => selectedIds.includes(asset.id)) ?? []
@@ -190,16 +206,6 @@ function StudioLibraryContent() {
     <View style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
       <Stack.Title>{title}</Stack.Title>
       <Stack.Toolbar placement="right">
-        {!selectionMode && uploadJobs.length > 0 ? (
-          <Stack.Toolbar.Button
-            accessibilityLabel={t('studio.upload.queue.title')}
-            icon={
-              uploadSummary.failed > 0 ? 'exclamationmark.arrow.trianglehead.2.clockwise.rotate.90' : 'arrow.up.circle'
-            }
-            tintColor={uploadSummary.failed > 0 ? palette.danger : undefined}
-            onPress={() => void present(uploadQueuePage)}
-          />
-        ) : null}
         {selectionMode ? (
           <Stack.Toolbar.Button
             accessibilityLabel={t('studio.library.tags.action')}
@@ -263,6 +269,8 @@ function StudioLibraryContent() {
           onSelectionModeChange={handleSelectionModeChange}
         />
       )}
+
+      {selectionMode ? null : <UploadFab jobs={uploadJobs} />}
     </View>
   )
 }

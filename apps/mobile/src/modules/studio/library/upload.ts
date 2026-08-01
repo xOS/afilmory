@@ -28,6 +28,11 @@ export async function uploadJob(
   options: { onPhase: (phase: UploadPhase) => void, signal: AbortSignal },
 ): Promise<void> {
   const body = new FormData()
+  // Must precede the files: the server's multipart parser reads `directory`
+  // as it streams, and a trailing field arrives after the writes are placed.
+  if (payload.directory) {
+    body.append('directory', payload.directory)
+  }
   payload.assets.forEach((asset, index) => {
     body.append('files', {
       name: asset.fileName ?? fallbackFilename(asset, index),

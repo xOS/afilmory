@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { useTranslation } from '@/i18n'
 import type { Palette } from '@/theme/palette'
@@ -16,6 +16,7 @@ import {
   summarizeQueue,
   useUploadQueue,
 } from './uploadQueue'
+import { formatBytes } from './uploadTags'
 
 const STATUS_KEY: Record<UploadJobStatus, string> = {
   cancelled: 'studio.upload.status.cancelled',
@@ -85,39 +86,44 @@ function JobRow({ job, styles }: { job: UploadJob, styles: ReturnType<typeof cre
 
   return (
     <View style={styles.row}>
-      <View style={styles.rowHead}>
-        <Text numberOfLines={1} style={styles.rowName}>
-          {job.name}
-        </Text>
-        <Text style={[styles.rowStatus, statusStyle]}>
-          {t(STATUS_KEY[job.status])}
-          {job.attempt > 1 && active ? ` · ${t('studio.upload.queue.attempt', { attempt: job.attempt })}` : ''}
-        </Text>
-      </View>
-
-      {active ? (
-        <View style={styles.rowTrack}>
-          <View style={[styles.rowTrackFill, { width: `${Math.round(job.progress * 100)}%` }]} />
+      <Image source={{ uri: job.previewUri }} style={styles.rowThumb} />
+      <View style={styles.rowMain}>
+        <View style={styles.rowHead}>
+          <Text numberOfLines={1} style={styles.rowName}>
+            {job.name}
+          </Text>
+          <Text style={[styles.rowStatus, statusStyle]}>
+            {t(STATUS_KEY[job.status])}
+            {job.attempt > 1 && active ? ` · ${t('studio.upload.queue.attempt', { attempt: job.attempt })}` : ''}
+          </Text>
         </View>
-      ) : null}
 
-      {job.error && job.status === 'failed' ? (
-        <Text numberOfLines={2} style={styles.rowError}>
-          {job.error}
-        </Text>
-      ) : null}
+        <Text style={styles.rowMeta}>{formatBytes(job.bytes)}</Text>
 
-      <View style={styles.rowActions}>
         {active ? (
-          <Pressable accessibilityRole="button" onPress={() => cancelUploadJob(job.id)}>
-            <Text style={styles.rowAction}>{t('common.cancel')}</Text>
-          </Pressable>
+          <View style={styles.rowTrack}>
+            <View style={[styles.rowTrackFill, { width: `${Math.round(job.progress * 100)}%` }]} />
+          </View>
         ) : null}
-        {job.status === 'failed' || job.status === 'cancelled' ? (
-          <Pressable accessibilityRole="button" onPress={() => retryUploadJob(job.id)}>
-            <Text style={styles.rowAction}>{t('studio.upload.queue.retry')}</Text>
-          </Pressable>
+
+        {job.error && job.status === 'failed' ? (
+          <Text numberOfLines={2} style={styles.rowError}>
+            {job.error}
+          </Text>
         ) : null}
+
+        <View style={styles.rowActions}>
+          {active ? (
+            <Pressable accessibilityRole="button" onPress={() => cancelUploadJob(job.id)}>
+              <Text style={styles.rowAction}>{t('common.cancel')}</Text>
+            </Pressable>
+          ) : null}
+          {job.status === 'failed' || job.status === 'cancelled' ? (
+            <Pressable accessibilityRole="button" onPress={() => retryUploadJob(job.id)}>
+              <Text style={styles.rowAction}>{t('studio.upload.queue.retry')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     </View>
   )
@@ -138,10 +144,14 @@ function createStyles(palette: Palette) {
       borderCurve: 'continuous',
       borderRadius: 14,
       borderWidth: StyleSheet.hairlineWidth,
-      gap: 8,
-      padding: 12,
+      flexDirection: 'row',
+      gap: 10,
+      padding: 10,
     },
+    rowThumb: { borderCurve: 'continuous', borderRadius: 8, height: 48, width: 48 },
+    rowMain: { flex: 1, gap: 6, justifyContent: 'center' },
     rowHead: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+    rowMeta: { color: palette.textMuted, fontFamily: font.mono, fontSize: 10 },
     rowName: { color: palette.textPrimary, flexShrink: 1, fontFamily: font.mono, fontSize: 12 },
     rowStatus: { fontFamily: font.mono, fontSize: 10, letterSpacing: 0.4 },
     statusIdle: { color: palette.textSecondary },

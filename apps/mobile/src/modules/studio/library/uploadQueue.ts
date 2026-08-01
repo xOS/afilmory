@@ -50,8 +50,8 @@ export function onQueueDrained(listener: () => void): () => void {
   }
 }
 
-export function enqueueUploads(assets: readonly ImagePickerAsset[]): number {
-  const grouped = groupAssetsIntoJobs(assets)
+export function enqueueUploads(assets: readonly ImagePickerAsset[], directory: string | null = null): number {
+  const grouped = groupAssetsIntoJobs(assets, directory)
   if (grouped.length === 0) {
     return 0
   }
@@ -66,6 +66,7 @@ export function enqueueUploads(assets: readonly ImagePickerAsset[]): number {
       error: null,
       id,
       name: payload.name,
+      previewUri: payload.previewUri,
       progress: 0,
       status: 'queued' as const,
     }
