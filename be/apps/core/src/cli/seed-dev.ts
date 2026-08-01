@@ -1,6 +1,6 @@
 import { stdout } from 'node:process'
 
-import { CreateBucketCommand, HeadBucketCommand, S3Client } from '@aws-sdk/client-s3'
+import { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3'
 
 import { APP_GLOBAL_PREFIX } from '../app.constants'
 import { createConfiguredApp } from '../app.factory'
@@ -94,12 +94,37 @@ async function ensureBucket(options: SeedDevCliOptions): Promise<'created' | 'ex
   })
 
   try {
-    await client.send(new HeadBucketCommand({ Bucket: options.bucket }))
-    return 'exists'
-  }
-  catch {
-    await client.send(new CreateBucketCommand({ Bucket: options.bucket }))
-    return 'created'
+    let state: 'created' | 'exists' = 'exists'
+    try {
+      await client.send(new HeadBucketCommand({ Bucket: options.bucket }))
+    }
+    catch {
+      await client.send(new CreateBucketCommand({ Bucket: options.bucket }))
+      state = 'created'
+    }
+
+    // The manifest hands out thumbnail URLs straight from the bucket rather
+    // than through /api/storage/sign, so a private bucket renders the whole
+    // grid as broken images even with secure access enabled.
+    await client.send(
+      new PutBucketPolicyCommand({
+        Bucket: options.bucket,
+        Policy: JSON.stringify({
+          Statement: [
+            {
+              Action: ['s3:GetObject'],
+              Effect: 'Allow',
+              Principal: { AWS: ['*'] },
+              Resource: [`arn:aws:s3:::${options.bucket}/*`],
+              Sid: 'PublicRead',
+            },
+          ],
+          Version: '2012-10-17',
+        }),
+      }),
+    )
+
+    return state
   }
   finally {
     client.destroy()
@@ -183,5 +208,8 @@ async function configureTenantStorage(
   await storageSettings.setMany([
     { key: 'builder.storage.providers', options: { tenantId }, value: JSON.stringify([provider]) },
     { key: 'builder.storage.activeProvider', options: { tenantId }, value: provider.id },
+    // Without this the manifest hands out unsigned public URLs, which a
+    // freshly created RustFS bucket answers with 403.
+    { key: 'photo.storage.secureAccess', options: { tenantId }, value: 'true' },
   ])
 }
