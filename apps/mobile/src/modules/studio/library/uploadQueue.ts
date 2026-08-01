@@ -1,32 +1,40 @@
-import type { ImagePickerAsset } from 'expo-image-picker'
 import { useSyncExternalStore } from 'react'
 
-import { uploadJob } from './upload'
-import type { UploadJob, UploadJobPayload } from './uploadQueueModel'
-import { groupAssetsIntoJobs, isRetryableUploadError, MAX_ATTEMPTS, retryDelayMs } from './uploadQueueModel'
+import { getAuthCookie } from '@/api/auth'
+import { getTenantApiBaseUrl } from '@/api/client'
+import { translate } from '@/i18n'
+import type { NativePickedPhoto, NativeUploadJob } from '@/native/photoUpload'
+import { nativePhotoUpload } from '@/native/photoUpload'
+
+import type { UploadJob } from './uploadQueueModel'
+import { summarizeQueue } from './uploadQueueModel'
 
 export type { UploadJob, UploadJobStatus, UploadQueueSummary } from './uploadQueueModel'
 export { summarizeQueue } from './uploadQueueModel'
 
-let jobs: UploadJob[] = []
-let running = false
-let sequence = 0
+let jobs: UploadJob[] = normalize(nativePhotoUpload.getQueueSnapshot())
+let running = summarizeQueue(jobs).running
 
-const payloads = new Map<string, UploadJobPayload>()
-const controllers = new Map<string, AbortController>()
 const listeners = new Set<() => void>()
 const drainListeners = new Set<() => void>()
 
-function setJobs(next: UploadJob[]) {
-  jobs = next
+function normalize(next: NativeUploadJob[]): UploadJob[] {
+  return next.map(job => ({ ...job, error: job.error ?? null }))
+}
+
+nativePhotoUpload.addListener('onUploadQueueChange', ({ jobs: next }) => {
+  jobs = normalize(next)
   for (const listener of listeners) {
     listener()
   }
-}
-
-function patchJob(id: string, patch: Partial<UploadJob>) {
-  setJobs(jobs.map(job => (job.id === id ? { ...job, ...patch } : job)))
-}
+  const nowRunning = summarizeQueue(jobs).running
+  if (running && !nowRunning) {
+    for (const listener of drainListeners) {
+      listener()
+    }
+  }
+  running = nowRunning
+})
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
@@ -50,168 +58,41 @@ export function onQueueDrained(listener: () => void): () => void {
   }
 }
 
-export function enqueueUploads(assets: readonly ImagePickerAsset[], directory: string | null = null): number {
-  const grouped = groupAssetsIntoJobs(assets, directory)
-  if (grouped.length === 0) {
+export async function enqueueUploads(
+  items: readonly NativePickedPhoto[],
+  directory: string | null = null,
+): Promise<number> {
+  if (items.length === 0) {
     return 0
   }
-
-  const created = grouped.map((payload) => {
-    sequence += 1
-    const id = `upload-${sequence}`
-    payloads.set(id, payload)
-    return {
-      attempt: 0,
-      bytes: payload.bytes,
-      error: null,
-      id,
-      name: payload.name,
-      previewUri: payload.previewUri,
-      progress: 0,
-      status: 'queued' as const,
-    }
+  const cookie = getAuthCookie()
+  if (!cookie) {
+    throw new Error(translate('studio.upload.signInRequired'))
+  }
+  return nativePhotoUpload.enqueueUploads({
+    cookie,
+    directory,
+    endpoint: `${getTenantApiBaseUrl()}/photos/assets/upload`,
+    items: items.map(({ id, name }) => ({ id, name })),
   })
-
-  setJobs([...jobs, ...created])
-  void run()
-  return created.length
 }
 
 export function retryUploadJob(id: string) {
-  const job = jobs.find(entry => entry.id === id)
-  if (!job || (job.status !== 'failed' && job.status !== 'cancelled')) {
-    return
-  }
-  patchJob(id, { attempt: 0, error: null, progress: 0, status: 'queued' })
-  void run()
+  nativePhotoUpload.retryUpload(id)
 }
 
 export function retryFailedUploads() {
-  const ids = new Set(jobs.filter(job => job.status === 'failed' || job.status === 'cancelled').map(job => job.id))
-  if (ids.size === 0) {
-    return
-  }
-  setJobs(
-    jobs.map(job => (ids.has(job.id) ? { ...job, attempt: 0, error: null, progress: 0, status: 'queued' } : job)),
-  )
-  void run()
+  nativePhotoUpload.retryFailedUploads()
 }
 
 export function cancelUploadJob(id: string) {
-  const job = jobs.find(entry => entry.id === id)
-  if (!job || job.status === 'done' || job.status === 'cancelled') {
-    return
-  }
-  patchJob(id, { error: null, status: 'cancelled' })
-  controllers.get(id)?.abort()
+  nativePhotoUpload.cancelUpload(id)
 }
 
 export function cancelAllUploads() {
-  const inFlight = jobs.filter(job => job.status !== 'done' && job.status !== 'cancelled')
-  if (inFlight.length === 0) {
-    return
-  }
-  const ids = new Set(inFlight.map(job => job.id))
-  setJobs(jobs.map(job => (ids.has(job.id) ? { ...job, error: null, status: 'cancelled' as const } : job)))
-  for (const id of ids) {
-    controllers.get(id)?.abort()
-  }
+  nativePhotoUpload.cancelAllUploads()
 }
 
 export function clearFinishedUploads() {
-  const removed = jobs.filter(job => job.status === 'done' || job.status === 'cancelled')
-  if (removed.length === 0) {
-    return
-  }
-  for (const job of removed) {
-    payloads.delete(job.id)
-  }
-  setJobs(jobs.filter(job => job.status !== 'done' && job.status !== 'cancelled'))
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', finish)
-      resolve()
-    }
-    const timer = setTimeout(finish, ms)
-    signal.addEventListener('abort', finish)
-  })
-}
-
-async function run() {
-  if (running) {
-    return
-  }
-  running = true
-
-  try {
-    // Serial by design: measured per-request overhead is ~80ms against ~1.4s of
-    // per-file server work, so overlapping buys little while making progress
-    // attribution and cancellation ambiguous.
-    let next = jobs.find(job => job.status === 'queued')
-    while (next) {
-      await runJob(next.id)
-      next = jobs.find(job => job.status === 'queued')
-    }
-  }
-  finally {
-    running = false
-    for (const listener of drainListeners) {
-      listener()
-    }
-  }
-}
-
-async function runJob(id: string) {
-  const payload = payloads.get(id)
-  if (!payload) {
-    patchJob(id, { error: 'The picked file is no longer available.', status: 'failed' })
-    return
-  }
-
-  const controller = new AbortController()
-  controllers.set(id, controller)
-
-  try {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      if (controller.signal.aborted) {
-        return
-      }
-      patchJob(id, { attempt, error: null, progress: 0, status: 'uploading' })
-
-      try {
-        await uploadJob(payload, {
-          onPhase({ phase, progress }) {
-            patchJob(id, {
-              progress: phase === 'uploading' ? progress * 0.5 : 0.5 + progress * 0.5,
-              status: phase,
-            })
-          },
-          signal: controller.signal,
-        })
-        patchJob(id, { error: null, progress: 1, status: 'done' })
-        return
-      }
-      catch (error) {
-        if (controller.signal.aborted) {
-          return
-        }
-        const message = error instanceof Error ? error.message : 'Upload failed.'
-        if (attempt >= MAX_ATTEMPTS || !isRetryableUploadError(error)) {
-          patchJob(id, { error: message, status: 'failed' })
-          return
-        }
-        // Held as `failed` while waiting so the sheet explains the pause, but
-        // the outer loop must not pick it up again — runJob owns the retry.
-        patchJob(id, { error: message, status: 'failed' })
-        await sleep(retryDelayMs(attempt), controller.signal)
-      }
-    }
-  }
-  finally {
-    controllers.delete(id)
-  }
+  nativePhotoUpload.clearFinishedUploads()
 }

@@ -1,7 +1,10 @@
 # Native upload pipeline — decision record
 
-Status: agreed. Drop `expo-image-picker`; the pipeline moves to Swift end to end,
-including the upload itself. No backend change is required.
+Status: implemented and verified on simulator against the local stack.
+`expo-image-picker` is removed; the pipeline is Swift end to end
+(`PhotoUploadModule` + `UploadCenter` + `UploadJobPreparer`), JS keeps tag
+sanitisation, the review/queue UI mirror, and cookie/endpoint handover. No
+backend change was required.
 
 ## Why the JS picker is being dropped
 
@@ -49,6 +52,14 @@ the final outcome still arrives.
 **`be/apps/core` therefore needs no changes.** The existing SSE endpoint is
 consumed directly from Swift.
 
+One adjacent restriction surfaced during verification: a background session
+also never calls `urlSession(_:dataTask:didReceive:completionHandler:)` — the
+disposition callback cannot wait on a suspended app — so the HTTP status code
+must be read from `task.response` in `didCompleteWithError`. The first build
+read it from the skipped delegate method, every upload "failed" with status 0,
+and the retry ladder re-uploaded each photo three times (the server dutifully
+stored `-2`/`-3`/`-4` copies).
+
 ## What moving to Swift commits us to
 
 1. **The queue moves into Swift.** `uploadQueue.ts` / `uploadQueueModel.ts` were
@@ -94,21 +105,41 @@ or a hand-maintained target, and touches the existing release pipeline. Live
 Activities also have an active-duration ceiling (~8 h) and update-frequency
 budgets.
 
-## Carried over
+## Verified on simulator (local stack)
 
-- `UploadReviewSheetView.swift` is written but never compiled, and its
-  `UploadReviewImage` decodes whole images via `Data(contentsOf:)` before
-  thumbnailing. Replace with `CGImageSourceCreateThumbnailAtIndex` +
-  `kCGImageSourceThumbnailMaxPixelSize`; a grid of 25 MB RAWs will otherwise
-  spike memory.
-- `PhotoSheetsModule` still needs a `presentUploadReview` function.
-- Cancel, failure and retry paths have never run against a real upload — only
-  unit tests. Still owed after the rewrite.
+- Picker → review → upload → queue → done, with tag directory
+  (`local-test/sim-upload/…`) and without (root). Singular/plural `{count}`
+  templates, remove, addMore round-trip (JS re-picks and re-presents with
+  state preserved), suggested tags with recent-first ordering, comma-committed
+  draft tags.
+- All tasks genuinely go to the daemon at once: 8 uploads landed within 200 ms
+  of each other server-side.
+- Cancel of an in-flight task kills the connection; a half-received body
+  produces no server row; sibling uploads are unaffected; a cancelled Live
+  Photo retried later paired correctly (`s-2.heic` + `s-2.mov`,
+  `video.type: "live-photo"` in the manifest).
+- Failure → 3 attempts → terminal `failed` with message; per-row Retry and
+  Retry Failed both re-run from the persisted body file; queue state survives
+  an app relaunch (`state.json` + `getAllTasks` reattach).
+- Body files are deleted on success; Clear Finished removes rows and files.
+- `PHImageManager` previews: `.fastFormat` requests fail with
+  `PHPhotosErrorDomain 3303` for assets without a cached thumbnail — the
+  preview writer uses a network-allowed `.highQualityFormat` request instead.
 
-## Unverified
+## Answered from the old Unverified list
 
-- Timing of response delivery for upload tasks in a background session.
-- Whether re-uploading after a lost response is idempotent.
-  `collectExistingPhotoRecords` matches on `storageKey`, which suggests an update
-  rather than a duplicate, but this has not been exercised.
-- Reading `ph://` assets that are in iCloud but not downloaded locally.
+- **Re-upload after a lost response is NOT idempotent.** The server keeps
+  photo ids unique by suffixing (`IMG_0005-2.jpg`, `-3`, `-4`); duplicates
+  accumulate rather than update. Confirmed empirically by the status-code bug
+  above. Retry-on-uncertainty therefore trades reliability for possible
+  suffixed duplicates.
+
+## Still unverified
+
+- Response delivery timing when the app is suspended or relaunched in the
+  background (all verification ran foregrounded; the
+  `handleEventsForBackgroundURLSession` subscriber is wired but unexercised).
+- Reading `ph://` assets that are in iCloud but not downloaded locally
+  (`isNetworkAccessAllowed` is set, but no iCloud library on the simulator).
+- Limited photo access: picking outside the limited selection is rejected with
+  a message rather than silently dropped, but this path has not been driven.

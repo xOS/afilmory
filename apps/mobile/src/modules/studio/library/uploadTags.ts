@@ -25,20 +25,6 @@ export function deriveDirectoryFromTags(tags: readonly string[]): string | null 
   return segments.length === 0 ? null : segments.join('/')
 }
 
-export function parseTagInput(value: string): string[] {
-  const seen = new Set<string>()
-  const result: string[] = []
-  for (const part of value.split(',')) {
-    const normalized = part.trim().toLowerCase()
-    if (normalized.length === 0 || seen.has(normalized)) {
-      continue
-    }
-    seen.add(normalized)
-    result.push(normalized)
-  }
-  return result
-}
-
 export function mergeRecentTags(incoming: readonly string[], existing: readonly string[]): string[] {
   const seen = new Set<string>()
   const head: string[] = []

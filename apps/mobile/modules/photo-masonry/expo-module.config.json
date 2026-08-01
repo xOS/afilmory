@@ -6,7 +6,9 @@
       "PhotoMapModule",
       "PhotoMasonryModule",
       "PhotoViewerModule",
-      "PhotoSheetsModule"
-    ]
+      "PhotoSheetsModule",
+      "PhotoUploadModule"
+    ],
+    "appDelegateSubscribers": ["UploadAppDelegateSubscriber"]
   }
 }

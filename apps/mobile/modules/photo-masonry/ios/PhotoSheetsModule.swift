@@ -6,6 +6,7 @@ import UIKit
 public final class PhotoSheetsModule: Module {
   private var filterSession: SheetPromiseSession?
   private var profileSession: SheetPromiseSession?
+  private var uploadReviewSession: SheetPromiseSession?
 
   public func definition() -> ModuleDefinition {
     Name("PhotoSheets")
@@ -146,6 +147,59 @@ public final class PhotoSheetsModule: Module {
       }
       hostingController.presentationController?.delegate = session
       presenter.present(hostingController, animated: true)
+    }
+    .runOnQueue(.main)
+
+    AsyncFunction("presentUploadReview") { (request: UploadReviewSheetRecord, promise: Promise) in
+      guard self.uploadReviewSession == nil else {
+        promise.reject("ERR_UPLOAD_REVIEW_ACTIVE", "The upload review sheet is already presented.")
+        return
+      }
+      guard let presenter = self.appContext?.utilities?.currentViewController() else {
+        promise.reject(
+          "ERR_UPLOAD_REVIEW_PRESENTER",
+          "Unable to find a view controller for the upload review sheet."
+        )
+        return
+      }
+
+      let session = SheetPromiseSession(promise: promise) { [weak self] in
+        self?.uploadReviewSession = nil
+      }
+      self.uploadReviewSession = session
+
+      var hostingController: UIHostingController<UploadReviewSheetView>?
+      let rootView = UploadReviewSheetView(
+        items: request.items.map { UploadReviewItem(id: $0.id, isLivePhoto: $0.isLivePhoto) },
+        initialTags: request.initialTags,
+        suggestedTags: request.suggestedTags,
+        localization: request.localization
+      ) { [weak session] outcome in
+        switch outcome {
+        case .cancel:
+          session?.cancel()
+        case .start(let itemIds, let tags):
+          session?.complete(with: ["action": "start", "itemIds": itemIds, "tags": tags])
+        case .addMore(let itemIds, let tags):
+          session?.complete(with: ["action": "addMore", "itemIds": itemIds, "tags": tags])
+        }
+        hostingController?.dismiss(animated: true)
+      }
+      let host = UIHostingController(rootView: rootView)
+      hostingController = host
+      host.navigationItem.title = request.localization.title
+
+      let navigationController = self.makeNavigationController(
+        root: host,
+        presenter: presenter,
+        anchor: nil,
+        preferredContentSize: CGSize(width: 560, height: 720)
+      )
+      if let sheet = navigationController.sheetPresentationController {
+        sheet.selectedDetentIdentifier = .large
+      }
+      navigationController.presentationController?.delegate = session
+      presenter.present(navigationController, animated: true)
     }
     .runOnQueue(.main)
   }

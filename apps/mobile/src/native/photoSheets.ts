@@ -130,10 +130,42 @@ interface NativeProfileSheetPayload extends NativeProfileSheet {
 
 export type NativeProfileAction = 'signOut'
 
+export interface NativeUploadReviewItem {
+  id: string
+  isLivePhoto: boolean
+}
+
+export interface NativeUploadReviewResult {
+  action: 'addMore' | 'start'
+  itemIds: string[]
+  tags: string[]
+}
+
+interface NativeUploadReviewLocalization {
+  addMore: string
+  cancel: string
+  remove: string
+  startOne: string
+  startOther: string
+  summaryOne: string
+  summaryOther: string
+  tagsLabel: string
+  tagsPlaceholder: string
+  title: string
+}
+
+interface NativeUploadReviewRequest {
+  items: NativeUploadReviewItem[]
+  initialTags: string[]
+  suggestedTags: string[]
+  localization: NativeUploadReviewLocalization
+}
+
 interface PhotoSheetsNativeModule {
   presentPhotoInfo: (info: NativePhotoInfoSheetPayload) => Promise<void>
   presentPhotoFilters: (request: NativePhotoFilterSheetRequest) => Promise<PhotoFilters | null>
   presentProfile: (profile: NativeProfileSheetPayload) => Promise<NativeProfileAction | null>
+  presentUploadReview: (request: NativeUploadReviewRequest) => Promise<NativeUploadReviewResult | null>
 }
 
 const nativePhotoSheets = requireNativeModule('PhotoSheets') as PhotoSheetsNativeModule
@@ -200,6 +232,32 @@ export function presentNativePhotoFilters(
       to: translate('action.date.to'),
     },
     options,
+  })
+}
+
+export function presentNativeUploadReview(
+  items: NativeUploadReviewItem[],
+  initialTags: string[],
+  suggestedTags: string[],
+): Promise<NativeUploadReviewResult | null> {
+  return nativePhotoSheets.presentUploadReview({
+    initialTags,
+    items,
+    // The native sheet mutates the item count as thumbnails are removed, so it
+    // receives raw {count} templates rather than pre-rendered strings.
+    localization: {
+      addMore: translate('studio.upload.review.addMore'),
+      cancel: translate('common.cancel'),
+      remove: translate('studio.upload.review.remove'),
+      startOne: translate('studio.upload.review.startTemplate_one'),
+      startOther: translate('studio.upload.review.startTemplate_other'),
+      summaryOne: translate('studio.upload.review.summaryTemplate_one'),
+      summaryOther: translate('studio.upload.review.summaryTemplate_other'),
+      tagsLabel: translate('studio.upload.review.tagsLabel'),
+      tagsPlaceholder: translate('studio.upload.review.tagsPlaceholder'),
+      title: translate('studio.upload.review.title'),
+    },
+    suggestedTags,
   })
 }
 

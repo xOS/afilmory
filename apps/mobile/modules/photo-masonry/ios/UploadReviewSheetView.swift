@@ -1,16 +1,17 @@
+import Photos
 import SwiftUI
 
 struct UploadReviewItem: Identifiable, Equatable {
   let id: String
-  let assetUri: String
   let isLivePhoto: Bool
 }
 
 enum UploadReviewOutcome {
   case cancel
   case start(itemIds: [String], tags: [String])
-  // Re-picking lives in JS so the native sheet never owns a second presentation:
-  // it hands back its current state, JS merges the new assets and re-presents.
+  // Re-picking lives in JS so the native sheet never owns a second
+  // presentation: it hands back its current state, JS merges the new assets
+  // and re-presents.
   case addMore(itemIds: [String], tags: [String])
 }
 
@@ -18,7 +19,7 @@ struct UploadReviewSheetView: View {
   let localization: UploadReviewLocalizationRecord
   let suggestedTags: [String]
   @State private var items: [UploadReviewItem]
-  @State private var tags: [String] = []
+  @State private var tags: [String]
   @State private var draft = ""
   @FocusState private var draftFocused: Bool
 
@@ -27,11 +28,13 @@ struct UploadReviewSheetView: View {
 
   init(
     items: [UploadReviewItem],
+    initialTags: [String],
     suggestedTags: [String],
     localization: UploadReviewLocalizationRecord,
     onFinish: @escaping (UploadReviewOutcome) -> Void
   ) {
     self._items = State(initialValue: items)
+    self._tags = State(initialValue: initialTags)
     self.suggestedTags = suggestedTags
     self.localization = localization
     self.onFinish = onFinish
@@ -45,7 +48,7 @@ struct UploadReviewSheetView: View {
     VStack(spacing: 0) {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-          Text(localization.summary)
+          Text(localization.summary(count: items.count))
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
@@ -75,7 +78,7 @@ struct UploadReviewSheetView: View {
         Button {
           onFinish(.start(itemIds: items.map(\.id), tags: tags))
         } label: {
-          Text(localization.start).frame(maxWidth: .infinity)
+          Text(localization.start(count: items.count)).frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
@@ -161,8 +164,9 @@ private struct UploadReviewThumbnail: View {
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
-      UploadReviewImage(uri: item.assetUri)
+      Color(.tertiarySystemFill)
         .aspectRatio(1, contentMode: .fill)
+        .overlay(UploadReviewAssetImage(assetId: item.id))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
       Button(action: onRemove) {
@@ -186,27 +190,46 @@ private struct UploadReviewThumbnail: View {
   }
 }
 
-// expo-image-picker hands back file:// URLs in the app container, which
-// AsyncImage does not load, so the bytes are read directly off disk.
-private struct UploadReviewImage: View {
-  let uri: String
+private struct UploadReviewAssetImage: View {
+  let assetId: String
   @State private var image: UIImage?
 
   var body: some View {
-    Group {
-      if let image {
-        Image(uiImage: image).resizable().scaledToFill()
-      } else {
-        Color(.tertiarySystemFill)
+    GeometryReader { proxy in
+      Group {
+        if let image {
+          Image(uiImage: image)
+            .resizable()
+            .scaledToFill()
+        } else {
+          Color.clear
+        }
       }
+      .frame(width: proxy.size.width, height: proxy.size.height)
+      .clipped()
     }
-    .task(id: uri) {
-      guard image == nil, let url = URL(string: uri), url.isFileURL else { return }
-      let loaded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 300, height: 300))
-      }.value
-      image = loaded
+    .onAppear(perform: load)
+  }
+
+  private func load() {
+    guard image == nil else { return }
+    let assetId = self.assetId
+    DispatchQueue.global(qos: .userInitiated).async {
+      guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil).firstObject
+      else { return }
+      let options = PHImageRequestOptions()
+      options.deliveryMode = .opportunistic
+      options.isNetworkAccessAllowed = true
+      options.resizeMode = .fast
+      PHImageManager.default().requestImage(
+        for: asset,
+        targetSize: CGSize(width: 300, height: 300),
+        contentMode: .aspectFill,
+        options: options
+      ) { result, _ in
+        guard let result else { return }
+        DispatchQueue.main.async { image = result }
+      }
     }
   }
 }

@@ -9,7 +9,8 @@ import { useAuth } from '@/modules/auth/sessionStore'
 import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
-import { present } from '@/presentation'
+import { presentNativeUploadReview } from '@/native/photoSheets'
+import { pickNativePhotos } from '@/native/photoUpload'
 import { useTheme } from '@/theme/useTheme'
 
 import { deletePhotoAssets, getPhotoAssetSummary, listPhotoAssets, updatePhotoAssetTags } from '../api'
@@ -17,12 +18,10 @@ import { parseTags, photoAssetToGalleryPhoto } from '../format'
 import { StudioAccessBoundary, StudioErrorState, StudioLoadingState, StudioPlaceholder } from '../StudioNative'
 import type { PhotoAssetListItem, PhotoAssetSummary } from '../types'
 import { useRemoteResource } from '../useRemoteResource'
-import { rememberRecentTags } from './recentTags'
-import { pickPhotosForUpload } from './upload'
+import { getRecentTags, rememberRecentTags } from './recentTags'
 import { UploadFab } from './UploadFab'
 import { enqueueUploads, onQueueDrained, summarizeQueue, useUploadQueue } from './uploadQueue'
-import { uploadReviewPage } from './uploadReviewPage'
-import { deriveDirectoryFromTags } from './uploadTags'
+import { deriveDirectoryFromTags, orderTagSuggestions } from './uploadTags'
 
 interface LibraryData {
   assets: PhotoAssetListItem[]
@@ -94,16 +93,25 @@ function StudioLibraryContent() {
       return
     }
     try {
-      const picked = await pickPhotosForUpload()
-      if (picked.length === 0) {
-        return
+      let items = await pickNativePhotos()
+      let tags: string[] = []
+      while (items.length > 0) {
+        const review = await presentNativeUploadReview(items, tags, orderTagSuggestions(availableTags, getRecentTags()))
+        if (!review) {
+          return
+        }
+        const kept = new Set(review.itemIds)
+        items = items.filter(item => kept.has(item.id))
+        tags = review.tags
+        if (review.action === 'start') {
+          rememberRecentTags(tags)
+          await enqueueUploads(items, deriveDirectoryFromTags(tags))
+          return
+        }
+        const seen = new Set(items.map(item => item.id))
+        const more = await pickNativePhotos()
+        items = [...items, ...more.filter(item => !seen.has(item.id))]
       }
-      const review = await present(uploadReviewPage, { assets: picked, availableTags })
-      if (review.status !== 'completed') {
-        return
-      }
-      rememberRecentTags(review.value.tags)
-      enqueueUploads(review.value.assets, deriveDirectoryFromTags(review.value.tags))
     }
     catch (error) {
       Alert.alert(t('studio.upload.failed'), error instanceof Error ? error.message : t('studio.error.description'))

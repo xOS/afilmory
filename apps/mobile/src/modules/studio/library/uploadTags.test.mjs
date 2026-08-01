@@ -6,7 +6,6 @@ import {
   deriveDirectoryFromTags,
   mergeRecentTags,
   orderTagSuggestions,
-  parseTagInput,
   sanitizeTagSegment,
 } from './uploadTags.ts'
 
@@ -34,11 +33,6 @@ test('tags join into a nested directory, empties drop out', () => {
   assert.equal(deriveDirectoryFromTags([]), null)
   assert.equal(deriveDirectoryFromTags(['', '   ']), null)
   assert.equal(deriveDirectoryFromTags(['ok', '///']), 'ok')
-})
-
-test('comma input is split, lowercased and deduped', () => {
-  assert.deepEqual(parseTagInput('Travel, japan ,TRAVEL,'), ['travel', 'japan'])
-  assert.deepEqual(parseTagInput('   '), [])
 })
 
 test('recent tags keep newest first and cap at the limit', () => {

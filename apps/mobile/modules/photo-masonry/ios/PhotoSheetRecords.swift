@@ -196,7 +196,6 @@ struct ProfileSheetRecord: Record {
 
 struct UploadReviewItemRecord: Record {
   @Field var id: String = ""
-  @Field var assetUri: String = ""
   @Field var isLivePhoto: Bool = false
 }
 
@@ -204,24 +203,32 @@ struct UploadReviewLocalizationRecord: Record {
   @Field var addMore: String = ""
   @Field var cancel: String = ""
   @Field var remove: String = ""
-  @Field var start: String = ""
-  @Field var summary: String = ""
+  @Field var startOne: String = ""
+  @Field var startOther: String = ""
+  @Field var summaryOne: String = ""
+  @Field var summaryOther: String = ""
   @Field var tagsLabel: String = ""
   @Field var tagsPlaceholder: String = ""
   @Field var title: String = ""
+
+  func start(count: Int) -> String {
+    template(count == 1 ? startOne : startOther, count: count)
+  }
+
+  func summary(count: Int) -> String {
+    template(count == 1 ? summaryOne : summaryOther, count: count)
+  }
+
+  // Item count changes as the user removes thumbnails, so JS hands over raw
+  // {count} templates instead of pre-rendered strings.
+  private func template(_ value: String, count: Int) -> String {
+    value.replacingOccurrences(of: "{count}", with: String(count))
+  }
 }
 
 struct UploadReviewSheetRecord: Record {
   @Field var items: [UploadReviewItemRecord] = []
+  @Field var initialTags: [String] = []
   @Field var suggestedTags: [String] = []
   @Field var localization: UploadReviewLocalizationRecord = .init()
-}
-
-struct UploadReviewResultRecord {
-  let itemIds: [String]
-  let tags: [String]
-
-  var dictionary: [String: Any] {
-    ["itemIds": itemIds, "tags": tags]
-  }
 }
