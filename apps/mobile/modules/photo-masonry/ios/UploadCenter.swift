@@ -93,6 +93,10 @@ final class UploadCenter: NSObject {
     stateQueue.sync { snapshotLocked() }
   }
 
+  func currentJobs() -> [UploadJobState] {
+    stateQueue.sync { jobs }
+  }
+
   func observe(_ handler: @escaping ([UploadJobState]) -> Void) -> UUID {
     let token = UUID()
     stateQueue.sync {
@@ -203,6 +207,7 @@ final class UploadCenter: NSObject {
     jobs[index].status = .queued
     jobs[index].attempt = 1
     jobs[index].error = nil
+    jobs[index].serverMessage = nil
     jobs[index].progress = 0
     if FileManager.default.fileExists(atPath: Self.bodyURL(id).path) {
       startTaskLocked(jobId: id, delay: 0)
@@ -317,6 +322,7 @@ final class UploadCenter: NSObject {
       jobs[index].status = .done
       jobs[index].progress = 1
       jobs[index].error = nil
+      jobs[index].serverMessage = nil
       try? FileManager.default.removeItem(at: Self.bodyURL(jobId))
       persistLocked()
       scheduleEmitLocked()
@@ -390,6 +396,12 @@ final class UploadCenter: NSObject {
         job.status = .processing
         job.progress = 0.5 + min(1, current / total) * 0.5
       }
+    case "log":
+      if let message = (payload["payload"] as? [String: Any])?["message"] as? String {
+        updateJobLocked(jobId) { job in
+          job.serverMessage = message
+        }
+      }
     case "complete":
       state.sawComplete = true
       updateJobLocked(jobId) { job in
@@ -441,6 +453,7 @@ final class UploadCenter: NSObject {
       let observers = Array(self.jobObservers.values)
       DispatchQueue.main.async {
         self.onChange?(payload)
+        UploadActivityController.shared.sync(jobs: typed)
         for observer in observers {
           observer(typed)
         }

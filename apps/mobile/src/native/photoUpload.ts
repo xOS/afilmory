@@ -23,6 +23,7 @@ export interface NativeUploadJob {
 }
 
 export interface NativeUploadEnqueueRequest {
+  activityTitle: string
   cookie: string
   directory: string | null
   endpoint: string

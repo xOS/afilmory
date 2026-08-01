@@ -79,9 +79,7 @@ final class LivePhotoBadgeView: UIButton {
   private static let chevronSpacing: CGFloat = 3
   private static let foreground = UIColor.white.withAlphaComponent(0.75)
 
-  private let backgroundView = UIVisualEffectView(
-    effect: UIBlurEffect(style: .systemUltraThinMaterialDark)
-  )
+  private let backgroundView = UIVisualEffectView(effect: UIGlassEffect(style: .clear))
   private let glyphView = UIImageView()
   private let captionLabel = UILabel()
   private let chevronView = UIImageView()
@@ -100,8 +98,6 @@ final class LivePhotoBadgeView: UIButton {
     backgroundView.isUserInteractionEnabled = false
     backgroundView.clipsToBounds = true
     backgroundView.layer.cornerCurve = .continuous
-    backgroundView.layer.borderWidth = 0.5
-    backgroundView.layer.borderColor = UIColor.white.withAlphaComponent(0.14).cgColor
     addSubview(backgroundView)
 
     glyphView.tintColor = Self.foreground

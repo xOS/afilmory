@@ -231,6 +231,7 @@
   "studio.site.subtitle": "品牌、社交連結、訂閱來源與地圖",
   "studio.site.title": "網站設定",
   "studio.upload.action": "上載相片",
+  "studio.upload.activity.title": "正在上載相片",
   "studio.upload.failed": "上載失敗",
   "studio.upload.queue.attempt": "第 {attempt} 次嘗試",
   "studio.upload.queue.cancelAll": "全部取消",

@@ -6,7 +6,11 @@ final class PhotoDetailScrimView: UIView {
     case top
   }
 
-  static let alpha: CGFloat = 0.38
+  // Photos draws no scrim at all — every control it floats over a photo carries
+  // its own glass. Ours do too now, so this is a depth cue at the frame edges
+  // rather than a legibility device, and it is held below the opacity where it
+  // starts reading as a grey band.
+  static let alpha: CGFloat = 0.18
   static let span: CGFloat = 96
 
   private let gradientLayer = CAGradientLayer()

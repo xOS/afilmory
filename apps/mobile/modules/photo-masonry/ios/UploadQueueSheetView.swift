@@ -108,6 +108,14 @@ enum UploadQueuePresenter {
       rootView: UploadQueueSheetView(model: UploadQueueViewModel(), localization: localization)
     )
     hostingController.navigationItem.title = localization.title
+    hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+      image: UIImage(systemName: "ellipsis.circle"),
+      menu: UIMenu(children: [
+        UIDeferredMenuElement.uncached { completion in
+          completion(overflowActions(localization: localization))
+        },
+      ])
+    )
     hostingController.navigationItem.rightBarButtonItem = UIBarButtonItem(
       title: localization.done,
       image: nil,
@@ -127,6 +135,33 @@ enum UploadQueuePresenter {
     }
     current = navigationController
     presenter.present(navigationController, animated: true)
+  }
+
+  private static func overflowActions(localization: UploadQueueLocalization) -> [UIMenuElement] {
+    let jobs = UploadCenter.shared.currentJobs()
+    var actions: [UIMenuElement] = []
+    if jobs.contains(where: { $0.status.isActive }) {
+      actions.append(
+        UIAction(title: localization.cancelAll, image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { _ in
+          UploadCenter.shared.cancelAll()
+        }
+      )
+    }
+    if jobs.contains(where: { $0.status == .failed || $0.status == .cancelled }) {
+      actions.append(
+        UIAction(title: localization.retryAll, image: UIImage(systemName: "arrow.clockwise")) { _ in
+          UploadCenter.shared.retryAllFailed()
+        }
+      )
+    }
+    if jobs.contains(where: { $0.status == .done || $0.status == .cancelled }) {
+      actions.append(
+        UIAction(title: localization.clear, image: UIImage(systemName: "trash")) { _ in
+          UploadCenter.shared.clearFinished()
+        }
+      )
+    }
+    return actions
   }
 }
 
@@ -164,40 +199,42 @@ struct UploadQueueSheetView: View {
     }
   }
 
+  // One full-width primary action; everything else lives in the navigation
+  // bar's overflow menu so labels never wrap into a cramped three-button row.
   @ViewBuilder
   private func actionBar(summary: UploadQueueSummary) -> some View {
     let retryable = model.jobs.contains { $0.status == .failed || $0.status == .cancelled }
     let clearable = model.jobs.contains { $0.status == .done || $0.status == .cancelled }
-    if summary.running || retryable || clearable {
-      HStack(spacing: 10) {
-        if summary.running {
-          Button(role: .destructive) {
-            UploadCenter.shared.cancelAll()
-          } label: {
-            Text(localization.cancelAll).frame(maxWidth: .infinity)
-          }
-        }
-        if retryable {
-          Button {
-            UploadCenter.shared.retryAllFailed()
-          } label: {
-            Text(localization.retryAll).frame(maxWidth: .infinity)
-          }
-        }
-        if clearable {
-          Button {
-            UploadCenter.shared.clearFinished()
-          } label: {
-            Text(localization.clear).frame(maxWidth: .infinity)
-          }
-        }
+    if summary.running {
+      primaryAction(localization.cancelAll, role: .destructive) {
+        UploadCenter.shared.cancelAll()
       }
-      .buttonStyle(.bordered)
-      .controlSize(.large)
-      .padding(.horizontal, 16)
-      .padding(.vertical, 10)
-      .background(.bar)
+    } else if retryable {
+      primaryAction(localization.retryAll) {
+        UploadCenter.shared.retryAllFailed()
+      }
+    } else if clearable {
+      primaryAction(localization.clear) {
+        UploadCenter.shared.clearFinished()
+      }
     }
+  }
+
+  private func primaryAction(
+    _ title: String,
+    role: ButtonRole? = nil,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(role: role, action: action) {
+      Text(title)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.large)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 10)
+    .background(.bar)
   }
 }
 
@@ -231,6 +268,14 @@ private struct UploadQueueRow: View {
         if isActive {
           ProgressView(value: job.progress)
             .tint(.accentColor)
+        }
+
+        if let serverMessage = job.serverMessage, isActive {
+          Text(serverMessage)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .contentTransition(.opacity)
         }
 
         if let error = job.error, job.status == .failed {

@@ -6,6 +6,7 @@ final class PhotoDetailToolbar: UIToolbar {
   var onComments: (() -> Void)?
   var onReactions: (() -> Void)?
 
+  private static let commentsAccessibilityIdentifier = "photo-detail-comments"
   private static let reactionsAccessibilityIdentifier = "photo-detail-reactions"
   // The face.smiling family is drawn the wrong way round: the base symbol is the
   // solid glyph and `.fill` is the outlined one.
@@ -14,14 +15,14 @@ final class PhotoDetailToolbar: UIToolbar {
 
   private let shareItem = UIBarButtonItem(image: UIImage(systemName: "square.and.arrow.up"), style: .plain, target: nil, action: nil)
   private let infoItem = UIBarButtonItem(image: UIImage(systemName: "info.circle"), style: .plain, target: nil, action: nil)
+  private let commentsItem = UIBarButtonItem(image: UIImage(systemName: "bubble.left"), style: .plain, target: nil, action: nil)
   private let reactionsItem = UIBarButtonItem(
     image: UIImage(systemName: PhotoDetailToolbar.reactionsInactiveSymbol),
     style: .plain,
     target: nil,
     action: nil
   )
-  private let commentsButton = PhotoDetailCommentsButton()
-  private lazy var commentsItem = UIBarButtonItem(customView: commentsButton)
+  private let commentBadge = PhotoDetailCommentBadge()
 
   private var socialActionsEnabled = true
 
@@ -30,13 +31,15 @@ final class PhotoDetailToolbar: UIToolbar {
   override init(frame: CGRect) {
     super.init(frame: frame)
 
+    // The backdrop is always black; without this the glass bar items resolve
+    // against the ambient trait and wash out.
     overrideUserInterfaceStyle = .dark
     tintColor = .white
 
     shareItem.accessibilityIdentifier = "photo-detail-share"
     infoItem.accessibilityIdentifier = "photo-detail-info"
+    commentsItem.accessibilityIdentifier = Self.commentsAccessibilityIdentifier
     reactionsItem.accessibilityIdentifier = Self.reactionsAccessibilityIdentifier
-    commentsButton.accessibilityIdentifier = "photo-detail-comments"
 
     let appearance = UIToolbarAppearance()
     appearance.configureWithTransparentBackground()
@@ -45,15 +48,21 @@ final class PhotoDetailToolbar: UIToolbar {
 
     shareItem.primaryAction = UIAction { [weak self] _ in self?.onShare?() }
     infoItem.primaryAction = UIAction { [weak self] _ in self?.onInfo?() }
+    commentsItem.primaryAction = UIAction { [weak self] _ in self?.onComments?() }
     reactionsItem.primaryAction = UIAction { [weak self] _ in self?.onReactions?() }
-    commentsButton.addAction(UIAction { [weak self] _ in self?.onComments?() }, for: .touchUpInside)
 
+    addSubview(commentBadge)
     updateItems()
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) is not supported")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layoutCommentBadge()
   }
 
   func setSocialActionsEnabled(_ enabled: Bool) {
@@ -63,17 +72,20 @@ final class PhotoDetailToolbar: UIToolbar {
   }
 
   func setInfoActive(_ active: Bool) {
+    infoItem.isSelected = active
     infoItem.image = UIImage(systemName: active ? "info.circle.fill" : "info.circle")
   }
 
   func setReactionsActive(_ active: Bool) {
+    reactionsItem.isSelected = active
     reactionsItem.image = UIImage(
       systemName: active ? Self.reactionsActiveSymbol : Self.reactionsInactiveSymbol
     )
   }
 
   func setCommentCount(_ count: Int) {
-    commentsButton.count = count
+    commentBadge.count = count
+    setNeedsLayout()
   }
 
   func setShareAccessibilityLabel(_ label: String) {
@@ -85,7 +97,7 @@ final class PhotoDetailToolbar: UIToolbar {
   }
 
   func setCommentsAccessibilityLabel(_ label: String) {
-    commentsButton.accessibilityLabel = label
+    commentsItem.accessibilityLabel = label
   }
 
   func setReactionsAccessibilityLabel(_ label: String) {
@@ -113,49 +125,72 @@ final class PhotoDetailToolbar: UIToolbar {
     return nil
   }
 
+  // Bar items have no badge API, so the badge is an overlay pinned to the item's
+  // own glass circle at 45°, read back from the laid-out item rather than guessed.
+  private func layoutCommentBadge() {
+    guard socialActionsEnabled,
+          !commentBadge.isHidden,
+          let itemView = firstDescendant(withAccessibilityIdentifier: Self.commentsAccessibilityIdentifier)
+    else {
+      commentBadge.isHidden = true
+      return
+    }
+
+    let itemFrame = itemView.convert(itemView.bounds, to: self)
+    let diagonal = min(itemFrame.width, itemFrame.height) / 2 / CGFloat(2).squareRoot()
+    let anchor = CGPoint(x: itemFrame.midX + diagonal, y: itemFrame.midY - diagonal)
+    let size = commentBadge.badgeSize
+    commentBadge.frame = CGRect(
+      x: anchor.x - size.width / 2,
+      y: anchor.y - size.height / 2,
+      width: size.width,
+      height: size.height
+    )
+    commentBadge.layer.cornerRadius = size.height / 2
+  }
+
   private func updateItems() {
     var barItems: [UIBarButtonItem] = [shareItem, .flexibleSpace(), infoItem]
     if socialActionsEnabled {
       barItems += [.flexibleSpace(), commentsItem, .flexibleSpace(), reactionsItem]
     }
     setItems(barItems, animated: false)
-    commentsButton.badgeVisible = socialActionsEnabled
+    commentBadge.isEnabledForBar = socialActionsEnabled
+    setNeedsLayout()
   }
 }
 
-private final class PhotoDetailCommentsButton: UIButton {
-  private static let badgeMinHeight: CGFloat = 16
-  private static let badgeHorizontalPadding: CGFloat = 5
-
-  private let badgeLabel = UILabel()
+private final class PhotoDetailCommentBadge: UILabel {
+  private static let minHeight: CGFloat = 16
+  private static let horizontalPadding: CGFloat = 5
 
   var count = 0 {
-    didSet { updateBadge() }
+    didSet { updateVisibility() }
   }
 
-  var badgeVisible = false {
-    didSet { updateBadge() }
+  var isEnabledForBar = false {
+    didSet { updateVisibility() }
   }
 
-  override init(frame: CGRect) {
-    super.init(frame: frame)
+  var badgeSize: CGSize {
+    let height = Self.minHeight
+    return CGSize(width: max(height, intrinsicContentSize.width + Self.horizontalPadding * 2), height: height)
+  }
 
-    var configuration = UIButton.Configuration.plain()
-    configuration.image = UIImage(systemName: "bubble.left")
-    self.configuration = configuration
+  init() {
+    super.init(frame: .zero)
 
-    badgeLabel.backgroundColor = .systemRed
-    badgeLabel.clipsToBounds = true
-    badgeLabel.font = .monospacedDigitSystemFont(
+    backgroundColor = .systemRed
+    clipsToBounds = true
+    font = .monospacedDigitSystemFont(
       ofSize: UIFont.preferredFont(forTextStyle: .caption2).pointSize,
       weight: .semibold
     )
-    badgeLabel.isAccessibilityElement = false
-    badgeLabel.isHidden = true
-    badgeLabel.layer.cornerCurve = .continuous
-    badgeLabel.textAlignment = .center
-    badgeLabel.textColor = .white
-    addSubview(badgeLabel)
+    isAccessibilityElement = false
+    isHidden = true
+    layer.cornerCurve = .continuous
+    textAlignment = .center
+    textColor = .white
   }
 
   @available(*, unavailable)
@@ -163,18 +198,9 @@ private final class PhotoDetailCommentsButton: UIButton {
     fatalError("init(coder:) is not supported")
   }
 
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    guard !badgeLabel.isHidden, let iconFrame = imageView?.frame else { return }
-    let height = Self.badgeMinHeight
-    let width = max(height, badgeLabel.intrinsicContentSize.width + Self.badgeHorizontalPadding * 2)
-    badgeLabel.frame = CGRect(x: iconFrame.maxX - width / 2, y: iconFrame.minY - height / 2, width: width, height: height)
-    badgeLabel.layer.cornerRadius = height / 2
-  }
-
-  private func updateBadge() {
-    badgeLabel.text = count > 99 ? "99+" : "\(count)"
-    badgeLabel.isHidden = !(badgeVisible && count > 0)
-    setNeedsLayout()
+  private func updateVisibility() {
+    text = count > 99 ? "99+" : "\(count)"
+    isHidden = !(isEnabledForBar && count > 0)
+    superview?.setNeedsLayout()
   }
 }

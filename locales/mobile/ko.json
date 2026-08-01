@@ -231,6 +231,7 @@
   "studio.site.subtitle": "브랜딩, 소셜 링크, 피드 및 지도",
   "studio.site.title": "사이트 설정",
   "studio.upload.action": "사진 업로드",
+  "studio.upload.activity.title": "사진 업로드 중",
   "studio.upload.failed": "업로드 실패",
   "studio.upload.queue.attempt": "{attempt}번째 시도",
   "studio.upload.queue.cancelAll": "모두 취소",

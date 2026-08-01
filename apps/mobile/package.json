@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@bacons/apple-targets": "^5.0.0",
     "@better-auth/expo": "1.6.19",
     "@expo/ui": "~57.0.7",
     "@react-native-community/datetimepicker": "9.1.0",

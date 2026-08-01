@@ -231,6 +231,7 @@
   "studio.site.subtitle": "品牌、社交链接、订阅源与地图",
   "studio.site.title": "站点设置",
   "studio.upload.action": "上传照片",
+  "studio.upload.activity.title": "正在上传照片",
   "studio.upload.failed": "上传失败",
   "studio.upload.queue.attempt": "第 {attempt} 次尝试",
   "studio.upload.queue.cancelAll": "全部取消",

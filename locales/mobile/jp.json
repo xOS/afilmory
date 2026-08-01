@@ -231,6 +231,7 @@
   "studio.site.subtitle": "ブランド、ソーシャルリンク、フィード、地図",
   "studio.site.title": "サイト設定",
   "studio.upload.action": "写真をアップロード",
+  "studio.upload.activity.title": "写真をアップロード中",
   "studio.upload.failed": "アップロードに失敗しました",
   "studio.upload.queue.attempt": "{attempt} 回目",
   "studio.upload.queue.cancelAll": "すべてキャンセル",

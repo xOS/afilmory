@@ -32,6 +32,7 @@
         "CFBundleLocalizations": ["en", "zh-Hans", "zh-HK", "zh-TW", "ja", "ko"],
         "LSApplicationCategoryType": "public.app-category.photography",
         "NSPhotoLibraryUsageDescription": "Allow Afilmory Studio to select photos for your gallery.",
+        "NSSupportsLiveActivities": true,
         "UIViewControllerBasedStatusBarAppearance": true
       }
     },
@@ -40,6 +41,7 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
+      "@bacons/apple-targets",
       "expo-router",
       [
         "expo-splash-screen",

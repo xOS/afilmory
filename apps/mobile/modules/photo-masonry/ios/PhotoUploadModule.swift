@@ -44,7 +44,8 @@ public final class PhotoUploadModule: Module {
     .runOnQueue(.main)
 
     AsyncFunction("enqueueUploads") { (request: UploadEnqueueRecord) -> Int in
-      UploadCenter.shared.enqueue(
+      UploadActivityController.shared.setTitle(request.activityTitle)
+      return UploadCenter.shared.enqueue(
         endpoint: request.endpoint,
         cookie: request.cookie,
         directory: request.directory,

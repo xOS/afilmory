@@ -70,6 +70,7 @@ export async function enqueueUploads(
     throw new Error(translate('studio.upload.signInRequired'))
   }
   return nativePhotoUpload.enqueueUploads({
+    activityTitle: translate('studio.upload.activity.title'),
     cookie,
     directory,
     endpoint: `${getTenantApiBaseUrl()}/photos/assets/upload`,

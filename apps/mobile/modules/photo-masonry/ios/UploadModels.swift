@@ -24,6 +24,7 @@ struct UploadJobState: Codable {
   var progress: Double
   var attempt: Int
   var error: String?
+  var serverMessage: String?
   var endpoint: String
   var directory: String?
   var boundary: String
@@ -38,6 +39,7 @@ struct UploadEnqueueRecord: Record {
   @Field var endpoint: String = ""
   @Field var cookie: String = ""
   @Field var directory: String?
+  @Field var activityTitle: String = ""
   @Field var items: [UploadEnqueueItemRecord] = []
 }
 

@@ -233,6 +233,7 @@
   "studio.site.subtitle": "Branding, social links, feed, and map",
   "studio.site.title": "Site Settings",
   "studio.upload.action": "Upload Photos",
+  "studio.upload.activity.title": "Uploading photos",
   "studio.upload.failed": "Upload failed",
   "studio.upload.queue.attempt": "attempt {attempt}",
   "studio.upload.queue.cancelAll": "Cancel All",

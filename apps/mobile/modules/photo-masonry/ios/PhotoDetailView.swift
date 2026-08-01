@@ -158,6 +158,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
 
     pageControl.isUserInteractionEnabled = false
     pageControl.overrideUserInterfaceStyle = .dark
+    // Bare dots vanish into a bright frame; the prominent style is UIKit's own
+    // backdrop for a page control floating over content.
+    pageControl.backgroundStyle = .prominent
 
     reactionRail.onSelect = { [weak self] reaction in
       self?.requestReaction(reaction)
