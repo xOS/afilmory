@@ -10,7 +10,7 @@ import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
 import { presentNativeUploadReview } from '@/native/photoSheets'
-import { pickNativePhotos } from '@/native/photoUpload'
+import { buildUploadQueueLocalization, NativeUploadFab, pickNativePhotos } from '@/native/photoUpload'
 import { useTheme } from '@/theme/useTheme'
 
 import { deletePhotoAssets, getPhotoAssetSummary, listPhotoAssets, updatePhotoAssetTags } from '../api'
@@ -19,7 +19,6 @@ import { StudioAccessBoundary, StudioErrorState, StudioLoadingState, StudioPlace
 import type { PhotoAssetListItem, PhotoAssetSummary } from '../types'
 import { useRemoteResource } from '../useRemoteResource'
 import { getRecentTags, rememberRecentTags } from './recentTags'
-import { UploadFab } from './UploadFab'
 import { enqueueUploads, onQueueDrained, summarizeQueue, useUploadQueue } from './uploadQueue'
 import { deriveDirectoryFromTags, orderTagSuggestions } from './uploadTags'
 
@@ -50,6 +49,7 @@ function StudioLibraryContent() {
   const [mutating, setMutating] = useState(false)
   const uploadJobs = useUploadQueue()
   const uploadSummary = useMemo(() => summarizeQueue(uploadJobs), [uploadJobs])
+  const queueLocalization = useMemo(() => buildUploadQueueLocalization(), [])
 
   useEffect(() => onQueueDrained(() => void resource.reload()), [resource])
 
@@ -278,7 +278,9 @@ function StudioLibraryContent() {
         />
       )}
 
-      {selectionMode ? null : <UploadFab jobs={uploadJobs} />}
+      {selectionMode || uploadJobs.length === 0 ? null : (
+        <NativeUploadFab localization={queueLocalization} style={styles.uploadFab} />
+      )}
     </View>
   )
 }
@@ -292,4 +294,6 @@ function commonTags(assets: PhotoAssetListItem[]): string[] {
 const styles = StyleSheet.create({
   grid: { flex: 1 },
   root: { flex: 1 },
+  // Clear of the tab bar so it never competes with navigation targets.
+  uploadFab: { bottom: 108, height: 52, position: 'absolute', right: 18, width: 52 },
 })

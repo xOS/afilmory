@@ -60,13 +60,3 @@ export function orderTagSuggestions(available: readonly string[], recent: readon
     (a, b) => (priority.get(a) ?? Number.POSITIVE_INFINITY) - (priority.get(b) ?? Number.POSITIVE_INFINITY),
   )
 }
-
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '—'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const size = bytes / 1024 ** exponent
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[exponent]}`
-}

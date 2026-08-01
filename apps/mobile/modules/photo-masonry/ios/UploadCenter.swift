@@ -7,6 +7,7 @@ final class UploadCenter: NSObject {
   static var backgroundCompletionHandler: (() -> Void)?
 
   var onChange: (([[String: Any?]]) -> Void)?
+  private var jobObservers: [UUID: ([UploadJobState]) -> Void] = [:]
 
   private static let maxAttempts = 3
   private static let retryDelays: [TimeInterval] = [1, 3]
@@ -54,7 +55,7 @@ final class UploadCenter: NSObject {
     rootDirectory.appendingPathComponent("bodies/\(jobId)")
   }
 
-  private static func previewURL(_ jobId: String) -> URL {
+  static func previewURL(_ jobId: String) -> URL {
     rootDirectory.appendingPathComponent("previews/\(jobId).jpg")
   }
 
@@ -90,6 +91,20 @@ final class UploadCenter: NSObject {
 
   func snapshot() -> [[String: Any?]] {
     stateQueue.sync { snapshotLocked() }
+  }
+
+  func observe(_ handler: @escaping ([UploadJobState]) -> Void) -> UUID {
+    let token = UUID()
+    stateQueue.sync {
+      jobObservers[token] = handler
+      let current = jobs
+      DispatchQueue.main.async { handler(current) }
+    }
+    return token
+  }
+
+  func unobserve(_ token: UUID) {
+    stateQueue.async { self.jobObservers.removeValue(forKey: token) }
   }
 
   func cancel(id: String) {
@@ -422,7 +437,14 @@ final class UploadCenter: NSObject {
     stateQueue.asyncAfter(deadline: .now() + 0.08) {
       self.emitScheduled = false
       let payload = self.snapshotLocked()
-      DispatchQueue.main.async { self.onChange?(payload) }
+      let typed = self.jobs
+      let observers = Array(self.jobObservers.values)
+      DispatchQueue.main.async {
+        self.onChange?(payload)
+        for observer in observers {
+          observer(typed)
+        }
+      }
     }
   }
 }

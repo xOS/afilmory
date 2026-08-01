@@ -8,6 +8,12 @@ public final class PhotoUploadModule: Module {
     Name("PhotoUpload")
     Events("onUploadQueueChange")
 
+    View(UploadFabView.self) {
+      Prop("localization") { (view: UploadFabView, localization: [String: String]) in
+        view.setLocalization(localization)
+      }
+    }
+
     OnCreate {
       UploadCenter.shared.onChange = { [weak self] jobs in
         self?.sendEvent("onUploadQueueChange", ["jobs": jobs])
