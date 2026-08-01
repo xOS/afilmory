@@ -193,3 +193,35 @@ struct ProfileSheetRecord: Record {
   @Field var strip: [ProfileStripItemRecord] = []
   @Field var localization: ProfileLocalizationRecord = .init()
 }
+
+struct UploadReviewItemRecord: Record {
+  @Field var id: String = ""
+  @Field var assetUri: String = ""
+  @Field var isLivePhoto: Bool = false
+}
+
+struct UploadReviewLocalizationRecord: Record {
+  @Field var addMore: String = ""
+  @Field var cancel: String = ""
+  @Field var remove: String = ""
+  @Field var start: String = ""
+  @Field var summary: String = ""
+  @Field var tagsLabel: String = ""
+  @Field var tagsPlaceholder: String = ""
+  @Field var title: String = ""
+}
+
+struct UploadReviewSheetRecord: Record {
+  @Field var items: [UploadReviewItemRecord] = []
+  @Field var suggestedTags: [String] = []
+  @Field var localization: UploadReviewLocalizationRecord = .init()
+}
+
+struct UploadReviewResultRecord {
+  let itemIds: [String]
+  let tags: [String]
+
+  var dictionary: [String: Any] {
+    ["itemIds": itemIds, "tags": tags]
+  }
+}
