@@ -1,7 +1,7 @@
 # Local Docker Dev Environment for the Mobile App — Design
 
 **Date:** 2026-08-01
-**Scope:** Replace "point the mobile app at production" with a self-contained local stack. Adds `docker-compose.dev.yml` (postgres / redis / rustfs), a `seed:dev` script, and an environment-switch surface in the app's Dev Lab. Touches `apps/mobile/src/api/endpoints.ts`, `apps/mobile/src/modules/dev-lab/**`, `apps/mobile/ios/Afilmory/Info.plist`, and adds `be/apps/core/scripts/seed-dev.ts`.
+**Scope:** Replace "point the mobile app at production" with a self-contained local stack. Adds `docker-compose.dev.yml` (RustFS), a `seed:dev` CLI command, and an environment-switch surface in the app's Dev Lab. Touches the mobile API layer, `apps/mobile/src/modules/dev-lab/**`, `apps/mobile/app.json`, and `be/apps/core/src/cli/**`.
 **Non-goals:** Android, production deployment changes, backend feature work.
 
 ## Why this shape
@@ -44,15 +44,13 @@ Alternatives considered and rejected: Cloudflare Tunnel exposing the whole stack
 iOS Simulator
   ├─ http://localhost:1841/api             platform API (auth, workspaces)
   ├─ http://<slug>.localhost:1841/api      tenant API (photos, comments, reactions)
-  └─ http://localhost:9000/...             presigned object URLs
+  └─ http://localhost:9300/...             presigned object URLs
 
 Host process
   └─ pnpm dev:be                            core, :1841, hot reload
 
-docker-compose.dev.yml
-  ├─ postgres:16-alpine                     :5432
-  ├─ redis:7-alpine                         :6379
-  └─ rustfs/rustfs                          :9000 (S3) / :9001 (console)
+docker-compose.yml        db / redis        :5432 / :6379
+docker-compose.dev.yml    rustfs/rustfs     :9300 (S3) / :9301 (console)
 ```
 
 No reverse proxy, no `oauth-gateway` process, no TLS.
@@ -68,7 +66,7 @@ No reverse proxy, no `oauth-gateway` process, no TLS.
 | Platform API | `http://localhost:1841/api` | `https://api.afilmory.art/api` |
 | Tenant API | `http://<slug>.localhost:1841/api` | `https://<slug>.afilmory.art/api` |
 | OAuth callback | `http://localhost:1841/api/auth/callback/{provider}` | `https://auth.afilmory.art/api/auth/callback/{provider}` |
-| Object storage | `http://localhost:9000` | S3 / R2 |
+| Object storage | `http://localhost:9300` | S3 / R2 |
 
 The platform API uses bare `localhost` rather than `api.localhost` so the sign-in origin and the OAuth callback origin are byte-identical, removing one cross-origin variable from the login hop. Both hosts resolve to no tenant (`localhost` equals the base domain; `api` is a reserved slug), so they are functionally equivalent.
 
@@ -94,6 +92,8 @@ RustFS:
 
 Startup is therefore two commands: `docker compose up -d db redis` and `docker compose -f docker-compose.dev.yml up -d`.
 
+**Prerequisite: the system HTTP proxy must bypass `*.localhost`.** The iOS Simulator honours the macOS system proxy. A proxy typically special-cases bare `localhost` but not dotted subdomains of it, so `http://localhost:1841` succeeds while `http://alpha.localhost:1841` is intercepted — observed here as a 503 that never reaches `core`. Add `*.localhost` to the proxy's bypass list (Surge: `skip-proxy`), or the tenant API is unreachable from the app while the platform API looks healthy.
+
 ### 2. `seed:dev` (new, `be/apps/core/src/cli/seed-dev.ts`)
 
 Implemented as a **CLI subcommand**, not a standalone script. `src/cli/index.ts` is an existing registry, and `createConfiguredApp()` hands back the DI container — which also means `AppInitializationProvider.onModuleInit` provisions the root tenant, the superadmin, and the initialized flag for free. The seed never has to do that itself.
@@ -118,9 +118,15 @@ Both steps are idempotent — bucket creation falls back to `HeadBucket`, and se
 
 Two built-in environments — `production` (`https`, `afilmory.art`, no port) and `local` (`http`, `localhost`, `1841`) — plus a custom entry.
 
-Persistence uses `expo-secure-store`'s **synchronous** `getItem` / `setItem` (available since v57; the project is on 57.0.1). Reading synchronously at module load lets `API_BASE_URL` and `authClient`'s `baseURL` stay plain constants — no hydration promise, no boot-order race, no lazy client rebuild. This is simpler than the async pattern in `columnPreference.ts` and was chosen once the sync API was confirmed present.
+Persistence is **async** (`getItemAsync` / `setItemAsync`). The synchronous `getItem` added in expo-secure-store v57 was tried first — it would have let every URL stay a plain constant — but on a simulator build it throws `KeyChainException: A required entitlement isn't present`, which broke every route that transitively imported the module. The async API works fine in the same build, so the sync path is off the table.
 
-The corollary is that **changing the environment requires an app reload**, which the section performs via `DevSettings.reload()`. That reload is also what discards the previous environment's session and query caches — a cookie issued for `afilmory.art` is meaningless on `localhost`, and leaving it in place would produce a cascade of 401s instead of a clean signed-out state.
+That makes hydration a race, handled by removing the race rather than tolerating it:
+
+- `waitForEnvironment()` exposes the hydration promise; `_layout.tsx` renders no `Stack` until it resolves, so nothing can issue a request against a stale default.
+- `API_BASE_URL` becomes `getApiBaseUrl()`, and `apiClient` resolves its `baseURL` in `onRequest` like `tenantApiClient` already did.
+- `authClient` is built lazily behind `getAuthClient()` — its `baseURL` is only correct after hydration. The type is inferred from the factory, not from `createAuthClient`, or the expo plugin's `getCookie` is lost.
+
+**Changing the environment requires an app reload**, performed via `DevSettings.reload()`. That reload is also what discards the previous environment's session and query caches — a cookie issued for `afilmory.art` is meaningless on `localhost`, and leaving it in place would produce a cascade of 401s instead of a clean signed-out state.
 
 Outside `__DEV__` the persisted value is ignored entirely and production is returned unconditionally.
 
@@ -176,15 +182,15 @@ Done:
 2. RustFS S3 round-trip: bucket create, put, presign, GET → 200. Path-style only.
 3. `pnpm --filter @afilmory/core seed:dev -- --slug alpha` → bucket ensured, `oauthGatewayUrl` and workspace storage written; confirmed by querying `system_setting` and `settings`.
 4. `pnpm --filter @afilmory/mobile type-check` clean; eslint clean on all changed files; `core` type-check introduces no new errors (8 pre-existing, none in changed files).
-5. `getaddrinfo('alpha.localhost')` → `127.0.0.1` on the host.
+5. Host resolution and tenant routing: `getaddrinfo('alpha.localhost')` → `127.0.0.1`; `curl` against `alpha.localhost:1841` and `beta.localhost:1841` → 200, unknown slug → 400.
+6. ATS: the exception is present in the built bundle, and the Dev Lab probe against `http://localhost:1841` returns **reachable · HTTP 200** from the Simulator.
+7. Environment switch: applying Local reloads the app, `core` then logs `host=localhost` for `/api/auth/session` and `/api/featured-galleries`, and the app shows a clean signed-out state — no stale production session, no 401 cascade.
 
-Still to observe, in the Simulator:
+Blocked, with the reason known:
 
-6. Simulator inherits the host's `*.localhost` resolution.
-7. ATS permits `http://alpha.localhost:1841`.
-8. An image renders end to end (manifest → `/api/storage/sign` → presigned RustFS URL).
-9. GitHub OAuth completes against the local stack and lands back via `afilmory://`.
-10. Switching production → local → production in Dev Lab leaves no stale session.
+8. **Tenant subdomains from the Simulator** — probing `http://alpha.localhost:1841` returns 503 without ever reaching `core`. Cause is the system proxy, not the app (see the bypass prerequisite above). Re-verify after adding `*.localhost` to the bypass list.
+9. **Image render end to end** — the local database has zero photos, and content seeding is not implemented.
+10. **GitHub OAuth** — the local database holds `fake-github-client-id`; the real dev client credentials have to be configured first.
 
 ## Open items
 

@@ -1,9 +1,5 @@
 import { buildPlatformOrigin, buildTenantOrigin, getActiveEnvironment } from './environment'
 
-const environment = getActiveEnvironment()
-
-export const API_BASE_URL = `${buildPlatformOrigin(environment)}/api`
-
 const TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 
 let activeTenantSlug: string | null = null
@@ -20,12 +16,16 @@ export function setActiveTenantSlug(slug: string | null | undefined): void {
   activeTenantSlug = normalizeTenantSlug(slug)
 }
 
+export function getApiBaseUrl(): string {
+  return `${buildPlatformOrigin(getActiveEnvironment())}/api`
+}
+
 export function getGalleryOrigin(slug: string): string {
   const normalized = normalizeTenantSlug(slug)
   if (!normalized) {
     throw new Error('A gallery workspace is required for this request.')
   }
-  return buildTenantOrigin(environment, normalized)
+  return buildTenantOrigin(getActiveEnvironment(), normalized)
 }
 
 export function getGalleryApiBaseUrl(slug: string): string {

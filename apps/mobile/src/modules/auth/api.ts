@@ -1,6 +1,6 @@
 import { ofetch } from 'ofetch'
 
-import { API_BASE_URL } from '@/api/client'
+import { getApiBaseUrl } from '@/api/client'
 
 import { camelCaseKeys } from './case'
 import type { SessionInfo, SessionMembership, SessionUser, SessionWorkspace } from './types'
@@ -14,7 +14,7 @@ interface SessionResponse {
 }
 
 export async function fetchSession(cookie: string | null): Promise<SessionInfo | null> {
-  const raw = await ofetch<unknown>(`${API_BASE_URL}/auth/session`, {
+  const raw = await ofetch<unknown>(`${getApiBaseUrl()}/auth/session`, {
     headers: cookie ? { cookie } : undefined,
   })
   if (!raw) {
@@ -45,7 +45,7 @@ export async function fetchSession(cookie: string | null): Promise<SessionInfo |
 }
 
 export async function switchActiveWorkspace(cookie: string | null, tenantId: string): Promise<void> {
-  await ofetch(`${API_BASE_URL}/auth/workspaces/switch`, {
+  await ofetch(`${getApiBaseUrl()}/auth/workspaces/switch`, {
     method: 'POST',
     headers: cookie ? { cookie } : undefined,
     body: { tenantId },

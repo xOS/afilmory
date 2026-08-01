@@ -64,31 +64,29 @@ function parseEnvironment(raw: string | null): ApiEnvironment | null {
   }
 }
 
-function readPersistedEnvironment(): ApiEnvironment {
-  if (!__DEV__) {
-    return PRODUCTION_ENVIRONMENT
-  }
+let activeEnvironment = PRODUCTION_ENVIRONMENT
 
-  try {
-    return parseEnvironment(SecureStore.getItem(STORAGE_KEY)) ?? PRODUCTION_ENVIRONMENT
-  }
-  catch {
-    return PRODUCTION_ENVIRONMENT
-  }
+// SecureStore's synchronous `getItem` throws `errSecMissingEntitlement` on
+// simulator builds, so the override is hydrated asynchronously and the app
+// blocks its first render on it — see waitForEnvironment.
+const hydration: Promise<void> = __DEV__
+  ? SecureStore.getItemAsync(STORAGE_KEY)
+      .then((raw) => {
+        activeEnvironment = parseEnvironment(raw) ?? PRODUCTION_ENVIRONMENT
+      })
+      .catch(() => {})
+  : Promise.resolve()
+
+export function waitForEnvironment(): Promise<void> {
+  return hydration
 }
-
-// Resolved once at module load via the synchronous SecureStore API so that
-// every URL-building module below can stay a plain constant. Changing the
-// environment therefore requires an app reload, which is also what clears the
-// in-memory session and query caches.
-const activeEnvironment = readPersistedEnvironment()
 
 export function getActiveEnvironment(): ApiEnvironment {
   return activeEnvironment
 }
 
-export function persistEnvironment(next: ApiEnvironment): void {
-  SecureStore.setItem(STORAGE_KEY, JSON.stringify(next))
+export async function persistEnvironment(next: ApiEnvironment): Promise<void> {
+  await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(next))
 }
 
 export function buildPlatformOrigin(environment: ApiEnvironment): string {

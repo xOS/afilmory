@@ -56,12 +56,12 @@ export function ApiEnvironmentSection() {
     setProbe({ kind: 'done', label: result.label, ok: result.ok })
   }
 
-  // Persist synchronously, then reload: every URL constant is resolved once at
-  // module load, and the reload is what drops the previous environment's
-  // session cookie and cached queries.
+  // The reload is what drops the previous environment's session cookie and
+  // cached queries — switching hosts invalidates both.
   const applyAndReload = () => {
-    persistEnvironment(draft)
-    DevSettings.reload()
+    void persistEnvironment(draft).then(() => {
+      DevSettings.reload()
+    })
   }
 
   return (

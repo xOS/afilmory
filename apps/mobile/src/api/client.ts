@@ -1,10 +1,10 @@
 import { ofetch } from 'ofetch'
 
 import { getAuthCookie } from './auth'
-import { API_BASE_URL, getTenantApiBaseUrl } from './endpoints'
+import { getApiBaseUrl, getTenantApiBaseUrl } from './endpoints'
 
 export {
-  API_BASE_URL,
+  getApiBaseUrl,
   getGalleryApiBaseUrl,
   getGalleryOrigin,
   getTenantApiBaseUrl,
@@ -19,8 +19,8 @@ function attachAuthCookie(headers: Headers): void {
 }
 
 export const apiClient = ofetch.create({
-  baseURL: API_BASE_URL,
   onRequest({ options }) {
+    options.baseURL = getApiBaseUrl()
     attachAuthCookie(options.headers)
   },
 })

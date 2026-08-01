@@ -1,10 +1,11 @@
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { LogBox, StyleSheet } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
+import { waitForEnvironment } from '@/api/environment'
 import { i18n } from '@/i18n'
 import { hydrateAuth } from '@/modules/auth/sessionStore'
 import { PresentationHost } from '@/presentation'
@@ -15,8 +16,15 @@ LogBox.ignoreAllLogs(true)
 export default function RootLayout() {
   const { palette } = useAppTheme()
 
+  const [environmentReady, setEnvironmentReady] = useState(false)
+
+  // Nothing may issue a request before the API environment override resolves,
+  // otherwise the first fetch races against the production default.
   useEffect(() => {
-    void hydrateAuth()
+    void waitForEnvironment().then(async () => {
+      setEnvironmentReady(true)
+      await hydrateAuth()
+    })
   }, [])
   const navigationTheme = useMemo(
     () => ({
@@ -38,15 +46,17 @@ export default function RootLayout() {
       <GestureHandlerRootView style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
         <SafeAreaProvider>
           <ThemeProvider value={navigationTheme}>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="index" />
-              <Stack.Screen name="(tabs)" />
-              {__DEV__ ? <Stack.Screen name="dev" /> : null}
-              <Stack.Screen
-                name="photo/[photoId]"
-                options={{ contentStyle: styles.photoScreen, gestureEnabled: true }}
-              />
-            </Stack>
+            {environmentReady ? (
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(tabs)" />
+                {__DEV__ ? <Stack.Screen name="dev" /> : null}
+                <Stack.Screen
+                  name="photo/[photoId]"
+                  options={{ contentStyle: styles.photoScreen, gestureEnabled: false }}
+                />
+              </Stack>
+            ) : null}
             <PresentationHost />
           </ThemeProvider>
         </SafeAreaProvider>
