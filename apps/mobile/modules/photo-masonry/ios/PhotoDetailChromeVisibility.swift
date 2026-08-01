@@ -4,18 +4,18 @@ struct PhotoDetailChromeVisibility {
   var userHidden: Bool
   var infoProgress: CGFloat
   var zoomed: Bool
+  var dismissing = false
 
   private var clampedInfoProgress: CGFloat {
     min(max(infoProgress, 0), 1)
   }
 
   private var base: CGFloat {
-    (userHidden || zoomed) ? 0 : 1
+    (userHidden || zoomed || dismissing) ? 0 : 1
   }
 
   var navBarAlpha: CGFloat { base * (1 - clampedInfoProgress) }
   var toolbarAlpha: CGFloat { base }
-  var pageControlAlpha: CGFloat { base * (1 - clampedInfoProgress) }
   var topScrimAlpha: CGFloat { base * (1 - clampedInfoProgress) }
   var bottomScrimAlpha: CGFloat { base }
   var liveBadgeAlpha: CGFloat { base }

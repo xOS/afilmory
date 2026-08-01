@@ -7,15 +7,12 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   let onReactionRequest = EventDispatcher()
   let onRequestClose = EventDispatcher()
 
-  private static let maximumPageControlDots = 20
-
   private let viewer: PhotoViewerView
   private let mediaViewport = UIView()
   private let infoView = PhotoDetailInfoView()
   private let topScrim = PhotoDetailScrimView(edge: .top)
   private let bottomScrim = PhotoDetailScrimView(edge: .bottom)
   private let navigationBar = PhotoDetailNavigationBar()
-  private let pageControl = UIPageControl()
   private let toolbar = PhotoDetailToolbar()
   private let reactionRail = PhotoDetailReactionRailView()
   private lazy var inspector = PhotoDetailInspectorPresenter(
@@ -58,7 +55,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     addSubview(infoView)
     addSubview(topScrim)
     addSubview(navigationBar)
-    addSubview(pageControl)
     addSubview(toolbar)
     addSubview(reactionRail)
 
@@ -93,7 +89,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     currentIndex = clampedIndex(initialIndex)
     viewer.setPhotos(photos)
     updateCurrentMetadata()
-    updatePageControl()
   }
 
   func setInitialIndex(_ index: Int) {
@@ -101,7 +96,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     currentIndex = clampedIndex(index)
     viewer.initialIndex = index
     updateCurrentMetadata()
-    updatePageControl()
   }
 
   func setTransitionID(_ id: String) {
@@ -156,12 +150,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     toolbar.onComments = { [weak self] in self?.requestComments() }
     toolbar.onReactions = { [weak self] in self?.toggleReactionRail() }
 
-    pageControl.isUserInteractionEnabled = false
-    pageControl.overrideUserInterfaceStyle = .dark
-    // Bare dots vanish into a bright frame; the prominent style is UIKit's own
-    // backdrop for a page control floating over content.
-    pageControl.backgroundStyle = .prominent
-
     reactionRail.onSelect = { [weak self] reaction in
       self?.requestReaction(reaction)
     }
@@ -174,7 +162,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
       currentIndex = index
       setReactionRailPresented(false, animated: true)
       updateCurrentMetadata()
-      updatePageControl()
       onIndexChange(["id": photo.id, "index": index])
     }
     viewer.onNativeZoomChange = { [weak self] zoomed in
@@ -218,20 +205,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     toolbar.frame = CGRect(x: 0, y: toolbarY, width: width, height: toolbarHeight)
     bottomScrim.frame = CGRect(x: 0, y: bounds.height - scrimSpan, width: width, height: scrimSpan)
 
-    let pageControlSize = pageControl.sizeThatFits(CGSize(width: width, height: 0))
-    pageControl.frame = CGRect(
-      x: (width - pageControlSize.width) / 2,
-      y: toolbarY - pageControlSize.height,
-      width: pageControlSize.width,
-      height: pageControlSize.height
-    )
-
     toolbar.layoutIfNeeded()
     reactionRail.anchorXCenter = toolbar.reactionsItemCenterX(in: self)
-    let railFrame = reactionRail.preferredFrame(
-      containerWidth: width,
-      bottomY: pageControl.isHidden ? toolbarY : pageControl.frame.minY
-    )
+    let railFrame = reactionRail.preferredFrame(containerWidth: width, bottomY: toolbarY)
     reactionRail.bounds = CGRect(origin: .zero, size: railFrame.size)
     reactionRail.center = CGPoint(x: railFrame.midX, y: railFrame.midY)
   }
@@ -240,7 +216,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     let changes = { [self] in
       navigationBar.alpha = visibility.navBarAlpha
       toolbar.alpha = visibility.toolbarAlpha
-      pageControl.alpha = visibility.pageControlAlpha
       topScrim.alpha = visibility.topScrimAlpha
       bottomScrim.alpha = visibility.bottomScrimAlpha
       viewer.setLiveBadgeAlpha(visibility.liveBadgeAlpha)
@@ -292,12 +267,6 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     )
   }
 
-  private func updatePageControl() {
-    pageControl.numberOfPages = photos.count
-    pageControl.currentPage = currentIndex
-    pageControl.isHidden = photos.count > Self.maximumPageControlDots || photos.count <= 1
-  }
-
   private func updateToolbarState() {
     toolbar.setInfoActive(inspector.progress > 0.5)
     toolbar.setReactionsActive(reactionRailPresented)
@@ -328,7 +297,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
 
     // Buttons and controls hosted in the chrome must perform their own action
     // instead of toggling immersive mode.
-    let chromeSubtrees: [UIView] = [navigationBar, toolbar, pageControl, reactionRail]
+    let chromeSubtrees: [UIView] = [navigationBar, toolbar, reactionRail]
     if chromeSubtrees.contains(where: touchView.isDescendant(of:)) {
       return false
     }
