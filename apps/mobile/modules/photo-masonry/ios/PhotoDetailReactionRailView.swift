@@ -1,10 +1,15 @@
 import UIKit
 
+private let reactionItemDiameter: CGFloat = 40
+private let reactionItemSpacing: CGFloat = 8
+private let reactionContainerInset = UIEdgeInsets(top: 3, left: 4, bottom: 3, right: 4)
+
 final class PhotoDetailReactionRailView: UIView {
   var onSelect: ((String) -> Void)?
+  var anchorXCenter: CGFloat?
 
-  private let surface = PhotoDetailGlassSurface(cornerRadius: 20)
-  private let stackView = UIStackView()
+  private let container = UIVisualEffectView()
+  private var itemGlasses: [UIVisualEffectView] = []
   private var items: [PhotoDetailReactionItem] = []
   private var presented = false
 
@@ -13,12 +18,11 @@ final class PhotoDetailReactionRailView: UIView {
 
     alpha = 0
     isHidden = true
-    stackView.alignment = .center
-    stackView.axis = .horizontal
-    stackView.distribution = .fillEqually
-    stackView.spacing = 2
-    addSubview(surface)
-    surface.contentView.addSubview(stackView)
+
+    let clusterEffect = UIGlassContainerEffect()
+    clusterEffect.spacing = reactionItemSpacing
+    container.effect = clusterEffect
+    addSubview(container)
   }
 
   @available(*, unavailable)
@@ -28,20 +32,39 @@ final class PhotoDetailReactionRailView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    surface.frame = bounds
-    stackView.frame = bounds.insetBy(dx: 4, dy: 3)
+    container.frame = bounds
+
+    var x = reactionContainerInset.left
+    for glass in itemGlasses {
+      glass.frame = CGRect(x: x, y: reactionContainerInset.top, width: reactionItemDiameter, height: reactionItemDiameter)
+      glass.contentView.subviews.first?.frame = glass.contentView.bounds
+      x += reactionItemDiameter + reactionItemSpacing
+    }
   }
 
   override func sizeThatFits(_ size: CGSize) -> CGSize {
-    CGSize(width: CGFloat(items.count) * 42 + 8, height: 46)
+    let height = reactionItemDiameter + reactionContainerInset.top + reactionContainerInset.bottom
+    guard !items.isEmpty else {
+      return CGSize(width: reactionContainerInset.left + reactionContainerInset.right, height: height)
+    }
+    let width = CGFloat(items.count) * reactionItemDiameter
+      + CGFloat(items.count - 1) * reactionItemSpacing
+      + reactionContainerInset.left + reactionContainerInset.right
+    return CGSize(width: width, height: height)
+  }
+
+  func preferredFrame(containerWidth: CGFloat, bottomY: CGFloat) -> CGRect {
+    let size = sizeThatFits(.zero)
+    let x = anchorXCenter.map { center in
+      min(max(12, center - size.width / 2), containerWidth - size.width - 12)
+    } ?? max(12, containerWidth - size.width - 12)
+    return CGRect(x: x, y: bottomY - size.height - 8, width: min(size.width, containerWidth - 24), height: size.height)
   }
 
   func setItems(_ items: [PhotoDetailReactionItem]) {
     self.items = items
-    for view in stackView.arrangedSubviews {
-      stackView.removeArrangedSubview(view)
-      view.removeFromSuperview()
-    }
+    itemGlasses.forEach { $0.removeFromSuperview() }
+    itemGlasses.removeAll()
 
     for item in items {
       let button = PhotoDetailReactionButton(item: item)
@@ -49,7 +72,16 @@ final class PhotoDetailReactionRailView: UIView {
         UIAction { [weak self] _ in self?.onSelect?(item.reaction) },
         for: .touchUpInside
       )
-      stackView.addArrangedSubview(button)
+
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = false // interactive glass would swallow the tap meant for the button in its content view
+      let glass = UIVisualEffectView(effect: effect)
+      glass.clipsToBounds = true
+      glass.layer.cornerCurve = .circular
+      glass.layer.cornerRadius = reactionItemDiameter / 2
+      glass.contentView.addSubview(button)
+      container.contentView.addSubview(glass)
+      itemGlasses.append(glass)
     }
     setNeedsLayout()
   }
@@ -90,6 +122,9 @@ final class PhotoDetailReactionRailView: UIView {
 }
 
 private final class PhotoDetailReactionButton: UIButton {
+  private static let badgeMinHeight: CGFloat = 16
+  private static let badgeHorizontalPadding: CGFloat = 5
+
   private let countLabel = UILabel()
 
   init(item: PhotoDetailReactionItem) {
@@ -107,13 +142,17 @@ private final class PhotoDetailReactionButton: UIButton {
     alpha = item.pending ? 0.66 : 1
     backgroundColor = item.active ? UIColor.systemBlue.withAlphaComponent(0.24) : .clear
     clipsToBounds = false
-    layer.cornerCurve = .continuous
-    layer.cornerRadius = 14
+    layer.cornerCurve = .circular
+    layer.cornerRadius = reactionItemDiameter / 2
 
     countLabel.backgroundColor = UIColor.black.withAlphaComponent(0.72)
     countLabel.clipsToBounds = true
-    countLabel.font = .monospacedDigitSystemFont(ofSize: 8, weight: .bold)
+    countLabel.font = .monospacedDigitSystemFont(
+      ofSize: UIFont.preferredFont(forTextStyle: .caption2).pointSize,
+      weight: .semibold
+    )
     countLabel.isAccessibilityElement = false
+    countLabel.layer.cornerCurve = .continuous
     countLabel.text = item.count > 999 ? "999+" : "\(item.count)"
     countLabel.textAlignment = .center
     countLabel.textColor = .white
@@ -129,8 +168,9 @@ private final class PhotoDetailReactionButton: UIButton {
   override func layoutSubviews() {
     super.layoutSubviews()
     guard !countLabel.isHidden else { return }
-    let width = max(15, countLabel.intrinsicContentSize.width + 6)
-    countLabel.frame = CGRect(x: bounds.maxX - width + 3, y: -3, width: width, height: 15)
-    countLabel.layer.cornerRadius = 7.5
+    let height = Self.badgeMinHeight
+    let width = max(height, countLabel.intrinsicContentSize.width + Self.badgeHorizontalPadding * 2)
+    countLabel.frame = CGRect(x: bounds.maxX - width + 3, y: -4, width: width, height: height)
+    countLabel.layer.cornerRadius = height / 2
   }
 }
