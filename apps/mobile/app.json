@@ -31,7 +31,8 @@
         "CFBundleAllowMixedLocalizations": true,
         "CFBundleLocalizations": ["en", "zh-Hans", "zh-HK", "zh-TW", "ja", "ko"],
         "LSApplicationCategoryType": "public.app-category.photography",
-        "NSPhotoLibraryUsageDescription": "Allow Afilmory Studio to select photos for your gallery."
+        "NSPhotoLibraryUsageDescription": "Allow Afilmory Studio to select photos for your gallery.",
+        "UIViewControllerBasedStatusBarAppearance": true
       }
     },
     "android": {

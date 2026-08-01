@@ -1,7 +1,7 @@
 import ExpoModulesCore
 import UIKit
 
-final class PhotoDetailView: ExpoView {
+final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   let onCommentsRequest = EventDispatcher()
   let onIndexChange = EventDispatcher()
   let onReactionRequest = EventDispatcher()
@@ -24,6 +24,12 @@ final class PhotoDetailView: ExpoView {
     viewer: viewer,
     infoView: infoView
   )
+  private lazy var tapGestureRecognizer: UITapGestureRecognizer = {
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleUserTap))
+    recognizer.delegate = self
+    recognizer.numberOfTapsRequired = 1
+    return recognizer
+  }()
 
   private var currentIndex = 0
   private var initialIndex = 0
@@ -172,9 +178,13 @@ final class PhotoDetailView: ExpoView {
       guard let self else { return }
       visibility.zoomed = zoomed
       applyVisibility(animated: true)
+      applyScreenTraits()
     }
     viewer.onNativeInfoRequest = { [weak self] in self?.toggleInfo() }
     viewer.onNativeRequestClose = { [weak self] in self?.requestClose() }
+
+    addGestureRecognizer(tapGestureRecognizer)
+    viewer.configureExternalTapGesture(tapGestureRecognizer)
   }
 
   private func configureInspector() {
@@ -230,6 +240,7 @@ final class PhotoDetailView: ExpoView {
       pageControl.alpha = visibility.pageControlAlpha
       topScrim.alpha = visibility.topScrimAlpha
       bottomScrim.alpha = visibility.bottomScrimAlpha
+      viewer.setLiveBadgeAlpha(visibility.liveBadgeAlpha)
     }
     guard animated, !UIAccessibility.isReduceMotionEnabled else {
       changes()
@@ -240,6 +251,13 @@ final class PhotoDetailView: ExpoView {
       delay: 0,
       options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseInOut],
       animations: changes
+    )
+  }
+
+  private func applyScreenTraits() {
+    viewer.applyScreenTraits(
+      statusBarHidden: visibility.statusBarHidden,
+      homeIndicatorHidden: visibility.homeIndicatorHidden
     )
   }
 
@@ -290,6 +308,34 @@ final class PhotoDetailView: ExpoView {
   private var currentMetadata: PhotoDetailMetadata? {
     guard photos.indices.contains(currentIndex) else { return nil }
     return metadataByID[photos[currentIndex].id]
+  }
+
+  @objc private func handleUserTap() {
+    guard visibility.allowsImmersiveToggle else { return }
+    visibility.userHidden.toggle()
+    applyVisibility(animated: true)
+    applyScreenTraits()
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldReceive touch: UITouch
+  ) -> Bool {
+    guard gestureRecognizer === tapGestureRecognizer, let touchView = touch.view else { return true }
+
+    // Buttons and controls hosted in the chrome must perform their own action
+    // instead of toggling immersive mode.
+    let chromeSubtrees: [UIView] = [navigationBar, toolbar, pageControl, reactionRail]
+    if chromeSubtrees.contains(where: touchView.isDescendant(of:)) {
+      return false
+    }
+
+    var ancestor: UIView? = touchView
+    while let current = ancestor {
+      if current is LivePhotoBadgeView { return false }
+      ancestor = current.superview
+    }
+    return true
   }
 
   private func toggleInfo() {

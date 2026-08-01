@@ -61,10 +61,14 @@ final class PhotoViewerView: ExpoView {
   private var hasPositionedInitialPhoto = false
   private var reportedZoomState = false
   private lazy var infoPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleInfoPan))
+  private var externalTapGestureRecognizer: UITapGestureRecognizer?
   private weak var configuredScreen: RNSScreen?
   private var configuredInfoPresented: Bool?
   private var configuredTransitionId = ""
   private var prefetchTokens: [Int: SDWebImagePrefetchToken] = [:]
+  private var liveBadgeAlpha: CGFloat = 1
+  private var statusBarHidden = false
+  private var homeIndicatorHidden = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -160,6 +164,7 @@ final class PhotoViewerView: ExpoView {
     super.didMoveToSuperview()
     if superview != nil {
       configureZoomTransitionWhenReady()
+      pushScreenTraitsWhenReady()
       return
     }
 
@@ -382,6 +387,21 @@ final class PhotoViewerView: ExpoView {
     }
   }
 
+  private func pushScreenTraitsWhenReady() {
+    guard superview != nil else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.pushScreenTraits()
+    }
+  }
+
+  private func pushScreenTraits() {
+    guard let screenView = findScreen()?.screenView() else { return }
+    screenView.statusBarHidden = statusBarHidden
+    screenView.homeIndicatorHidden = homeIndicatorHidden
+    screenView.statusBarStyle = .light
+    screenView.statusBarAnimation = .fade
+  }
+
   private func configureZoomTransition() {
     guard let screen = findScreen() else { return }
     guard configuredScreen !== screen
@@ -454,6 +474,23 @@ final class PhotoViewerView: ExpoView {
     collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
   }
 
+  func configureExternalTapGesture(_ gestureRecognizer: UITapGestureRecognizer) {
+    externalTapGestureRecognizer = gestureRecognizer
+  }
+
+  func setLiveBadgeAlpha(_ alpha: CGFloat) {
+    liveBadgeAlpha = alpha
+    for case let cell as PhotoViewerCell in collectionView.visibleCells {
+      cell.setLiveBadgeAlpha(alpha)
+    }
+  }
+
+  func applyScreenTraits(statusBarHidden: Bool, homeIndicatorHidden: Bool) {
+    self.statusBarHidden = statusBarHidden
+    self.homeIndicatorHidden = homeIndicatorHidden
+    pushScreenTraits()
+  }
+
   func allowsInfoGesture() -> Bool {
     !(currentCell()?.isZoomed ?? false) && !(currentCell()?.blocksPaging ?? false)
   }
@@ -508,6 +545,10 @@ extension PhotoViewerView: UICollectionViewDataSource {
       livePhotoMode: livePhotoModes[photo.id] ?? .live
     )
     cell.setActive(indexPath.item == currentIndex)
+    cell.setLiveBadgeAlpha(liveBadgeAlpha)
+    if let externalTapGestureRecognizer {
+      externalTapGestureRecognizer.require(toFail: cell.doubleTapGestureRecognizer)
+    }
     return cell
   }
 }

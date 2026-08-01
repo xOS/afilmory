@@ -55,6 +55,11 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     target: self,
     action: #selector(handleLivePhotoLongPress(_:))
   )
+  private(set) lazy var doubleTapGestureRecognizer: UITapGestureRecognizer = {
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+    recognizer.numberOfTapsRequired = 2
+    return recognizer
+  }()
   private var photo: MasonryPhoto?
   private var isActive = false
   private var isHoldingLivePhoto = false
@@ -62,6 +67,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   private var displayedTier = 0
   private var lastViewportSize = CGSize.zero
   private var wasZoomed = false
+  private var externalBadgeAlpha: CGFloat = 1
 
   var onZoomStateChange: ((Bool) -> Void)?
   var onLivePhotoPlaybackStateChange: ((Bool) -> Void)?
@@ -129,9 +135,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     }
     contentView.addSubview(livePhotoBadge)
 
-    let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
-    doubleTap.numberOfTapsRequired = 2
-    imageContainerView.addGestureRecognizer(doubleTap)
+    imageContainerView.addGestureRecognizer(doubleTapGestureRecognizer)
 
     livePhotoLongPress.minimumPressDuration = 0.18
     livePhotoLongPress.allowableMovement = 16
@@ -172,6 +176,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     onLivePhotoModeChange = nil
     livePhotoBadge.isHidden = true
     livePhotoBadge.alpha = 1
+    externalBadgeAlpha = 1
     scrollView.setZoomScale(1, animated: false)
     scrollView.panGestureRecognizer.isEnabled = false
   }
@@ -349,14 +354,19 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     )
   }
 
+  func setLiveBadgeAlpha(_ alpha: CGFloat) {
+    externalBadgeAlpha = alpha
+    updateLivePhotoBadgeVisibility()
+  }
+
   // Looping modes never finish on their own, so hiding the badge while they run
   // would strand the user with no way back to the mode menu.
   private func updateLivePhotoBadgeVisibility() {
     let playingOnce = livePhotoPlaybackView.isPlaying
       && !livePhotoPlaybackView.mode.repeatsUntilStopped
     let concealed = isZoomed || playingOnce
-    livePhotoBadge.alpha = concealed ? 0 : 1
-    livePhotoBadge.isUserInteractionEnabled = !concealed
+    livePhotoBadge.alpha = concealed ? 0 : externalBadgeAlpha
+    livePhotoBadge.isUserInteractionEnabled = !concealed && externalBadgeAlpha > 0.01
   }
 
   private func animateLivePhotoBadgeVisibility() {
