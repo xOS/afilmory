@@ -3,8 +3,9 @@ import * as ImagePicker from 'expo-image-picker'
 
 import { sendSseRequest } from '../sseRequest'
 import type { DataSyncProgressEvent } from '../types'
+import type { UploadJobPayload } from './uploadQueueModel'
 
-export interface UploadProgress {
+export interface UploadPhase {
   phase: 'processing' | 'uploading'
   progress: number
 }
@@ -19,33 +20,15 @@ export async function pickPhotosForUpload(): Promise<ImagePickerAsset[]> {
     quality: 1,
     selectionLimit: 0,
   })
-  if (result.canceled) {
-    return []
-  }
-
-  const assets: ImagePickerAsset[] = []
-  const seen = new Set<string>()
-  for (const asset of result.assets) {
-    for (const candidate of [asset, asset.pairedVideoAsset]) {
-      if (candidate && !seen.has(candidate.uri)) {
-        seen.add(candidate.uri)
-        assets.push(candidate)
-      }
-    }
-  }
-  return assets
+  return result.canceled ? [] : result.assets
 }
 
-export async function uploadPhotos(
-  assets: readonly ImagePickerAsset[],
-  onProgress: (progress: UploadProgress) => void,
+export async function uploadJob(
+  payload: UploadJobPayload,
+  options: { onPhase: (phase: UploadPhase) => void, signal: AbortSignal },
 ): Promise<void> {
-  if (assets.length === 0) {
-    return
-  }
-
   const body = new FormData()
-  assets.forEach((asset, index) => {
+  payload.assets.forEach((asset, index) => {
     body.append('files', {
       name: asset.fileName ?? fallbackFilename(asset, index),
       type: asset.mimeType ?? fallbackMimeType(asset),
@@ -53,26 +36,27 @@ export async function uploadPhotos(
     } as unknown as Blob)
   })
 
-  onProgress({ phase: 'uploading', progress: 0 })
+  options.onPhase({ phase: 'uploading', progress: 0 })
   await sendSseRequest<DataSyncProgressEvent>({
     body,
     onEvent(event) {
       if (event.type === 'start') {
-        onProgress({ phase: 'processing', progress: 0 })
+        options.onPhase({ phase: 'processing', progress: 0 })
       }
       else if (event.type === 'stage' || event.type === 'action') {
         const total = Math.max(event.payload.total, 1)
         const current = event.type === 'stage' ? event.payload.processed : event.payload.index
-        onProgress({ phase: 'processing', progress: Math.min(1, current / total) })
+        options.onPhase({ phase: 'processing', progress: Math.min(1, current / total) })
       }
       else if (event.type === 'complete') {
-        onProgress({ phase: 'processing', progress: 1 })
+        options.onPhase({ phase: 'processing', progress: 1 })
       }
     },
     onUploadProgress(progress) {
-      onProgress({ phase: 'uploading', progress })
+      options.onPhase({ phase: 'uploading', progress })
     },
     path: '/photos/assets/upload',
+    signal: options.signal,
   })
 }
 

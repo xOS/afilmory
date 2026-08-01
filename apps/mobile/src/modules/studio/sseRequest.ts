@@ -3,6 +3,9 @@ import { getTenantApiBaseUrl } from '@/api/client'
 import { camelCaseKeys } from '@/modules/auth/case'
 
 import { createSseParser } from './sse'
+import { SseRequestError } from './sseError'
+
+export { SseRequestError }
 
 interface SseRequestOptions<T> {
   body: FormData | string
@@ -10,6 +13,7 @@ interface SseRequestOptions<T> {
   onEvent: (event: T) => void
   onUploadProgress?: (progress: number) => void
   path: string
+  signal?: AbortSignal
 }
 
 export async function sendSseRequest<T>({
@@ -18,19 +22,28 @@ export async function sendSseRequest<T>({
   onEvent,
   onUploadProgress,
   path,
+  signal,
 }: SseRequestOptions<T>): Promise<void> {
   return await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new SseRequestError('The operation was cancelled.', { aborted: true }))
+      return
+    }
+
     const xhr = new XMLHttpRequest()
     const cookie = getAuthCookie()
     let completed = false
     let lastIndex = 0
     let settled = false
 
+    const abort = () => xhr.abort()
+
     const settle = (error?: Error) => {
       if (settled) {
         return
       }
       settled = true
+      signal?.removeEventListener('abort', abort)
       if (error) {
         reject(error)
       }
@@ -52,11 +65,13 @@ export async function sendSseRequest<T>({
         }
         if (eventType === 'error') {
           const message = (parsed as { payload?: { message?: string } }).payload?.message
-          settle(new Error(message ?? 'The server could not complete the operation.'))
+          // The stream itself succeeded, so the failure is the server rejecting
+          // this payload — retrying the same bytes cannot change the outcome.
+          settle(new SseRequestError(message ?? 'The server could not complete the operation.', { status: 400 }))
         }
       }
       catch {
-        settle(new Error('The server returned an invalid progress event.'))
+        settle(new SseRequestError('The server returned an invalid progress event.'))
       }
     })
 
@@ -90,8 +105,8 @@ export async function sendSseRequest<T>({
       }
     }
     xhr.onprogress = processResponse
-    xhr.onerror = () => settle(new Error('A network error interrupted the operation.'))
-    xhr.onabort = () => settle(new Error('The operation was cancelled.'))
+    xhr.onerror = () => settle(new SseRequestError('A network error interrupted the operation.'))
+    xhr.onabort = () => settle(new SseRequestError('The operation was cancelled.', { aborted: true }))
     xhr.onload = () => {
       processResponse()
       parser.finish()
@@ -99,9 +114,15 @@ export async function sendSseRequest<T>({
         settle()
         return
       }
-      settle(new Error(xhr.status ? `The server returned HTTP ${xhr.status}.` : 'The server response was incomplete.'))
+      settle(
+        new SseRequestError(
+          xhr.status ? `The server returned HTTP ${xhr.status}.` : 'The server response was incomplete.',
+          { status: xhr.status || null },
+        ),
+      )
     }
 
+    signal?.addEventListener('abort', abort)
     xhr.send(body)
   })
 }

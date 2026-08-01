@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 import type { PhotoPressEvent, SelectionChangeEvent, SelectionModeChangeEvent } from 'photo-masonry'
 import { PhotoMasonryView } from 'photo-masonry'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, StyleSheet, View } from 'react-native'
 
 import { useTranslation } from '@/i18n'
@@ -9,6 +9,7 @@ import { useAuth } from '@/modules/auth/sessionStore'
 import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
 import { usePhotoContextMenu } from '@/modules/photo-viewer/usePhotoContextMenu'
+import { present } from '@/presentation'
 import { useTheme } from '@/theme/useTheme'
 
 import { deletePhotoAssets, getPhotoAssetSummary, listPhotoAssets, updatePhotoAssetTags } from '../api'
@@ -16,8 +17,9 @@ import { parseTags, photoAssetToGalleryPhoto } from '../format'
 import { StudioAccessBoundary, StudioErrorState, StudioLoadingState, StudioPlaceholder } from '../StudioNative'
 import type { PhotoAssetListItem, PhotoAssetSummary } from '../types'
 import { useRemoteResource } from '../useRemoteResource'
-import type { UploadProgress } from './upload'
-import { pickPhotosForUpload, uploadPhotos } from './upload'
+import { pickPhotosForUpload } from './upload'
+import { enqueueUploads, onQueueDrained, summarizeQueue, useUploadQueue } from './uploadQueue'
+import { uploadQueuePage } from './uploadQueuePage'
 
 interface LibraryData {
   assets: PhotoAssetListItem[]
@@ -43,8 +45,11 @@ function StudioLibraryContent() {
   const resource = useRemoteResource(load, [load])
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
   const [mutating, setMutating] = useState(false)
+  const uploadJobs = useUploadQueue()
+  const uploadSummary = useMemo(() => summarizeQueue(uploadJobs), [uploadJobs])
+
+  useEffect(() => onQueueDrained(() => void resource.reload()), [resource])
 
   const photos = useMemo(
     () => resource.data?.assets.map(photoAssetToGalleryPhoto).filter(photo => photo !== null) ?? [],
@@ -72,7 +77,7 @@ function StudioLibraryContent() {
   }, [])
 
   const handleUpload = useCallback(async () => {
-    if (uploadProgress || mutating) {
+    if (mutating) {
       return
     }
     try {
@@ -80,16 +85,14 @@ function StudioLibraryContent() {
       if (picked.length === 0) {
         return
       }
-      await uploadPhotos(picked, setUploadProgress)
-      await resource.reload()
+      if (enqueueUploads(picked) > 1) {
+        void present(uploadQueuePage)
+      }
     }
     catch (error) {
       Alert.alert(t('studio.upload.failed'), error instanceof Error ? error.message : t('studio.error.description'))
     }
-    finally {
-      setUploadProgress(null)
-    }
-  }, [mutating, resource, t, uploadProgress])
+  }, [mutating, t])
 
   const handleEditTags = useCallback(() => {
     const selectedAssets = resource.data?.assets.filter(asset => selectedIds.includes(asset.id)) ?? []
@@ -173,12 +176,12 @@ function StudioLibraryContent() {
     return null
   }
 
-  const busy = uploadProgress !== null || mutating
-  const progressLabel = uploadProgress
-    ? t(uploadProgress.phase === 'uploading' ? 'studio.upload.uploading' : 'studio.upload.processing', {
-        progress: Math.round(uploadProgress.progress * 100),
-      })
-    : null
+  const busy = mutating
+  const progressLabel = uploadSummary.running
+    ? t('studio.upload.queue.headline', { done: uploadSummary.done, total: uploadSummary.total })
+    : uploadSummary.failed > 0
+      ? t('studio.upload.queue.failedCount', { count: uploadSummary.failed })
+      : null
   const title = selectionMode
     ? t('studio.library.selected', { count: selectedIds.length })
     : (progressLabel ?? t('studio.library.title'))
@@ -187,6 +190,16 @@ function StudioLibraryContent() {
     <View style={[styles.root, { backgroundColor: palette.bgCanvas }]}>
       <Stack.Title>{title}</Stack.Title>
       <Stack.Toolbar placement="right">
+        {!selectionMode && uploadJobs.length > 0 ? (
+          <Stack.Toolbar.Button
+            accessibilityLabel={t('studio.upload.queue.title')}
+            icon={
+              uploadSummary.failed > 0 ? 'exclamationmark.arrow.trianglehead.2.clockwise.rotate.90' : 'arrow.up.circle'
+            }
+            tintColor={uploadSummary.failed > 0 ? palette.danger : undefined}
+            onPress={() => void present(uploadQueuePage)}
+          />
+        ) : null}
         {selectionMode ? (
           <Stack.Toolbar.Button
             accessibilityLabel={t('studio.library.tags.action')}
