@@ -185,10 +185,10 @@ Done:
 5. Host resolution and tenant routing: `getaddrinfo('alpha.localhost')` → `127.0.0.1`; `curl` against `alpha.localhost:1841` and `beta.localhost:1841` → 200, unknown slug → 400.
 6. ATS: the exception is present in the built bundle, and the Dev Lab probe against `http://localhost:1841` returns **reachable · HTTP 200** from the Simulator.
 7. Environment switch: applying Local reloads the app, `core` then logs `host=localhost` for `/api/auth/session` and `/api/featured-galleries`, and the app shows a clean signed-out state — no stale production session, no 401 cascade.
+8. Tenant subdomains from the Simulator: probing `http://alpha.localhost:1841` returns **reachable · HTTP 200** and `core` logs `host=alpha.localhost`. This failed with a 503 that never reached `core` until `*.localhost` was added to the system proxy's bypass list, which is why that prerequisite is called out above.
 
-Blocked, with the reason known:
+Blocked on missing data, not on the environment:
 
-8. **Tenant subdomains from the Simulator** — probing `http://alpha.localhost:1841` returns 503 without ever reaching `core`. Cause is the system proxy, not the app (see the bypass prerequisite above). Re-verify after adding `*.localhost` to the bypass list.
 9. **Image render end to end** — the local database has zero photos, and content seeding is not implemented.
 10. **GitHub OAuth** — the local database holds `fake-github-client-id`; the real dev client credentials have to be configured first.
 
