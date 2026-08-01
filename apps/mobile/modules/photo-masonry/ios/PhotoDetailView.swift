@@ -54,9 +54,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     mediaViewport.clipsToBounds = true
     addSubview(mediaViewport)
     mediaViewport.addSubview(viewer)
+    addSubview(bottomScrim)
     addSubview(infoView)
     addSubview(topScrim)
-    addSubview(bottomScrim)
     addSubview(navigationBar)
     addSubview(pageControl)
     addSubview(toolbar)

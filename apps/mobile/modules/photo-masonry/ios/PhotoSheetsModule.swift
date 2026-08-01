@@ -32,7 +32,7 @@ public final class PhotoSheetsModule: Module {
         return
       }
 
-      let hostingController = UIHostingController(rootView: PhotoInfoSheetView(info: info))
+      let hostingController = UIHostingController(rootView: PhotoInfoSectionsList(info: info))
       hostingController.navigationItem.title = info.localization.title
       hostingController.navigationItem.rightBarButtonItem = UIBarButtonItem(
         title: info.localization.done,
