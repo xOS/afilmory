@@ -6,8 +6,8 @@ import { API_BASE_URL, getTenantApiBaseUrl } from './endpoints'
 export {
   API_BASE_URL,
   getGalleryApiBaseUrl,
+  getGalleryOrigin,
   getTenantApiBaseUrl,
-  SAAS_BASE_DOMAIN,
   setActiveTenantSlug,
 } from './endpoints'
 

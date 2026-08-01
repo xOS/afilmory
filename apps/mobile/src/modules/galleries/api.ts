@@ -1,6 +1,6 @@
 import { ofetch } from 'ofetch'
 
-import { apiClient, SAAS_BASE_DOMAIN } from '@/api/client'
+import { apiClient, getGalleryOrigin } from '@/api/client'
 
 import type {
   FeaturedGallery,
@@ -83,7 +83,7 @@ function photoLocation(location: ManifestPhoto['location']): GalleryLocation | n
 }
 
 export async function fetchGalleryManifest(slug: string, signal?: AbortSignal): Promise<GalleryPhoto[]> {
-  const galleryOrigin = `https://${slug}.${SAAS_BASE_DOMAIN}`
+  const galleryOrigin = getGalleryOrigin(slug)
   const res = await ofetch<{ data: ManifestPhoto[] }>(`${galleryOrigin}/api/manifest`, {
     signal,
   })
@@ -125,7 +125,7 @@ export function getCachedGalleryCovers(slug: string): GalleryCoverPhoto[] | unde
 }
 
 export async function fetchGalleryPreviewPhotos(slug: string, limit: number): Promise<GalleryCoverPhoto[]> {
-  const galleryOrigin = `https://${slug}.${SAAS_BASE_DOMAIN}`
+  const galleryOrigin = getGalleryOrigin(slug)
   const res = await ofetch<{ data: ManifestPhoto[] }>(`${galleryOrigin}/api/manifest/photos/search`, {
     method: 'POST',
     body: { limit, sort: 'desc' },

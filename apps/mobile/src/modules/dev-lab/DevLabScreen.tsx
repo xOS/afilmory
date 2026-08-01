@@ -7,6 +7,7 @@ import type { Palette } from '@/theme/palette'
 import { font, radiusLg } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
+import { ApiEnvironmentSection } from './ApiEnvironmentSection'
 import type {
   CommentSendScenarioParams,
   DevLabMotionMode,
@@ -112,6 +113,14 @@ export function DevLabScreen({
         </View>
         <Text style={styles.environmentBadge}>DEV</Text>
       </View>
+
+      <SectionHeading
+        eyebrow="API ENVIRONMENT"
+        subtitle="Point the app at the local stack or back at production"
+        title="Backend target"
+      />
+
+      <ApiEnvironmentSection />
 
       <SectionHeading
         eyebrow="SCENARIO REGISTRY"

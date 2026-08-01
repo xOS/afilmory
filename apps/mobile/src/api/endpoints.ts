@@ -1,5 +1,8 @@
-export const API_BASE_URL = 'https://api.afilmory.art/api'
-export const SAAS_BASE_DOMAIN = 'afilmory.art'
+import { buildPlatformOrigin, buildTenantOrigin, getActiveEnvironment } from './environment'
+
+const environment = getActiveEnvironment()
+
+export const API_BASE_URL = `${buildPlatformOrigin(environment)}/api`
 
 const TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 
@@ -17,12 +20,16 @@ export function setActiveTenantSlug(slug: string | null | undefined): void {
   activeTenantSlug = normalizeTenantSlug(slug)
 }
 
-export function getGalleryApiBaseUrl(slug: string): string {
+export function getGalleryOrigin(slug: string): string {
   const normalized = normalizeTenantSlug(slug)
   if (!normalized) {
     throw new Error('A gallery workspace is required for this request.')
   }
-  return `https://${normalized}.${SAAS_BASE_DOMAIN}/api`
+  return buildTenantOrigin(environment, normalized)
+}
+
+export function getGalleryApiBaseUrl(slug: string): string {
+  return `${getGalleryOrigin(slug)}/api`
 }
 
 export function getTenantApiBaseUrl(): string {

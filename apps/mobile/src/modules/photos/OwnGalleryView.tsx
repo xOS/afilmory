@@ -3,7 +3,7 @@ import { PhotoMasonryView } from 'photo-masonry'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import { SAAS_BASE_DOMAIN } from '@/api/client'
+import { getGalleryOrigin } from '@/api/client'
 import { getIntlLocale, useTranslation } from '@/i18n'
 import { signOut, useAuth } from '@/modules/auth/sessionStore'
 import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
@@ -128,7 +128,7 @@ function NativeGallery({ slug }: { slug: string }) {
           avatarUrl: session.user.image ?? '',
           avatarInitial: Array.from(session.user.name.trim())[0]?.toUpperCase() ?? '?',
           tenantLine: `${session.activeWorkspace.name} · ${session.activeWorkspace.slug}`,
-          webUrl: `https://${session.activeWorkspace.slug}.${SAAS_BASE_DOMAIN}`,
+          webUrl: getGalleryOrigin(session.activeWorkspace.slug),
           statsLine: photos.length === 0 ? '' : statsParts.join(' · '),
           strip: photos.slice(0, 12).map(photo => ({
             url: photo.thumbnailUrl,
@@ -244,7 +244,7 @@ function NativeGallery({ slug }: { slug: string }) {
           filterAccessibilityLabel={filterAccessibilityLabel}
           filterCount={filterCount}
           gap={4}
-          livePhotoBadgeTitle={t('photo.livePhoto')}
+          livePhotoAccessibilityLabel={t('photo.livePhoto')}
           photos={error ? [] : items}
           profileImageURL={auth.session?.user.image ?? ''}
           profileAccessibilityLabel={profileAccessibilityLabel}

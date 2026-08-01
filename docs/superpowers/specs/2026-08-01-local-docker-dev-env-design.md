@@ -82,37 +82,35 @@ Note for anyone later tempted to reintroduce the gateway locally: `AUTH_GATEWAY_
 
 ### 1. `docker-compose.dev.yml` (new, repo root)
 
-Three services. Postgres and Redis mirror the existing `docker-compose.yml` definitions (same credentials, same healthchecks), so a `be/.env` already pointing at `localhost:5432` / `localhost:6379` needs no change. RustFS is new:
+**One service, not three.** Postgres and Redis already exist in `docker-compose.yml`; redefining them here is actively dangerous. Compose derives the project name from the directory, so both files resolve to the same project, and reusing the `db` / `redis` service keys silently *recreates* those containers against different volumes — which is exactly what happened the first time this was tried. Adding only the missing service keeps the two files composable and non-destructive.
 
-- image `rustfs/rustfs:latest`, ports `9000:9000` and `9001:9001`
+RustFS:
+
+- image `rustfs/rustfs:latest`, published on `9300:9000` and `9301:9001` (the conventional 9000/9001 were already taken on the development machine; the seed's `--endpoint` default matches)
 - `RUSTFS_VOLUMES=/data`, `RUSTFS_ADDRESS=0.0.0.0:9000`, `RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001`
 - `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` default to `rustfsadmin`
-- named volume for `/data`
-- healthcheck on the S3 port so `seed:dev` can wait on it
+- named volume for `/data` — the image runs as UID/GID 10001, so a bind mount would need matching ownership
+- healthcheck is `curl -sS`, deliberately **not** `curl -fsS`: an unauthenticated GET on the S3 root answers 403, so `-f` would keep the container permanently unhealthy
 
-The existing `docker-compose.yml` (production-shaped, builds `Dockerfile.core`) is left untouched.
+Startup is therefore two commands: `docker compose up -d db redis` and `docker compose -f docker-compose.dev.yml up -d`.
 
-### 2. `seed:dev` (new, `be/apps/core/scripts/seed-dev.ts`, run via `vite-node`)
+### 2. `seed:dev` (new, `be/apps/core/src/cli/seed-dev.ts`)
 
-Idempotent, re-runnable, two phases.
+Implemented as a **CLI subcommand**, not a standalone script. `src/cli/index.ts` is an existing registry, and `createConfiguredApp()` hands back the DI container — which also means `AppInitializationProvider.onModuleInit` provisions the root tenant, the superadmin, and the initialized flag for free. The seed never has to do that itself.
 
-**Phase A — system level (no user required).** Creates the bucket via `@aws-sdk/client-s3` (already a `core` dependency, so no CLI container), then writes:
+Run: `pnpm --filter @afilmory/core seed:dev [-- --slug <workspace>]`.
 
-- system setting `oauthGatewayUrl` = `http://localhost:1841`
-- storage setting: provider `s3`, `endpoint` `http://localhost:9000`, `bucket`, `region`, `accessKeyId`/secret, path-style addressing
-- root tenant + superadmin (existing `DEFAULT_SUPERADMIN_EMAIL` / `DEFAULT_SUPERADMIN_USERNAME` env defaults)
+**Global step (always).** Creates the bucket via `@aws-sdk/client-s3` (already a `core` dependency, so no CLI container) with `forcePathStyle`, then sets system setting `oauthGatewayUrl` = `http://localhost:1841`, which `buildGatewayRedirectUri` concatenates into the registered callback.
 
-Phase A must complete before anything else: until the app is marked initialized, `TenantContextResolver.resolve` short-circuits and returns no tenant at all (`tenant-context-resolver.service.ts:48-54`), so every tenant-scoped request would silently fall through.
+**Workspace step (`--slug`).** Writes `builder.storage.providers` + `builder.storage.activeProvider` for that workspace: provider `s3`, endpoint `http://localhost:9300`, bucket, region, credentials.
 
-**Phase B — content level.** Over HTTP against the running `core`, so the real contract is exercised:
+Storage settings are **tenant-scoped** — `SettingService.resolveTenantId` falls back to `getTenantContext()`, which does not exist in a CLI process. `SettingEntryInput` carries `options.tenantId`, which takes precedence, so the seed passes the tenant id explicitly instead of faking an AsyncLocalStorage context. This also means the workspace must already exist: storage cannot be configured before there is a tenant to configure it for.
 
-1. Create an email/password dev user (`emailAndPassword` is enabled — `auth.provider.ts:184`) and sign in to obtain a session cookie.
-2. Register a workspace through the normal tenant-registration flow, yielding a known slug.
-3. Upload the nine files in `photos/` (including the HEIC + `.mov` Live Photo pairs) via `POST /api/photos/assets/upload`, consuming the SSE progress stream.
+Both steps are idempotent — bucket creation falls back to `HeadBucket`, and setting writes are upserts.
 
-Phase B therefore also acts as a smoke test of EXIF extraction, thumbnailing, blurhash, and Live Photo pairing. It is skipped (with a clear message) if `core` is not reachable.
+**Not implemented: content seeding.** Creating a dev user, registering a workspace, and uploading `photos/` is deliberately out of scope for this pass. `AuthRegistrationService.registerTenant` requires a tenant context and a `Headers` object, and `POST /api/photos/assets/upload` is a multipart endpoint returning an SSE progress stream — both are HTTP-shaped and do not fit the in-process CLI. The workspace is created through the normal sign-in flow instead, and `seed:dev --slug <it>` is run afterwards.
 
-**Identity caveat.** The seeded email/password user and a later GitHub/Google sign-in are the same identity only if Better Auth links them by email. No `accountLinking` block is configured, so the effective default must be confirmed during implementation. Mitigation regardless of outcome: `SEED_USER_EMAIL` is configurable, and the app gains a dev-only email/password sign-in (below) so day-to-day work never depends on which way linking resolves.
+**Identity caveat** (still open, now deferred with content seeding): whether Better Auth links an email/password user to a later GitHub/Google sign-in by email. No `accountLinking` block is configured.
 
 ### 3. App: environment module
 
@@ -120,41 +118,49 @@ Phase B therefore also acts as a smoke test of EXIF extraction, thumbnailing, bl
 
 Two built-in environments — `production` (`https`, `afilmory.art`, no port) and `local` (`http`, `localhost`, `1841`) — plus a custom entry.
 
-Persistence follows the established pattern in `columnPreference.ts`: SecureStore, a module-level cached value, and an exported hydration promise. `app/_layout.tsx` awaits hydration before the first request, otherwise the initial fetch races against a stale default.
+Persistence uses `expo-secure-store`'s **synchronous** `getItem` / `setItem` (available since v57; the project is on 57.0.1). Reading synchronously at module load lets `API_BASE_URL` and `authClient`'s `baseURL` stay plain constants — no hydration promise, no boot-order race, no lazy client rebuild. This is simpler than the async pattern in `columnPreference.ts` and was chosen once the sync API was confirmed present.
 
-**Switching environments must clear the auth session and the query cache.** A cookie issued for `afilmory.art` is meaningless on `localhost`; leaving it in place produces a cascade of 401s instead of a clean signed-out state.
+The corollary is that **changing the environment requires an app reload**, which the section performs via `DevSettings.reload()`. That reload is also what discards the previous environment's session and query caches — a cookie issued for `afilmory.art` is meaningless on `localhost`, and leaving it in place would produce a cascade of 401s instead of a clean signed-out state.
+
+Outside `__DEV__` the persisted value is ignored entirely and production is returned unconditionally.
+
+Three call sites hand-built `https://${slug}.${SAAS_BASE_DOMAIN}` (`galleries/api.ts` ×2, `OwnGalleryView.tsx`); those would ignore the local scheme and port, so they now go through a shared `getGalleryOrigin(slug)` and the `SAAS_BASE_DOMAIN` export is gone.
 
 ### 4. App: Dev Lab surface
 
 `app/dev/index.tsx` already exists and redirects away when `!__DEV__`. `DevLabScreen` is currently a single-scenario parameter playground (`registry.ts` holds one entry). Add a section above the scenario list:
 
-- environment selector (production / local / custom) with the current resolved base URL displayed
+- environment selector (production / local / custom) with the resolved platform and tenant URLs displayed
 - a reachability probe against the selected platform API so a misconfigured stack fails loudly here rather than as an opaque error on the photos tab
-- dev-only email/password sign-in, making the local environment usable without any third-party provider
+- Apply is disabled until the draft differs from the active environment; applying persists and reloads
 
-Reuse the existing `SectionHeading` / `ParameterField` / `SegmentedParameter` components.
+It lives in its own file (`ApiEnvironmentSection.tsx`) rather than inside `DevLabScreen`, which is already near the component size limit. Dev-only email/password sign-in was dropped along with content seeding — the registered dev OAuth client covers local sign-in.
 
 ### 5. App: ATS
 
-`Info.plist` currently sets `NSAllowsArbitraryLoads=false` with `NSAllowsLocalNetworking=true`. Whether that covers a dotted name like `alpha.localhost` is unverified. If the Simulator blocks it, add a targeted exception rather than disabling ATS:
+`Info.plist` set `NSAllowsArbitraryLoads=false` with `NSAllowsLocalNetworking=true`, and whether that covers a dotted name like `alpha.localhost` was never established. Rather than leave it to chance, the targeted exception is added up front — it is narrow, and it costs nothing if `NSAllowsLocalNetworking` would have sufficed:
 
 ```
 NSExceptionDomains → localhost → { NSIncludesSubdomains: true, NSExceptionAllowsInsecureHTTPLoads: true }
 ```
 
+`app.json`'s `ios.infoPlist` is the committed source of truth — `apps/mobile/ios/` is gitignored prebuild output. The generated `Info.plist` is edited in place too, so the currently checked-out Xcode project picks the exception up without a prebuild.
+
 ## Data flow: photo bytes
 
 `manifest.service.ts` rewrites each `s3Key` into `/api/storage/sign?objectKey=…` (`storage-access.utils.ts:21`). The app requests that path against the tenant host; `core` issues a presigned URL; the app fetches it directly.
 
-The presigned host participates in the SigV4 signature, so `core` must sign against the same origin the Simulator will call. Because both `core` and the Simulator run on the same machine, `http://localhost:9000` satisfies both sides with no proxy and no host rewriting.
+The presigned host participates in the SigV4 signature, so `core` must sign against the same origin the Simulator will call. Because both `core` and the Simulator run on the same machine, `http://localhost:9300` satisfies both sides with no proxy and no host rewriting.
+
+Verified against a running RustFS: path-style create/put/presign/GET all succeed, while virtual-host addressing fails outright with `NotImplemented: Unknown operation`. Path-style is therefore mandatory — and already unconditional on both sides: `storage-access.service.ts:223` hardcodes `forcePathStyle: true`, and the builder's hand-rolled SigV4 client falls through to `${endpoint}/${bucket}/` for a custom endpoint that does not embed the bucket (`packages/builder/src/s3/client.ts:102`). No code change was needed.
 
 ## Error handling
 
 | Failure | Surfacing |
 |---|---|
-| Docker services down | `seed:dev` waits on healthchecks, then fails with the specific unreachable service |
-| `core` not running during Phase B | Phase A completes, Phase B skipped with an explicit message |
-| Bucket already exists / seed re-run | Idempotent: bucket creation tolerates `BucketAlreadyOwnedByYou`, setting writes are upserts, and the seed queries the workspace's existing photos to skip files it already uploaded (it does not assume the upload endpoint dedupes) |
+| Docker services down | `seed:dev` fails on the first S3 or database call with the underlying connection error |
+| `--slug` names a workspace that does not exist | Explicit error telling the operator to sign in and create it first |
+| Bucket already exists / seed re-run | Idempotent: `HeadBucket` short-circuits creation, setting writes are upserts |
 | App pointed at a dead stack | Dev Lab reachability probe reports it in place |
 | Stale session after switch | Session and query cache cleared on switch |
 
@@ -164,14 +170,21 @@ Static: `pnpm --filter @afilmory/mobile type-check` and `pnpm lint` scoped to ch
 
 Behavioral — each of these must be observed running, not inferred:
 
-1. `docker compose -f docker-compose.dev.yml up -d` → all three healthy.
-2. `pnpm seed:dev` from a wiped volume set → bucket created, settings written, nine photos uploaded with thumbnails and blurhash.
-3. Simulator resolves `<slug>.localhost` (host-side resolution is verified; in-Simulator is not).
-4. ATS permits `http://alpha.localhost:1841` — or the exception above is added and then permits it.
-5. RustFS path-style presigned URLs verify against `core`'s S3 client; an image actually renders in the app.
-6. GitHub OAuth completes end to end against the local stack and lands back in the app via `afilmory://`.
-7. Live Photo playback works for the seeded HEIC + `.mov` pairs.
-8. Switching production → local → production in Dev Lab leaves no stale session.
+Done:
+
+1. `docker compose -f docker-compose.dev.yml up -d` → RustFS healthy.
+2. RustFS S3 round-trip: bucket create, put, presign, GET → 200. Path-style only.
+3. `pnpm --filter @afilmory/core seed:dev -- --slug alpha` → bucket ensured, `oauthGatewayUrl` and workspace storage written; confirmed by querying `system_setting` and `settings`.
+4. `pnpm --filter @afilmory/mobile type-check` clean; eslint clean on all changed files; `core` type-check introduces no new errors (8 pre-existing, none in changed files).
+5. `getaddrinfo('alpha.localhost')` → `127.0.0.1` on the host.
+
+Still to observe, in the Simulator:
+
+6. Simulator inherits the host's `*.localhost` resolution.
+7. ATS permits `http://alpha.localhost:1841`.
+8. An image renders end to end (manifest → `/api/storage/sign` → presigned RustFS URL).
+9. GitHub OAuth completes against the local stack and lands back via `afilmory://`.
+10. Switching production → local → production in Dev Lab leaves no stale session.
 
 ## Open items
 
