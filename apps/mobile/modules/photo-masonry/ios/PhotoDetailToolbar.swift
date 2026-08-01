@@ -72,15 +72,26 @@ final class PhotoDetailToolbar: UIToolbar {
   }
 
   func setInfoActive(_ active: Bool) {
-    infoItem.isSelected = active
+    applySelection(active, to: infoItem)
     infoItem.image = UIImage(systemName: active ? "info.circle.fill" : "info.circle")
   }
 
   func setReactionsActive(_ active: Bool) {
-    reactionsItem.isSelected = active
+    applySelection(active, to: reactionsItem)
     reactionsItem.image = UIImage(
       systemName: active ? Self.reactionsActiveSymbol : Self.reactionsInactiveSymbol
     )
+  }
+
+  // `isSelected` carries the prominent glass fill; the trait is set alongside it so
+  // the state is announced and not only drawn.
+  private func applySelection(_ selected: Bool, to item: UIBarButtonItem) {
+    item.isSelected = selected
+    if selected {
+      item.accessibilityTraits.insert(.selected)
+    } else {
+      item.accessibilityTraits.remove(.selected)
+    }
   }
 
   func setCommentCount(_ count: Int) {
