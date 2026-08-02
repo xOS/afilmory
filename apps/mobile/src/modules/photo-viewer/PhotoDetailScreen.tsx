@@ -31,12 +31,21 @@ function isPhotoReaction(value: string): value is PhotoReaction {
   return (PHOTO_REACTIONS as readonly string[]).includes(value)
 }
 
+type MetadataScope = 'all' | 'window'
+
+const METADATA_WINDOW_RADIUS = 2
+
+function sliceMetadataWindow<T>(photos: T[], index: number): T[] {
+  return photos.slice(Math.max(0, index - METADATA_WINDOW_RADIUS), index + METADATA_WINDOW_RADIUS + 1)
+}
+
 export function PhotoDetailScreen() {
   const { cancel, params, present } = usePageRuntime<PhotoDetailRouteParams>()
   const { i18n, t } = useTranslation()
   const session = getPhotoViewerSession(params.sessionId)
   const auth = useAuth()
   const [currentIndex, setCurrentIndex] = useState(session?.initialIndex ?? 0)
+  const [metadataScope, setMetadataScope] = useState<MetadataScope>('window')
   const currentPhoto = session?.photos[currentIndex] ?? null
   const gallerySlug = session?.gallerySlug ?? null
   const intlLocale = getIntlLocale(i18n.resolvedLanguage)
@@ -44,6 +53,15 @@ export function PhotoDetailScreen() {
   const { addReactions, counts, failureNonce } = usePhotoReactions(gallerySlug, currentPhoto?.id ?? null)
 
   useEffect(() => () => releasePhotoViewerSession(params.sessionId), [params.sessionId])
+
+  // Building every photo's info payload costs ~1.3ms each and the opening
+  // transition is frozen behind it, so the first commit ships only the photos
+  // reachable by an immediate swipe. The rest lands once the native open
+  // animation (0.42s) is done and a main-thread hitch no longer shows.
+  useEffect(() => {
+    const timer = setTimeout(setMetadataScope, 500, 'all')
+    return () => clearTimeout(timer)
+  }, [])
 
   const photos = useMemo(
     () =>
@@ -58,7 +76,9 @@ export function PhotoDetailScreen() {
       today: t('photo.captureDay.today'),
       yesterday: t('photo.captureDay.yesterday'),
     }
-    const metadata: PhotoDetailMetadataItem[] = (session?.photos ?? []).map((photo) => {
+    const all = session?.photos ?? []
+    const scoped = metadataScope === 'all' ? all : sliceMetadataWindow(all, session?.initialIndex ?? 0)
+    const metadata: PhotoDetailMetadataItem[] = scoped.map((photo) => {
       const header = buildPhotoHeaderModel(photo, intlLocale, headerStrings)
       const info = buildNativePhotoInfoPayload(buildPhotoInfoSheetModel(photo, t, intlLocale))
       return {
@@ -69,7 +89,7 @@ export function PhotoDetailScreen() {
       }
     })
     return JSON.stringify(metadata)
-  }, [intlLocale, session, t])
+  }, [intlLocale, metadataScope, session, t])
 
   const stringsJSON = useMemo(() => {
     const strings: PhotoDetailStrings = {
