@@ -1,8 +1,11 @@
 # Native Photo Data Layer and Detail Page — Design
 
 **Date:** 2026-08-03
-**Scope:** Move the photo data source (manifest fetch, normalization, filtering) and the entire photo detail page from JavaScript into Swift. Phase A of a three-phase migration that ends with the mobile consumer surface running natively.
-**Touches:** `apps/mobile/modules/photo-masonry/ios/{Localization,Data,Filters,Models,Detail,Masonry,Sheets,Tests}/**`, `apps/mobile/modules/photo-masonry/ios/PhotoMasonry.podspec`, `apps/mobile/scripts/generate-native-fixtures.mjs`, and the deletions listed under [Deletions](#deletions) — most of `apps/mobile/src/modules/photo-viewer/` (`usePhotoContextMenu.ts` stays), plus the `useGalleryManifest` call sites in `galleries/` and `photos/`.
+**Scope:** Move every photo data source (manifest fetch, normalization, filtering), the API environment, the auth session and the entire photo detail page from JavaScript into Swift. Phase A of a two-spec migration that ends with the mobile consumer surface running natively.
+**Touches:** `apps/mobile/modules/photo-masonry/ios/{Localization,Data,Filters,Models,Session,Detail,Masonry,Sheets,Tests}/**`, `apps/mobile/modules/photo-masonry/ios/PhotoMasonry.podspec`, `apps/mobile/scripts/generate-native-fixtures.mjs`, and the deletions listed under [Deletions](#deletions) — most of `apps/mobile/src/modules/photo-viewer/` (`usePhotoContextMenu.ts` stays), plus the `useGalleryManifest` call sites in `galleries/` and `photos/`.
+**Followed by:** `2026-08-03-mobile-native-page-controllers-design.md` — the page chrome that still renders in React after this spec lands.
+
+> **Phases are documentation boundaries, not shipping boundaries.** Both specs are designed up front and implemented as one continuous effort. There is deliberately no runnable intermediate state between them and no transitional bridge code: the native layer is built and proven green against golden fixtures while unwired, then wired in and the React implementation deleted in one pass.
 
 ## Problem
 
@@ -50,9 +53,9 @@ What remains is structural. Of the 69.8 ms, only 11.5 ms is the native snapshot;
 
 ## Non-goals
 
-- Page chrome (loading/error/empty states, date pill, profile button, upload FAB, Studio selection mode) stays in JavaScript. That is Phase B.
-- The Map tab's chrome stays in JavaScript. Phase B.
-- No new features on either page.
+- Page chrome — loading/error/empty states, date pill, profile button, filter entry points, upload FAB, Studio selection mode, Map chrome — belongs to the controllers spec, not this one.
+- The React sign-in flow stays in React. Native owns the session it produces, not the flow that produces it.
+- No new features on any page.
 
 ## Decisions (confirmed)
 
@@ -60,10 +63,13 @@ What remains is structural. Of the 69.8 ms, only 11.5 ms is the native snapshot;
 |---|---|
 | Refactor driver | Architecture first; latency is a by-product |
 | Masonry surfaces in scope | All three — Photos tab, Explore gallery detail, Studio library |
-| Map tab | Fully native, but its chrome lands in Phase B |
+| Map tab | Fully native; its chrome lands in the controllers spec |
 | Swift i18n | Bundle the existing JSON catalogs, look them up in Swift |
-| Filter state owner | Swift, from this phase onward |
-| Studio data source | Ported in this phase, not special-cased |
+| Filter state owner | Swift, from this spec onward |
+| Studio data source | Ported here, not special-cased |
+| API environment owner | Swift, owning its own keychain key rather than reading Expo's |
+| Auth session owner | Swift fetches it; React keeps only the sign-in flow |
+| Transitional bridges | None — both specs are designed up front and implemented continuously |
 | Equivalence proof | Golden fixtures generated from the current JS implementation, plus translated unit tests |
 
 ### Why the data layer and the detail page cannot be split
@@ -74,13 +80,14 @@ The reverse ordering fails for the same reason: a native detail page pushed from
 
 ## Architecture
 
-Three layers, separated so the risky parts are pure and testable.
+Four layers, separated so the risky parts are pure and testable.
 
 ```
 Localization/   Localization.swift, LanguageTag.swift, PluralRule.swift
+Session/        ApiEnvironment.swift, AfilmorySession.swift  (extends AfilmorySessionStore)
 Data/           GalleryPhoto.swift, PhotoFeedKey.swift, PhotoFeedStore.swift,
                 ManifestDecoding.swift, StudioAssetDecoding.swift
-Filters/        PhotoFilterEngine.swift, PhotoFilterStore.swift, GalleryDataModule.swift
+Filters/        PhotoFilterEngine.swift, PhotoFilterStore.swift
 Models/         PhotoHeaderModel.swift, PhotoInfoModel.swift, PhotoInfoFormatters.swift,
                 PhotoInfoGear.swift, DateRange.swift, ProfileStats.swift,
                 PhotoReactionState.swift, PhotoReactionTally.swift, PhotoCommentCount.swift
@@ -112,6 +119,8 @@ Localization.t("filter.summary.cameras", count: n)
 - `ManifestDecoding` — `GET {galleryOrigin}/api/manifest`, port of `fetchGalleryManifest` (`src/modules/galleries/api.ts:85`): drop entries without `thumbnailUrl`, sort by `dateTaken` descending, then map with defaults and derive `camera`, `lens`, `aspectRatio` and live-photo state.
 - `StudioAssetDecoding` — the admin path, port of `listPhotoAssets()` + `getPhotoAssetSummary()` + `photoAssetToGalleryPhoto`.
 
+**The studio feed keeps its raw assets.** Studio's management UI reads fields that normalization discards — `availableTags` walks `asset.manifest.data.tags`, and the tag editor computes `commonTags` over selected raw assets. So the studio bucket stores the decoded `GalleryPhoto` *and* the originating asset, rather than throwing the asset away after mapping. The controllers spec depends on this.
+
 **Sort stability.** `Array.prototype.sort` has been stable since ES2019; Swift's `sort(by:)` is not. Photos sharing a `dateTaken` — or both missing one — would land in a different order, which is directly visible in the masonry. Sort explicitly by `(dateTaken descending, original index ascending)`.
 
 **String comparison.** JS uses `localeCompare` on ISO date strings, which coincides with ordinal comparison. The golden fixture proves this rather than assuming it.
@@ -120,17 +129,27 @@ Localization.t("filter.summary.cameras", count: n)
 
 `PhotoFeed` exposes both `@Observable` (for the SwiftUI sheets) and an explicit `observe { } -> Token` callback (for UIKit). UIKit is the primary consumer here, and an explicit registry is more predictable than re-arming `withObservationTracking`.
 
-**Environment readiness is an invariant, not a coincidence.** Native has no independent knowledge of the API base URLs — they arrive only when JS calls `registerEnvironment` (`src/native/afilmorySession.ts:23` → `AfilmorySessionModule.swift:11`), and the root layout deliberately gates every request behind `waitForEnvironment()` (`src/app/_layout.tsx:24-29`) because a fetch that starts earlier hits the production default. Today this holds by accident: a native masonry view cannot exist before `environmentReady` flips (`_layout.tsx:50`). Once `PhotoFeedStore` issues its own requests that dependency becomes load-bearing, so make it explicit — `PhotoFeedStore` must refuse to fetch until `AfilmorySessionStore` reports a registered environment, and queue or fail the request rather than falling back to a default origin. Auth is less exposed: `AfilmorySessionStore` reads the cookie from the keychain itself.
+### Environment and session ownership
 
-Phase B, which mounts these pages natively, removes the accidental ordering entirely — at that point the environment must be resolved natively rather than pushed from JS. This spec does not solve that; it only ensures Phase A does not depend on the accident silently.
+Native cannot start fetching on someone else's schedule, so both prerequisites move with the data.
+
+**Environment.** Today native learns the API base URLs only when JS calls `registerEnvironment` (`src/native/afilmorySession.ts:23` → `AfilmorySessionModule.swift:11`), and the root layout gates every request behind `waitForEnvironment()` (`src/app/_layout.tsx:24-29`) because a fetch that starts earlier hits the production default. That ordering currently holds by accident — a native masonry view cannot exist before `environmentReady` flips (`_layout.tsx:50`). The moment `PhotoFeedStore` issues its own requests the accident becomes load-bearing, so ownership moves instead of being documented around: **the environment override becomes native state**, read and written by `AfilmorySessionStore` against the keychain, with the React dev screen calling a native setter to change it.
+
+Native deliberately does **not** parse `expo-secure-store`'s existing keychain layout. Owning the key outright avoids a needless compatibility coupling to Expo's storage schema, and the setting is dev-only, so changing owners costs no migration.
+
+**Session.** The native detail page needs the viewer's identity for comments and the sign-in prompt — `PhotoDetailScreen` currently forwards `auth.session?.user.id` into `presentNativePhotoComments`. So `AfilmorySessionStore` grows from a cookie holder into a session holder: it fetches the session itself using the cookie it already reads from the keychain, porting `modules/auth/api.ts` (53 lines) and `modules/auth/types.ts` (33 lines).
+
+The sign-in flow stays in React. It still calls `registerSession(cookie)` on success; native reacts by fetching the session. Sign-out goes through native `clearSession`, which the React sign-in page observes.
+
+Net effect: no ordering invariant survives this spec. Native pages depend on nothing that React must do first.
 
 ### Filters
 
 `PhotoFilterEngine` is pure: `applyFilters`, `buildFilterOptions`, `countActiveDimensions`, `hasActiveFilters`, `summarizeFilters`, `presetRange`, `cityForRange`. `presetRange` currently reads `new Date()` directly (`filterStore.ts:48,86`); the Swift version takes `now` as a parameter, otherwise date presets are untestable.
 
-`PhotoFilterStore.shared` holds one global `PhotoFilters` value, **in memory only** — the current store does not persist and resets on relaunch. All mutation logic moves to Swift, including the `replaceFilters` branch that recomputes a preset's range against the current time. JavaScript only sends intent.
+`PhotoFilterStore.shared` holds one global `PhotoFilters` value, **in memory only** — the current store does not persist and resets on relaunch. All mutation logic moves to Swift, including the `replaceFilters` branch that recomputes a preset's range against the current time. Nothing in JavaScript reads or writes filters after this spec: the filter entry points move with the page chrome in the follow-up spec, and the two land together.
 
-Filters apply to the home feed alone. `GalleryMasonry` (Explore) does not filter, and Studio has its own selection semantics.
+Filters apply to the home feed alone. Explore's gallery detail does not filter, and Studio has its own selection semantics.
 
 ### View contract
 
@@ -141,19 +160,19 @@ Filters apply to the home feed alone. `GalleryMasonry` (Explore) does not filter
 | Photo data | `photos: [MasonryPhoto]` | removed |
 | Source | — | `feedKey: String` (`"manifest:<slug>"` / `"studio"`) |
 | Filtering | JS pre-filters and passes the result | `appliesFilters: Bool`, true only for the home feed |
-| Selection | `selectionMode` / `selectedPhotoIds` | unchanged (Phase B) |
+| Selection | `selectionMode` / `selectedPhotoIds` | unchanged until the controllers spec |
 
 `PhotoDetailView` loses `metadataJSON`, `stringsJSON`, `livePhotoStringsJSON` and `reactionItemsJSON` entirely — it builds all of that from `GalleryPhoto` and `Localization`. `PhotoSheetsModule.presentPhotoInfo` changes from taking a pre-rendered payload to taking `(photoId, feedKey)`.
 
 The detail page is presented directly from `PhotoMasonryView.didSelectItemAt`. The window snapshot stays: it still guards the frame between presentation and the first laid-out detail frame.
 
-### Two transitional bridges
+### No transitional bridges
 
-Both are deleted in Phase B.
+An earlier draft carried two: a `filterStore.ts` proxy so React chrome could still drive filters, and an `onFeedStateChange` event so React could still render loading and error states. Both are gone.
 
-1. **`filterStore.ts` becomes a ~30-line proxy** over `GalleryDataModule`, keeping its exported API byte-identical so `OwnGalleryView`, `PhotoMapScreen` and the native filter sheet call sites do not change. It is needed because the filter *entry points* (date pill, filter button) live in JS chrome until Phase B. `useSyncExternalStore` requires a referentially stable `getSnapshot`, so the proxy caches the parsed filters and re-parses only on the change event — returning a fresh object per render causes an infinite render loop.
+They only bought a runnable state *between* this spec and the controllers spec, and there is no such state — the two are implemented as one continuous effort. Keeping them would mean writing a proxy and an event contract in order to delete them a few days later, and the intermediate state they enable is not where equivalence bugs surface anyway; the golden fixtures are.
 
-2. **`onFeedStateChange`** reports load state, error and count to the JS chrome, which still renders loading/error/empty UI.
+The consequence to plan around: this spec's changes do not produce a working app on their own. The native layer is built and proven green while unwired, and the app only runs again once the controllers spec's work lands with it.
 
 ## Testing
 
@@ -190,14 +209,16 @@ Removed in this phase:
 
 Deleting the `/photo/[photoId]` route costs no deep-link capability: `parseRouteParams` requires a `session` param, and session ids are process-local (`photo-viewer-N` from an in-memory `Map`), so a cold-start deep link to that route already fails today.
 
-Kept until Phase B: the four pages' chrome, `usePhotoContextMenu.ts`, the `filterStore.ts` proxy, and the `onFeedStateChange` bridge.
+Also removed here, since nothing in React reads them once the data moves: `photos/filters/filterStore.ts` and `modules/galleries/useGalleryManifest.ts`.
+
+Kept for the controllers spec: the four pages' chrome, `usePhotoContextMenu.ts`, and the React sign-in flow.
 
 ## Expected outcome
 
 | | Before | After |
 |---|---|---|
 | Tap → opening animation | 69.8 ms | ~12 ms (window snapshot only) |
-| Photo data in JS | full manifest ×2 pages | none |
+| Photo data in JS | one manifest copy per consumer, four consumers | none |
 | Filter state | JS, single copy | Swift, single copy |
 | Bridge payload on detail open | 614 KB `metadataJSON` (now 10.9 KB windowed) | none |
 
@@ -211,12 +232,12 @@ Behavior differences: none intended. The golden fixtures enforce that claim.
 | Sort stability (JS stable, Swift not) | Explicit `(dateTaken desc, index asc)` ordering |
 | Plural rule divergence in zh/jp/ko | CLDR-correct `PluralRule`; asserted in `LocalizationTests` |
 | Locale resources missing if the copy script does not run | Wire the copy into the same npm scripts that run prebuild; fail loudly in DEBUG |
-| Native fetch racing ahead of `registerEnvironment` and hitting the production origin | `PhotoFeedStore` refuses to fetch until the environment is registered; never falls back to a default origin |
+| Native fetch racing ahead of a React-supplied environment | Environment ownership moves to native; no React step precedes a native fetch |
+| Environment override lost when ownership moves off `expo-secure-store` | Dev-only setting with no migration requirement; native owns the key outright |
 | `pod install` churn from incremental file additions | Add all new `.swift` files in one pass |
 | Fixtures unobtainable after JS deletion | Generation step ordered before every deletion in the plan |
+| No runnable app between the two specs | Accepted deliberately; the native layer stays compilable and fixture-green throughout, and both specs are planned before implementation starts |
 
-## Phases after this one
+## What comes next
 
-**Phase B** — page chrome and controllers go native across Photos, Explore, Studio and Map; the JS pages, the filter proxy and the `onFeedStateChange` bridge are deleted.
-
-**Phase C** — remaining JS cleanup: `galleries/api.ts`, `types.ts`, `videoSource.ts`, `filters/*` and their `.test.mjs` files. Mostly deletion; can fold into Phase B.
+`2026-08-03-mobile-native-page-controllers-design.md` takes the four pages' chrome native — Photos, Explore, Map and Studio library — and finishes the React cleanup. It is designed before implementation of either spec begins.
