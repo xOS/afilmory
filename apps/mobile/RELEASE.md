@@ -11,16 +11,19 @@ Trigger: push a `mobile-v*` tag, or run manually via workflow_dispatch.
 2. **Certificates** — create an **Apple Distribution** certificate. Easiest via Xcode:
    Settings → Accounts → team → Manage Certificates → + → Apple Distribution.
    Then export it from Keychain Access as `.p12` with a password.
-3. **Profiles → +** — create an **App Store Connect** distribution profile for
-   `app.afilmory` using that certificate. Download the `.mobileprovision`.
+
+No provisioning profiles to create: CI archives with automatic signing
+(`-allowProvisioningUpdates` + the ASC API key), so Xcode registers the App ID and
+fetches a profile for every target — app and extensions alike — at build time.
 
 ### App Store Connect ([appstoreconnect.apple.com](https://appstoreconnect.apple.com))
 
 4. **My Apps → + → New App** — platform iOS, bundle ID `app.afilmory`,
    name `Afilmory`, SKU `afilmory-ios`.
 5. **Users and Access → Integrations → App Store Connect API → Team Keys → +** —
-   role **App Manager**. Note the Key ID and Issuer ID, download the `.p8`
-   (downloadable only once).
+   role **App Manager** (required: a Developer-role key cannot create App IDs or
+   provisioning profiles, so the archive step would fail). Note the Key ID and
+   Issuer ID, download the `.p8` (downloadable only once).
 
 ### One-time sponsorship purchase
 
@@ -50,7 +53,6 @@ submitting a build:
 | --- | --- |
 | `IOS_DIST_CERT_P12` | `base64 -i dist.p12 \| pbcopy` |
 | `IOS_DIST_CERT_PASSWORD` | password chosen when exporting the `.p12` |
-| `IOS_APPSTORE_PROFILE` | `base64 -i profile.mobileprovision \| pbcopy` |
 | `ASC_KEY_ID` | API key ID |
 | `ASC_ISSUER_ID` | API key issuer ID |
 | `ASC_API_KEY_P8` | raw contents of the `.p8` file |
