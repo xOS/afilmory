@@ -4,6 +4,8 @@
 **Scope:** Opening and closing are the same photo-only transition in opposite directions. The masonry page remains geometrically fixed; only the selected photo translates and scales. The black backdrop is a fixed, full-bleed layer that changes opacity, and detail chrome enters after the photo has established the transition.
 **Touches:** `apps/mobile/modules/photo-masonry/ios/Core/PhotoTransitionRegistry.swift`, `Detail/PhotoDetailView.swift`, `Detail/PhotoDetailChromeVisibility.swift`, `Viewer/PhotoViewerView.swift`, `Viewer/PhotoViewerCell.swift`, `apps/mobile/src/app/_layout.tsx`, `apps/mobile/src/modules/photo-viewer/PhotoDetailScreen.tsx`.
 
+> **Partly superseded by `2026-08-03-photo-transition-native-rebuild-design.md`.** Rows 16, 17, 21, 23 and 27 of the decision table below — the animation-less route transition, the opening window snapshot, the absent system interactive dismiss, the painted placeholder slot and the presenter handoff — exist only to survive React driving the navigation. Once the detail view controller is presented natively they are deleted and replaced by standard UIKit custom transitions with a live presenter. Every other row, including all of the visual design and the commit rule, still holds.
+
 ## Problem
 
 The iOS 18+ zoom transition treats the complete `RNSScreen` as the shared element. On opening it scales the entire destination view from the thumbnail, including backdrop and chrome; on interactive dismissal it shrinks the same complete page. This cannot express the Photos behavior: the presenter remains stationary, the selected photo alone moves between source and fullscreen geometry, and the backdrop only cross-fades. The route transition and the visual photo transition therefore require separate ownership.

@@ -41,13 +41,15 @@ Much of this is thinner than it looks: the heavy native pieces already exist.
 |---|---|
 | Explore galleries list | Native, including the card UI |
 | Studio library | Fully native — selection, tag editing, bulk mutations, upload entry |
-| Second-level navigation | Native push onto the `UINavigationController` RNScreens provides |
+| Page hosting | Real child view controllers via containment; Swift never touches the RNScreens screen |
+| Gallery detail navigation | Native push on the page's own `UINavigationController` |
+| Photo detail navigation | Modal custom presentation (see the transition spec) |
 | Tab container | Unchanged (`NativeTabs`) |
 | Sign-in | Stays in React |
 
 ## Mounting and navigation
 
-Each tab's React screen degrades to a host:
+Each tab's React screen degrades to a host that adopts a native view controller once through containment:
 
 ```tsx
 export default function PhotosTab() {
@@ -55,7 +57,12 @@ export default function PhotosTab() {
 }
 ```
 
-Second-level navigation — Explore list → gallery detail, any masonry → photo detail — is a native push onto the `UINavigationController` that RNScreens already vends (`PhotoViewerView.presenterScreenView()` resolves it today via `screen.navigationController`). This is the same mechanism the data spec uses for the detail page, so there is one navigation path, not two.
+The native side of that view is not a bare `UIView` — it owns a real `UIViewController`, added via `addChild` / `didMove(toParent:)`. See `2026-08-03-photo-transition-native-rebuild-design.md` for why hosting works this way and what it unlocks; the short version is that a real view controller can present its own modals, own its own navigation controller, and answer status-bar and rotation callbacks without Swift ever inspecting the RNScreens screen.
+
+Second-level navigation splits by kind:
+
+- **Explore list → gallery detail** is a native push on the page's own `UINavigationController` — hierarchical, nav bar, system-standard animation.
+- **Any masonry → photo detail** is a modal custom presentation, because the presenter must stay live and stationary underneath. The transition spec covers it.
 
 React's router stops tracking these pages. That costs nothing measurable: there are no universal links, no `associatedDomains` entry, and no `Linking` call anywhere in `src/`. The `afilmory` scheme exists for the OAuth callback, which belongs to the sign-in flow and stays in React.
 

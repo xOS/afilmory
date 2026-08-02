@@ -164,7 +164,9 @@ Filters apply to the home feed alone. Explore's gallery detail does not filter, 
 
 `PhotoDetailView` loses `metadataJSON`, `stringsJSON`, `livePhotoStringsJSON` and `reactionItemsJSON` entirely — it builds all of that from `GalleryPhoto` and `Localization`. `PhotoSheetsModule.presentPhotoInfo` changes from taking a pre-rendered payload to taking `(photoId, feedKey)`.
 
-The detail page is presented directly from `PhotoMasonryView.didSelectItemAt`. The window snapshot stays: it still guards the frame between presentation and the first laid-out detail frame.
+The detail page is presented directly from `PhotoMasonryView.didSelectItemAt`.
+
+The window snapshot does **not** survive that change. It exists to stop a React route commit from exposing an intermediate frame; with the detail view controller laid out synchronously before its animation begins, there is no intermediate frame to hide. `2026-08-03-photo-transition-native-rebuild-design.md` rebuilds the transition on standard UIKit machinery and deletes the snapshot, the registry, the fallback timers and the `transitionId` plumbing. It is a **co-requisite of this spec, not a follow-up** — letting `PhotoTransitionRegistry` and `transitionId` land here only to be deleted immediately after would be writing throwaway code.
 
 ### No transitional bridges
 
@@ -217,7 +219,7 @@ Kept for the controllers spec: the four pages' chrome, `usePhotoContextMenu.ts`,
 
 | | Before | After |
 |---|---|---|
-| Tap → opening animation | 69.8 ms | ~12 ms (window snapshot only) |
+| Tap → opening animation | 69.8 ms | one main-thread call (the transition spec removes the 11.5 ms snapshot too) |
 | Photo data in JS | one manifest copy per consumer, four consumers | none |
 | Filter state | JS, single copy | Swift, single copy |
 | Bridge payload on detail open | 614 KB `metadataJSON` (now 10.9 KB windowed) | none |
