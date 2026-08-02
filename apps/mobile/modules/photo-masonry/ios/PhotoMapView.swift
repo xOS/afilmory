@@ -9,6 +9,7 @@ private let clusterAnnotationReuseIdentifier = "photo-map-cluster"
 private enum PhotoMapScreenState: String {
   case empty
   case error
+  case filteredEmpty
   case loading
   case pending
   case ready
@@ -16,6 +17,7 @@ private enum PhotoMapScreenState: String {
 }
 
 private struct PhotoMapStrings: Decodable {
+  let clearFilters: String
   let clearSelection: String
   let clusterAccessibilityLabel: String
   let emptyDescription: String
@@ -23,6 +25,8 @@ private struct PhotoMapStrings: Decodable {
   let errorDescription: String
   let errorTitle: String
   let fitAll: String
+  let filteredEmptyDescription: String
+  let filteredEmptyTitle: String
   let loading: String
   let locations: String
   let pendingDescription: String
@@ -35,6 +39,7 @@ private struct PhotoMapStrings: Decodable {
   let title: String
 
   static let fallback = PhotoMapStrings(
+    clearFilters: "Clear filters",
     clearSelection: "Clear selection",
     clusterAccessibilityLabel: "Photo cluster",
     emptyDescription: "",
@@ -42,6 +47,8 @@ private struct PhotoMapStrings: Decodable {
     errorDescription: "",
     errorTitle: "Unable to load the map",
     fitAll: "Show all photo locations",
+    filteredEmptyDescription: "Clear filters to show all photo locations.",
+    filteredEmptyTitle: "No photo locations match the filters",
     loading: "Loading photo locations",
     locations: "",
     pendingDescription: "",
@@ -180,6 +187,7 @@ private final class PhotoMapClusterView: MKMarkerAnnotationView {
 }
 
 final class PhotoMapView: ExpoView, MKMapViewDelegate {
+  let onClearFilters = EventDispatcher()
   let onPhotoPress = EventDispatcher()
   let onRetry = EventDispatcher()
   let onSignIn = EventDispatcher()
@@ -462,7 +470,7 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
       loadingIndicator.stopAnimating()
     }
 
-    let showsState = [.empty, .error, .pending, .signedOut].contains(screenState)
+    let showsState = [.empty, .error, .filteredEmpty, .pending, .signedOut].contains(screenState)
     stateSurface.isHidden = !showsState
     if showsState {
       configureStateCard()
@@ -489,6 +497,12 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
       iconName = "location.slash.fill"
       iconColor = .secondaryLabel
       actionTitle = nil
+    case .filteredEmpty:
+      title = strings.filteredEmptyTitle
+      description = strings.filteredEmptyDescription
+      iconName = "line.3.horizontal.decrease.circle.fill"
+      iconColor = .systemBlue
+      actionTitle = strings.clearFilters
     case .error:
       title = strings.errorTitle
       description = strings.errorDescription
@@ -722,6 +736,8 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
     switch screenState {
     case .error:
       onRetry([:])
+    case .filteredEmpty:
+      onClearFilters([:])
     case .signedOut:
       onSignIn([:])
     case .empty, .loading, .pending, .ready:

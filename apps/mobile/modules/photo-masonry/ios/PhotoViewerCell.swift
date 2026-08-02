@@ -87,10 +87,10 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   override init(frame: CGRect) {
     super.init(frame: frame)
 
-    backgroundColor = .black
-    contentView.backgroundColor = .black
+    backgroundColor = .clear
+    contentView.backgroundColor = .clear
 
-    scrollView.backgroundColor = .black
+    scrollView.backgroundColor = .clear
     scrollView.bouncesZoom = true
     scrollView.contentInsetAdjustmentBehavior = .never
     scrollView.decelerationRate = .fast

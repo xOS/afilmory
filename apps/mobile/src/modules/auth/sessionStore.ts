@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
 
 import { setAuthCookie } from '@/api/auth'
-import { setActiveTenantSlug } from '@/api/client'
+import { getApiBaseUrl, getGalleryApiBaseUrl, setActiveTenantSlug } from '@/api/client'
+import { registerNativeEnvironment } from '@/native/afilmorySession'
 
 import { fetchSession, switchActiveWorkspace } from './api'
 import { getAuthClient } from './authClient'
@@ -39,15 +40,20 @@ export function useAuth(): AuthState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+function setActiveWorkspace(slug: string | null | undefined): void {
+  setActiveTenantSlug(slug)
+  registerNativeEnvironment(getApiBaseUrl(), slug ? getGalleryApiBaseUrl(slug) : null)
+}
+
 function resetToSignedOut() {
   setAuthCookie(null)
-  setActiveTenantSlug(null)
+  setActiveWorkspace(null)
   setState({ status: 'signedOut', session: null })
 }
 
 function setSignedIn(session: SessionInfo, cookie: string | null) {
   setAuthCookie(cookie)
-  setActiveTenantSlug(session.activeWorkspace?.slug)
+  setActiveWorkspace(session.activeWorkspace?.slug)
   setState({ status: 'signedIn', session })
 }
 

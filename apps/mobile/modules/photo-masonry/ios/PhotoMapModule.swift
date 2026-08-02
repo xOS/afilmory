@@ -17,7 +17,7 @@ public class PhotoMapModule: Module {
     Name("PhotoMap")
 
     View(PhotoMapView.self) {
-      Events("onPhotoPress", "onRetry", "onSignIn")
+      Events("onClearFilters", "onPhotoPress", "onRetry", "onSignIn")
 
       Prop("photos") { (view: PhotoMapView, photos: [MapPhoto]) in
         view.setPhotos(photos)

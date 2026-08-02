@@ -11,10 +11,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { getIntlLocale, useTranslation } from '@/i18n'
-import { photoCommentsPage } from '@/modules/comments/photoCommentsPage'
+import { useAuth } from '@/modules/auth/sessionStore'
+import { signInPage } from '@/modules/auth/signInPage'
 import { usePhotoCommentCount } from '@/modules/comments/usePhotoCommentCount'
 import { buildPhotoMasonryItem } from '@/modules/galleries/photoMasonryItem'
-import { buildNativePhotoInfoPayload } from '@/native/photoSheets'
+import { buildNativePhotoInfoPayload, presentNativePhotoComments } from '@/native/photoSheets'
 import { usePageRuntime } from '@/presentation'
 import { font } from '@/theme/tokens'
 
@@ -34,14 +35,12 @@ export function PhotoDetailScreen() {
   const { cancel, params, present } = usePageRuntime<PhotoDetailRouteParams>()
   const { i18n, t } = useTranslation()
   const session = getPhotoViewerSession(params.sessionId)
+  const auth = useAuth()
   const [currentIndex, setCurrentIndex] = useState(session?.initialIndex ?? 0)
   const currentPhoto = session?.photos[currentIndex] ?? null
   const gallerySlug = session?.gallerySlug ?? null
   const intlLocale = getIntlLocale(i18n.resolvedLanguage)
-  const { count: commentCount, refresh: refreshCommentCount } = usePhotoCommentCount(
-    gallerySlug,
-    currentPhoto?.id ?? null,
-  )
+  const { count: commentCount, setCount: setCommentCount } = usePhotoCommentCount(gallerySlug, currentPhoto?.id ?? null)
   const { activeReactions, addReaction, counts, pendingReactions } = usePhotoReactions(
     gallerySlug,
     currentPhoto?.id ?? null,
@@ -129,13 +128,24 @@ export function PhotoDetailScreen() {
       if (!photo || photo.id !== event.nativeEvent.id) {
         return
       }
-      void present(photoCommentsPage, {
+      void presentNativePhotoComments({
         gallerySlug: session.gallerySlug,
+        initialCommentCount: commentCount ?? -1,
         photoId: photo.id,
         photoTitle: photo.title,
-      }).then(() => refreshCommentCount())
+        viewerUserId: auth.session?.user.id ?? null,
+      })
+        .then((result) => {
+          setCommentCount(result.commentCount)
+          if (result.requestedSignIn) {
+            void present(signInPage)
+          }
+        })
+        .catch(() => {
+          // Native cancellation and presentation failures leave photo detail unchanged.
+        })
     },
-    [present, refreshCommentCount, session],
+    [auth.session?.user.id, commentCount, present, session, setCommentCount],
   )
 
   const handleReactionRequest = useCallback(
@@ -183,9 +193,9 @@ export function PhotoDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { backgroundColor: '#000', flex: 1 },
+  root: { backgroundColor: 'transparent', flex: 1 },
   nativeDetail: { flex: 1 },
-  missing: { alignItems: 'center', gap: 14, justifyContent: 'center' },
+  missing: { alignItems: 'center', backgroundColor: '#000', gap: 14, justifyContent: 'center' },
   missingTitle: { color: '#fff', fontFamily: font.ui, fontSize: 18, fontWeight: '600' },
   missingAction: { color: '#0a84ff', fontFamily: font.ui, fontSize: 16, fontWeight: '600' },
 })

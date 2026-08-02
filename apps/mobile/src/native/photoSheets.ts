@@ -1,7 +1,8 @@
 import { requireNativeModule, requireNativeView } from 'expo'
 import type { ViewProps } from 'react-native'
 
-import { translate } from '@/i18n'
+import { getGalleryApiBaseUrl } from '@/api/client'
+import { getIntlLocale, i18n, translate } from '@/i18n'
 import type {
   CaptureParameter,
   PhotoInfoMapLocation,
@@ -90,6 +91,21 @@ interface NativePhotoFilterSheetRequest {
   options: FilterOptions
 }
 
+interface NativePhotoCommentsSheetRequest {
+  baseURL: string
+  gallerySlug: string
+  initialCommentCount: number
+  localizationJSON: string
+  photoId: string
+  photoTitle: string
+  viewerUserId: string | null
+}
+
+export interface NativePhotoCommentsSheetResult {
+  commentCount: number
+  requestedSignIn: boolean
+}
+
 export interface NativeProfileStripItem {
   url: string
   thumbHash: string | null
@@ -162,6 +178,7 @@ interface NativeUploadReviewRequest {
 }
 
 interface PhotoSheetsNativeModule {
+  presentPhotoComments: (request: NativePhotoCommentsSheetRequest) => Promise<NativePhotoCommentsSheetResult>
   presentPhotoInfo: (info: NativePhotoInfoSheetPayload) => Promise<void>
   presentPhotoFilters: (request: NativePhotoFilterSheetRequest) => Promise<PhotoFilters | null>
   presentProfile: (profile: NativeProfileSheetPayload) => Promise<NativeProfileAction | null>
@@ -196,6 +213,46 @@ export function buildNativePhotoInfoPayload(info: NativePhotoInfoSheet): NativeP
 
 export function presentNativePhotoInfo(info: NativePhotoInfoSheet): Promise<void> {
   return nativePhotoSheets.presentPhotoInfo(buildNativePhotoInfoPayload(info))
+}
+
+export function presentNativePhotoComments(input: {
+  gallerySlug: string
+  initialCommentCount: number
+  photoId: string
+  photoTitle: string
+  viewerUserId: string | null
+}): Promise<NativePhotoCommentsSheetResult> {
+  return nativePhotoSheets.presentPhotoComments({
+    ...input,
+    baseURL: getGalleryApiBaseUrl(input.gallerySlug),
+    localizationJSON: JSON.stringify({
+      anonymous: translate('comments.anonymous'),
+      cancelReply: translate('comments.cancelReply'),
+      copy: translate('common.copy'),
+      done: translate('common.done'),
+      empty: translate('comments.empty'),
+      error: translate('comments.error'),
+      like: translate('comments.like'),
+      loadMoreFailed: translate('comments.loadMoreFailed'),
+      locale: getIntlLocale(i18n.resolvedLanguage),
+      loginRequired: translate('comments.loginRequired'),
+      pending: translate('comments.pending'),
+      placeholder: translate('comments.placeholder'),
+      postFailed: translate('comments.postFailed'),
+      reauthenticate: translate('comments.reauthenticate'),
+      reactionFailed: translate('comments.reactionFailed'),
+      reply: translate('comments.reply'),
+      replyingToTemplate: translate('comments.replyingToPlain', { user: '__USER__' }),
+      retry: translate('common.retry'),
+      send: translate('comments.send'),
+      sending: translate('comments.sending'),
+      signIn: translate('common.signIn'),
+      title: translate('comments.title'),
+      unlike: translate('comments.unlike'),
+      userTemplate: translate('comments.user', { id: '__ID__' }),
+      you: translate('comments.you'),
+    }),
+  })
 }
 
 export function presentNativePhotoFilters(

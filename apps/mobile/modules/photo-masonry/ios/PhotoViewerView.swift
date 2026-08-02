@@ -73,13 +73,13 @@ final class PhotoViewerView: ExpoView {
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
 
-    backgroundColor = .black
+    backgroundColor = .clear
     layout.minimumInteritemSpacing = 0
     layout.minimumLineSpacing = 0
     layout.scrollDirection = .horizontal
 
     collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-    collectionView.backgroundColor = .black
+    collectionView.backgroundColor = .clear
     collectionView.contentInsetAdjustmentBehavior = .never
     collectionView.dataSource = self
     collectionView.delegate = self
@@ -422,12 +422,10 @@ final class PhotoViewerView: ExpoView {
     options.alignmentRectProvider = { [weak self] context in
       self?.targetRect(in: context.zoomedViewController)
     }
-    options.interactiveDismissShouldBegin = { [weak self] _ in
-      guard let self else { return false }
-      return self.interactiveDismissEnabled
-        && !(self.currentCell()?.isZoomed ?? false)
-        && !(self.currentCell()?.blocksPaging ?? false)
-    }
+    // The system pan scales the whole screen — chrome, backdrop and all.
+    // PhotoDetailView owns the Photos-style drag instead; the zoom transition
+    // stays solely for the present animation and the committed fly-home pop.
+    options.interactiveDismissShouldBegin = { _ in false }
     screen.preferredTransition = .zoom(options: options) { _ in
       PhotoTransitionRegistry.shared.sourceView(id: activeTransitionId)
     }
@@ -472,6 +470,66 @@ final class PhotoViewerView: ExpoView {
   func configureExternalInfoGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
     infoPanGestureRecognizer.isEnabled = false
     collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
+  }
+
+  func configureExternalDismissGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+    collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
+  }
+
+  func screenContainerView() -> UIView? {
+    findScreen()?.view
+  }
+
+  func sourceThumbnailView() -> UIView? {
+    guard !transitionId.isEmpty else { return nil }
+    return PhotoTransitionRegistry.shared.sourceView(id: transitionId)
+  }
+
+  func currentPhotoId() -> String? {
+    guard photos.indices.contains(currentIndex) else { return nil }
+    return photos[currentIndex].id
+  }
+
+  func currentImageFrame() -> CGRect? {
+    guard photos.indices.contains(currentIndex), bounds.width > 0, bounds.height > 0 else {
+      return nil
+    }
+    let photo = photos[currentIndex]
+    let width = CGFloat(photo.width)
+    let height = CGFloat(photo.height)
+    guard width > 0, height > 0 else { return bounds }
+
+    let aspectRatio = width / height
+    var targetWidth = bounds.width
+    var targetHeight = targetWidth / aspectRatio
+    if targetHeight > bounds.height {
+      targetHeight = bounds.height
+      targetWidth = targetHeight * aspectRatio
+    }
+    return CGRect(
+      x: bounds.midX - targetWidth / 2,
+      y: bounds.midY - targetHeight / 2,
+      width: targetWidth,
+      height: targetHeight
+    )
+  }
+
+  // The zoom pop replays the whole-screen morph from its canonical fullscreen
+  // state, which cannot continue from a custom dragged position — the commit
+  // animation is hand-rolled instead, so the pop itself must not animate.
+  func disableCloseTransition() {
+    guard let screen = findScreen() else { return }
+    screen.preferredTransition = nil
+    screen.screenView().stackAnimation = .none
+  }
+
+  func presenterScreenView() -> UIView? {
+    guard let screen = findScreen(), let navigationController = screen.navigationController else {
+      return nil
+    }
+    let stack = navigationController.viewControllers
+    guard let index = stack.firstIndex(of: screen), index > 0 else { return nil }
+    return stack[index - 1].view
   }
 
   func configureExternalTapGesture(_ gestureRecognizer: UITapGestureRecognizer) {

@@ -28,7 +28,7 @@ Hand-transcribing HIG metrics does not get more accurate on a second attempt. Th
 | Social actions | Bottom toolbar, four evenly-spaced items: share / info / comments / reactions |
 | Nav bar copy | `title` = day line, `subtitle` = time (· place). The photo title appears only in the info panel |
 | `···` more menu | Removed — it only duplicated share and info |
-| Page position | `UIPageControl` above the toolbar; hidden when the gallery holds more than 20 photos |
+| Page position | ~~`UIPageControl` above the toolbar~~ — **superseded 2026-08-02: no position indicator at all** |
 | Immersive mode | Single tap toggles; zoom force-hides; native owns status bar and home indicator |
 | Active state | Symbol swaps to its `.fill` variant — never a blue tint |
 | Comment badge | `.systemRed`, `.caption2` monospaced digits |
@@ -112,6 +112,15 @@ One `UINavigationItem`:
 |---|---|
 | `title` | Day line — `Today` / `Yesterday` / `Jan 12, 2024` |
 | `subtitle` | `9:31 AM`, or `9:31 AM · Whistler` when a place is known |
+
+**Superseded 2026-08-02.** Both lines now render through a custom `titleView`
+(`PhotoDetailTitleCapsule`) rather than `navigationItem.title` / `.subtitle`.
+Calibration found the system title illegible over bright photos with no opacity that
+fixes it — the scrim is shaped backwards for this case, attenuating 20% at the screen
+edge but only 4.8% at the subtitle. A glass title capsule solves it. This is a
+deliberate, user-approved departure from the "let the system supply the title"
+principle, and it costs the iOS 26 `subtitle` API that partly motivated the
+standalone-system-bars route. The scrim survives at alpha 0.18 rather than 0.38.
 | `leftBarButtonItem` | `UIBarButtonItem(image: UIImage(systemName: "chevron.backward"))`, `accessibilityLabel = strings.close` |
 | right | empty |
 

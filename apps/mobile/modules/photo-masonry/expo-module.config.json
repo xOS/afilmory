@@ -2,9 +2,11 @@
   "platforms": ["apple"],
   "apple": {
     "modules": [
+      "AfilmorySessionModule",
       "PhotoDetailModule",
       "PhotoMapModule",
       "PhotoMasonryModule",
+      "PhotoSidebarModule",
       "PhotoViewerModule",
       "PhotoSheetsModule",
       "PhotoUploadModule"

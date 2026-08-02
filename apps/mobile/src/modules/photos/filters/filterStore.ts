@@ -49,6 +49,10 @@ export function setDatePreset(preset: DatePreset | null): void {
   setState({ ...state, datePreset: preset, dateFrom: from, dateTo: to })
 }
 
+export function toggleDatePreset(preset: DatePreset): void {
+  setDatePreset(state.datePreset === preset ? null : preset)
+}
+
 export function setCustomRange(from: string | null, to: string | null): void {
   setState({ ...state, datePreset: null, dateFrom: from, dateTo: to })
 }
@@ -63,6 +67,10 @@ export function toggleLens(name: string): void {
 
 export function setMinRating(rating: number | null): void {
   setState({ ...state, minRating: rating })
+}
+
+export function toggleMinRating(rating: number): void {
+  setMinRating(state.minRating === rating ? null : rating)
 }
 
 export function clearFilters(): void {

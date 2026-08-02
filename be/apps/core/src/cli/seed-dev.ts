@@ -3,10 +3,10 @@ import { basename, extname, join } from 'node:path'
 import { stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { authUsers, photoAssets, tenantMemberships } from '@afilmory/db'
+import { authUsers, commentReactions, comments, photoAssets, tenantMemberships } from '@afilmory/db'
 import { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3'
 import { HttpContext } from '@tsuki-hono/common'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import type { Context } from 'hono'
 
 import { APP_GLOBAL_PREFIX } from '../app.constants'
@@ -178,6 +178,7 @@ export async function handleSeedDevCli(options: SeedDevCliOptions): Promise<void
       summary.push(`workspace ${options.slug} storage -> ${options.endpoint}/${options.bucket}`)
       summary.push(await reportOwner(container, tenant))
       summary.push(...(await seedPhotos(container, tenant, options)))
+      summary.push(...(await seedComments(container, tenant)))
     }
     else {
       summary.push('no --slug given, skipped workspace storage and photos')
@@ -202,6 +203,148 @@ export async function handleSeedDevCli(options: SeedDevCliOptions): Promise<void
       logger.warn(`Failed to disconnect Redis client cleanly: ${String(error)}`)
     }
   }
+}
+
+const SEED_COMMENT_USER_AGENT = 'afilmory-seed-dev'
+
+async function seedComments(
+  container: ReturnType<Awaited<ReturnType<typeof createConfiguredApp>>['getContainer']>,
+  tenant: TenantRecord,
+): Promise<string[]> {
+  const db = container.resolve(DbAccessor).get()
+  const [existing] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(comments)
+    .where(and(eq(comments.tenantId, tenant.id), eq(comments.userAgent, SEED_COMMENT_USER_AGENT)))
+
+  if (Number(existing?.count ?? 0) > 0) {
+    return [`comments already seeded in ${tenant.slug}`]
+  }
+
+  const photos = await db
+    .select({ photoId: photoAssets.photoId })
+    .from(photoAssets)
+    .where(eq(photoAssets.tenantId, tenant.id))
+    .orderBy(asc(photoAssets.createdAt), asc(photoAssets.id))
+
+  if (photos.length === 0) {
+    return ['no photos available for comment fixtures']
+  }
+
+  const [owner] = await db
+    .select({ userId: tenantMemberships.userId })
+    .from(tenantMemberships)
+    .where(
+      and(
+        eq(tenantMemberships.tenantId, tenant.id),
+        eq(tenantMemberships.role, 'owner'),
+        eq(tenantMemberships.status, 'active'),
+      ),
+    )
+    .limit(1)
+
+  if (!owner) {
+    return [`${tenant.slug} has no active owner; skipped comment fixtures`]
+  }
+
+  const handfulPhotoId = photos[0]!.photoId
+  const pagedPhotoId = photos[1]?.photoId ?? handfulPhotoId
+  const now = Date.now()
+  const timestamp = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
+
+  await db.transaction(async (transaction) => {
+    const [parent] = await transaction
+      .insert(comments)
+      .values({
+        tenantId: tenant.id,
+        photoId: handfulPhotoId,
+        userId: owner.userId,
+        content: 'The light in this frame is remarkable.',
+        status: 'approved',
+        userAgent: SEED_COMMENT_USER_AGENT,
+        createdAt: timestamp(180),
+        updatedAt: timestamp(180),
+      })
+      .returning({ id: comments.id })
+
+    if (!parent) {
+      throw new Error('Failed to create the parent comment fixture.')
+    }
+
+    const [reactionTarget] = await transaction
+      .insert(comments)
+      .values([
+        {
+          tenantId: tenant.id,
+          photoId: handfulPhotoId,
+          parentId: parent.id,
+          userId: owner.userId,
+          content: 'Agreed — the shadows keep the highlights from feeling harsh.',
+          status: 'approved' as const,
+          userAgent: SEED_COMMENT_USER_AGENT,
+          createdAt: timestamp(150),
+          updatedAt: timestamp(150),
+        },
+        {
+          tenantId: tenant.id,
+          photoId: handfulPhotoId,
+          userId: owner.userId,
+          content: 'This belongs in the opening sequence.',
+          status: 'approved' as const,
+          userAgent: SEED_COMMENT_USER_AGENT,
+          createdAt: timestamp(120),
+          updatedAt: timestamp(120),
+        },
+        {
+          tenantId: tenant.id,
+          photoId: handfulPhotoId,
+          userId: owner.userId,
+          content: 'The texture is especially strong at full size.',
+          status: 'approved' as const,
+          userAgent: SEED_COMMENT_USER_AGENT,
+          createdAt: timestamp(90),
+          updatedAt: timestamp(90),
+        },
+        {
+          tenantId: tenant.id,
+          photoId: handfulPhotoId,
+          userId: owner.userId,
+          content: 'A quiet frame, but one that rewards a longer look.',
+          status: 'approved' as const,
+          userAgent: SEED_COMMENT_USER_AGENT,
+          createdAt: timestamp(60),
+          updatedAt: timestamp(60),
+        },
+      ])
+      .returning({ id: comments.id })
+
+    const pagedFixtures = Array.from({ length: 25 }, (_, index) => ({
+      tenantId: tenant.id,
+      photoId: pagedPhotoId,
+      userId: owner.userId,
+      content: `Pagination fixture ${String(index + 1).padStart(2, '0')}: a seeded comment for native sheet verification.`,
+      status: 'approved' as const,
+      userAgent: SEED_COMMENT_USER_AGENT,
+      createdAt: timestamp(55 - index * 2),
+      updatedAt: timestamp(55 - index * 2),
+    }))
+    await transaction.insert(comments).values(pagedFixtures)
+
+    if (reactionTarget) {
+      await transaction.insert(commentReactions).values({
+        tenantId: tenant.id,
+        commentId: reactionTarget.id,
+        userId: owner.userId,
+        reaction: 'like',
+      })
+    }
+  })
+
+  const emptyPhotoCount = Math.max(0, photos.length - (handfulPhotoId === pagedPhotoId ? 1 : 2))
+  return [
+    `seeded 30 comments across ${handfulPhotoId === pagedPhotoId ? 1 : 2} photo(s)`,
+    `${emptyPhotoCount} photo(s) remain without comments`,
+  ]
 }
 
 async function resolveTenant(tenantService: TenantService, slug: string): Promise<TenantRecord> {

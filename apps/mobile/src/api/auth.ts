@@ -1,3 +1,5 @@
+import { clearNativeSession, registerNativeSession } from '@/native/afilmorySession'
+
 let authCookie: string | null = null
 
 export function getAuthCookie(): string | null {
@@ -6,4 +8,10 @@ export function getAuthCookie(): string | null {
 
 export function setAuthCookie(cookie: string | null): void {
   authCookie = cookie
+  if (cookie) {
+    registerNativeSession(cookie)
+  }
+  else {
+    clearNativeSession()
+  }
 }

@@ -9,11 +9,14 @@ import { signInPage } from '@/modules/auth/signInPage'
 import type { GalleryPhoto } from '@/modules/galleries/types'
 import { useGalleryManifest } from '@/modules/galleries/useGalleryManifest'
 import { useOpenPhotoViewer } from '@/modules/photo-viewer/useOpenPhotoViewer'
+import { applyFilters } from '@/modules/photos/filters/applyFilters'
+import { clearFilters, useFilters } from '@/modules/photos/filters/filterStore'
+import { hasActiveFilters } from '@/modules/photos/filters/filterTypes'
 import { present } from '@/presentation'
 
 import { buildPhotoMapItems } from './photoMapModel'
 
-type NativeMapState = 'empty' | 'error' | 'loading' | 'pending' | 'ready' | 'signedOut'
+type NativeMapState = 'empty' | 'error' | 'filteredEmpty' | 'loading' | 'pending' | 'ready' | 'signedOut'
 
 export function PhotoMapScreen() {
   const auth = useAuth()
@@ -36,20 +39,30 @@ export function PhotoMapScreen() {
 function GalleryPhotoMap({ slug }: { slug: string }) {
   const { i18n, t } = useTranslation()
   const { error, loading, photos, retry } = useGalleryManifest(slug)
-  const openPhoto = useOpenPhotoViewer(photos, slug)
+  const filters = useFilters()
+  const filtered = useMemo(() => applyFilters(photos, filters), [filters, photos])
+  const openPhoto = useOpenPhotoViewer(filtered, slug)
   const locale = getIntlLocale(i18n.resolvedLanguage)
   const mapPhotos = useMemo<PhotoMapItem[]>(
     () =>
-      buildPhotoMapItems(photos, photo => t('map.marker.accessibility', { title: photo.title || photo.id })).map(
+      buildPhotoMapItems(filtered, photo => t('map.marker.accessibility', { title: photo.title || photo.id })).map(
         item => ({
           ...item,
           openAccessibilityLabel: t('map.openPhoto', { title: item.title }),
-          subtitle: photoSubtitle(photos[item.index], locale),
+          subtitle: photoSubtitle(filtered[item.index], locale),
         }),
       ),
-    [locale, photos, t],
+    [filtered, locale, t],
   )
-  const state: NativeMapState = loading ? 'loading' : error ? 'error' : mapPhotos.length === 0 ? 'empty' : 'ready'
+  const state: NativeMapState = loading
+    ? 'loading'
+    : error
+      ? 'error'
+      : mapPhotos.length === 0
+        ? hasActiveFilters(filters)
+          ? 'filteredEmpty'
+          : 'empty'
+        : 'ready'
 
   const handlePhotoPress = useCallback(
     (event: { nativeEvent: PhotoMapPressEvent }) => {
@@ -66,22 +79,32 @@ function GalleryPhotoMap({ slug }: { slug: string }) {
     [openPhoto],
   )
 
-  return <NativeMapPage photos={mapPhotos} state={state} onPhotoPress={handlePhotoPress} onRetry={retry} />
+  return (
+    <NativeMapPage
+      photos={mapPhotos}
+      state={state}
+      onClearFilters={clearFilters}
+      onPhotoPress={handlePhotoPress}
+      onRetry={retry}
+    />
+  )
 }
 
 interface NativeMapPageProps {
   photos: PhotoMapItem[]
   state: NativeMapState
+  onClearFilters?: () => void
   onPhotoPress?: (event: { nativeEvent: PhotoMapPressEvent }) => void
   onRetry?: () => void
   onSignIn?: () => void
 }
 
-function NativeMapPage({ photos, state, onPhotoPress, onRetry, onSignIn }: NativeMapPageProps) {
+function NativeMapPage({ photos, state, onClearFilters, onPhotoPress, onRetry, onSignIn }: NativeMapPageProps) {
   const { t } = useTranslation()
   const stringsJSON = useMemo(
     () =>
       JSON.stringify({
+        clearFilters: t('common.clearFilters'),
         clearSelection: t('map.clearSelection'),
         clusterAccessibilityLabel: t('map.cluster.accessibility'),
         emptyDescription: t('map.empty.description'),
@@ -89,6 +112,8 @@ function NativeMapPage({ photos, state, onPhotoPress, onRetry, onSignIn }: Nativ
         errorDescription: t('map.failed.description'),
         errorTitle: t('map.failed.title'),
         fitAll: t('map.fit'),
+        filteredEmptyDescription: t('map.filteredEmpty.description'),
+        filteredEmptyTitle: t('gallery.empty.filtered'),
         loading: t('map.loading'),
         locations: t('map.locations', { count: photos.length }),
         pendingDescription: t('gallery.workspace.pending.subtitle'),
@@ -110,6 +135,7 @@ function NativeMapPage({ photos, state, onPhotoPress, onRetry, onSignIn }: Nativ
       stringsJSON={stringsJSON}
       style={styles.root}
       testID="photo-map"
+      onClearFilters={onClearFilters}
       onPhotoPress={onPhotoPress}
       onRetry={onRetry}
       onSignIn={onSignIn}

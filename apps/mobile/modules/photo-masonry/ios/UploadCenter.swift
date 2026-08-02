@@ -63,8 +63,7 @@ final class UploadCenter: NSObject {
     rootDirectory.appendingPathComponent("state.json")
   }
 
-  func enqueue(endpoint: String, cookie: String, directory: String?, items: [(id: String, name: String)]) -> Int {
-    UploadCookieStore.save(cookie)
+  func enqueue(endpoint: String, directory: String?, items: [(id: String, name: String)]) -> Int {
     return stateQueue.sync {
       for item in items {
         let job = UploadJobState(
@@ -274,7 +273,7 @@ final class UploadCenter: NSObject {
     request.httpMethod = "POST"
     request.setValue("multipart/form-data; boundary=\(jobs[index].boundary)", forHTTPHeaderField: "Content-Type")
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-    if let cookie = UploadCookieStore.load() {
+    if let cookie = AfilmorySessionStore.shared.current().cookie {
       request.setValue(cookie, forHTTPHeaderField: "Cookie")
     }
     let task = session.uploadTask(with: request, fromFile: Self.bodyURL(jobId))
@@ -314,7 +313,8 @@ final class UploadCenter: NSObject {
       return
     }
     if let error {
-      retryOrFailLocked(index: index, message: error.localizedDescription, retryable: true)
+      let apiError = APIError.request(error)
+      retryOrFailLocked(index: index, message: apiError.localizedDescription, retryable: true)
       return
     }
     let status = httpStatus ?? 0
@@ -327,10 +327,13 @@ final class UploadCenter: NSObject {
       scheduleEmitLocked()
       return
     }
-    let retryable = status == 0 || status >= 500 || (200..<300).contains(status)
-    let message = (200..<300).contains(status) || status == 0
-      ? "The server response was incomplete."
-      : "The server returned HTTP \(status)."
+    let responseError = APIError.response(status: status, body: nil)
+    let retryable = status == 0
+      || status == 408
+      || status == 429
+      || status >= 500
+      || (200..<300).contains(status)
+    let message = responseError?.localizedDescription ?? "The server response was incomplete."
     retryOrFailLocked(index: index, message: message, retryable: retryable)
   }
 

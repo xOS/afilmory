@@ -47,7 +47,6 @@ public final class PhotoUploadModule: Module {
       UploadActivityController.shared.setTitle(request.activityTitle)
       return UploadCenter.shared.enqueue(
         endpoint: request.endpoint,
-        cookie: request.cookie,
         directory: request.directory,
         items: request.items.map { (id: $0.id, name: $0.name) }
       )

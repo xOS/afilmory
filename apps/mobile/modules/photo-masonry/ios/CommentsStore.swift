@@ -1,0 +1,306 @@
+import Foundation
+import Observation
+import SwiftUI
+import UIKit
+
+@MainActor
+@Observable
+final class CommentsStore {
+  enum LoadState {
+    case idle
+    case loading
+    case loaded
+    case failed
+  }
+
+  let request: PhotoCommentsSheetRequest
+  let localization: CommentLocalization
+
+  var collection = CommentCollection.empty
+  var loadState: LoadState = .idle
+  var nextCursor: String?
+  var isRefreshing = false
+  var isLoadingMore = false
+  var loadMoreFailed = false
+  var isSending = false
+  var inlineError: String?
+  var draft = ""
+  var replyCommentId: String?
+  var pendingReactionIds: Set<String> = []
+  var requiresAuthentication = false
+  private(set) var requestedSignIn = false
+
+  @ObservationIgnored var onRequestSignIn: (() -> Void)?
+  @ObservationIgnored private let api: AfilmoryAPI
+  @ObservationIgnored private var baselineCommentCount: Int?
+  @ObservationIgnored private var successfulCreateCount = 0
+
+  init(
+    request: PhotoCommentsSheetRequest,
+    localization: CommentLocalization,
+    api: AfilmoryAPI = .shared
+  ) {
+    self.request = request
+    self.localization = localization
+    self.api = api
+    baselineCommentCount = request.initialCommentCount >= 0 ? request.initialCommentCount : nil
+  }
+
+  var viewerUserId: String? { request.viewerUserId }
+  var isSignedIn: Bool { viewerUserId != nil && !requiresAuthentication }
+  var characterCount: Int { draft.count }
+  var canSend: Bool {
+    let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    return isSignedIn && !isSending && !trimmed.isEmpty && characterCount <= 1_000
+  }
+
+  var replyComment: CommentItem? {
+    guard let replyCommentId else { return nil }
+    return collection.comments.first { $0.id == replyCommentId } ?? collection.relations[replyCommentId]
+  }
+
+  var result: PhotoCommentsSheetResult {
+    let baseline = baselineCommentCount ?? max(0, collection.comments.count - successfulCreateCount)
+    return PhotoCommentsSheetResult(
+      commentCount: max(0, baseline + successfulCreateCount),
+      requestedSignIn: requestedSignIn
+    )
+  }
+
+  func loadInitial() async {
+    guard loadState == .idle || loadState == .failed else { return }
+    loadState = .loading
+    inlineError = nil
+    do {
+      let page: CommentPage = try await api.request(
+        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: nil)
+      )
+      collection = CommentsState.mergePage(.empty, page: page, replacing: true)
+      nextCursor = CommentsState.advanceCursor(current: nil, page: page, replacing: true)
+      updateInferredBaselineIfComplete()
+      loadState = .loaded
+    } catch {
+      guard !isCancellation(error) else { return }
+      if handleUnauthorized(error) {
+        loadState = .loaded
+      } else {
+        loadState = .failed
+      }
+    }
+  }
+
+  func refresh() async {
+    guard !isRefreshing else { return }
+    isRefreshing = true
+    loadMoreFailed = false
+    defer { isRefreshing = false }
+    do {
+      let page: CommentPage = try await api.request(
+        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: nil)
+      )
+      collection = CommentsState.mergePage(collection, page: page, replacing: true)
+      nextCursor = CommentsState.advanceCursor(current: nextCursor, page: page, replacing: true)
+      updateInferredBaselineIfComplete()
+      loadState = .loaded
+      inlineError = nil
+    } catch {
+      guard !isCancellation(error) else { return }
+      if !handleUnauthorized(error) {
+        inlineError = localization.error
+      }
+    }
+  }
+
+  func loadMoreIfNeeded(lastVisibleCommentId: String) async {
+    guard collection.comments.last?.id == lastVisibleCommentId,
+          let cursor = nextCursor,
+          !isLoadingMore
+    else { return }
+    await loadMore(cursor: cursor)
+  }
+
+  func retryLoadMore() async {
+    guard let cursor = nextCursor, !isLoadingMore else { return }
+    await loadMore(cursor: cursor)
+  }
+
+  func send() async {
+    let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard canSend, let viewerUserId else { return }
+
+    let clientId = "comment-\(UUID().uuidString)"
+    let parentId = replyCommentId
+    let optimistic = CommentItem(
+      id: "local-\(clientId)",
+      photoId: request.photoId,
+      parentId: parentId,
+      userId: viewerUserId,
+      content: content,
+      status: .pending,
+      createdAt: Date.now.formatted(.iso8601),
+      updatedAt: Date.now.formatted(.iso8601),
+      reactionCounts: [:],
+      viewerReactions: [],
+      clientId: clientId,
+      deliveryState: .sending
+    )
+
+    isSending = true
+    inlineError = nil
+    draft = ""
+    replyCommentId = nil
+    mutateAnimated {
+      collection.comments.append(optimistic)
+      collection.users[viewerUserId] = CommentUser(
+        id: viewerUserId,
+        name: localization.you,
+        image: nil,
+        website: nil
+      )
+    }
+
+    do {
+      let endpoint = try CommentsAPI.create(
+        baseURL: request.baseURL,
+        content: content,
+        photoId: request.photoId,
+        parentId: parentId
+      )
+      let page: CommentPage = try await api.request(endpoint)
+      mutateAnimated {
+        collection = CommentsState.settleOptimisticComment(
+          collection,
+          clientId: clientId,
+          page: page
+        )
+      }
+      successfulCreateCount += 1
+    } catch {
+      mutateAnimated {
+        collection = CommentsState.removeFailedOptimisticComment(collection, clientId: clientId)
+      }
+      draft = content
+      replyCommentId = parentId
+      if !handleUnauthorized(error), !isCancellation(error) {
+        inlineError = localization.postFailed
+      }
+    }
+    isSending = false
+  }
+
+  func toggleReaction(_ commentId: String) async {
+    guard isSignedIn else {
+      requestSignIn()
+      return
+    }
+    guard !pendingReactionIds.contains(commentId),
+          let index = collection.comments.firstIndex(where: { $0.id == commentId })
+    else { return }
+
+    let original = collection.comments[index]
+    pendingReactionIds.insert(commentId)
+    inlineError = nil
+    collection.comments[index] = CommentsState.toggleLocalReaction(original)
+
+    do {
+      let endpoint = try CommentsAPI.toggleReaction(baseURL: request.baseURL, commentId: commentId)
+      let response: CommentReactionResponse = try await api.request(endpoint)
+      let page = CommentPage(comments: [response.item], relations: [:], users: [:], nextCursor: nextCursor)
+      collection = CommentsState.mergePage(collection, page: page)
+    } catch {
+      if let rollbackIndex = collection.comments.firstIndex(where: { $0.id == commentId }) {
+        collection.comments[rollbackIndex] = original
+      }
+      if !handleUnauthorized(error), !isCancellation(error) {
+        inlineError = localization.reactionFailed
+      }
+    }
+    pendingReactionIds.remove(commentId)
+  }
+
+  func beginReply(to comment: CommentItem) {
+    guard comment.deliveryState != .sending else { return }
+    replyCommentId = comment.id
+    inlineError = nil
+  }
+
+  func cancelReply() {
+    replyCommentId = nil
+  }
+
+  func dismissInlineError() {
+    inlineError = nil
+  }
+
+  func requestSignIn() {
+    requestedSignIn = true
+    onRequestSignIn?()
+  }
+
+  func user(for comment: CommentItem) -> CommentUser? {
+    collection.users[comment.userId]
+  }
+
+  func parent(for comment: CommentItem) -> CommentItem? {
+    guard let parentId = comment.parentId else { return nil }
+    return collection.relations[parentId] ?? collection.comments.first { $0.id == parentId }
+  }
+
+  func authorName(for comment: CommentItem) -> String {
+    if comment.userId == viewerUserId {
+      return localization.you
+    }
+    if let name = user(for: comment)?.name, !name.isEmpty {
+      return name
+    }
+    guard !comment.userId.isEmpty else { return localization.anonymous }
+    return localization.user(id: String(comment.userId.suffix(6)))
+  }
+
+  private func loadMore(cursor: String) async {
+    isLoadingMore = true
+    loadMoreFailed = false
+    defer { isLoadingMore = false }
+    do {
+      let page: CommentPage = try await api.request(
+        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: cursor)
+      )
+      collection = CommentsState.mergePage(collection, page: page)
+      nextCursor = CommentsState.advanceCursor(current: nextCursor, page: page, replacing: false)
+      updateInferredBaselineIfComplete()
+    } catch {
+      guard !isCancellation(error) else { return }
+      if !handleUnauthorized(error) {
+        loadMoreFailed = true
+      }
+    }
+  }
+
+  private func updateInferredBaselineIfComplete() {
+    guard baselineCommentCount == nil, nextCursor == nil else { return }
+    baselineCommentCount = max(0, collection.comments.count - successfulCreateCount)
+  }
+
+  @discardableResult
+  private func handleUnauthorized(_ error: Error) -> Bool {
+    guard case .unauthorized = APIError.request(error) else { return false }
+    requiresAuthentication = true
+    inlineError = localization.reauthenticate
+    return true
+  }
+
+  private func isCancellation(_ error: Error) -> Bool {
+    if case .cancelled = APIError.request(error) {
+      return true
+    }
+    return false
+  }
+
+  private func mutateAnimated(_ mutation: () -> Void) {
+    if UIAccessibility.isReduceMotionEnabled {
+      mutation()
+    } else {
+      withAnimation(.snappy, mutation)
+    }
+  }
+}

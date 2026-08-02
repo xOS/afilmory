@@ -3,11 +3,17 @@ import UIKit
 
 final class SheetPromiseSession: NSObject, UIAdaptivePresentationControllerDelegate {
   private let promise: Promise
+  private let cancellationValue: () -> Any?
   private let onSettle: () -> Void
   private var isSettled = false
 
-  init(promise: Promise, onSettle: @escaping () -> Void) {
+  init(
+    promise: Promise,
+    cancellationValue: @escaping () -> Any? = { nil },
+    onSettle: @escaping () -> Void
+  ) {
     self.promise = promise
+    self.cancellationValue = cancellationValue
     self.onSettle = onSettle
   }
 
@@ -16,7 +22,7 @@ final class SheetPromiseSession: NSObject, UIAdaptivePresentationControllerDeleg
   }
 
   func cancel() {
-    settle(with: nil)
+    settle(with: cancellationValue())
   }
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {

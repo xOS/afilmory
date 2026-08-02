@@ -24,6 +24,7 @@ import { countActiveDimensions, hasActiveFilters, summarizeFilters } from './fil
 import { cityForRange } from './filters/locationHint'
 import { setHomeFeed } from './homeFeedStore'
 import { collectProfileStats } from './profileStats'
+import { PhotoSidebarAccessory } from './sidebar/PhotoSidebarAccessory'
 
 const NATIVE_CHROME_HEIGHT = 60
 
@@ -227,6 +228,7 @@ function NativeGallery({ slug }: { slug: string }) {
 
   return (
     <View style={styles.root}>
+      <PhotoSidebarAccessory filterOptions={filterOptions} filters={filters} photos={photos} />
       {columnsReady ? (
         <PhotoMasonryView
           chromeVisible

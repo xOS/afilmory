@@ -71,7 +71,6 @@ export async function enqueueUploads(
   }
   return nativePhotoUpload.enqueueUploads({
     activityTitle: translate('studio.upload.activity.title'),
-    cookie,
     directory,
     endpoint: `${getTenantApiBaseUrl()}/photos/assets/upload`,
     items: items.map(({ id, name }) => ({ id, name })),

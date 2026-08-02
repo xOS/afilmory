@@ -28,10 +28,20 @@ export function usePhotoCommentCount(gallerySlug: string | null, photoId: string
     }
   }, [gallerySlug, photoId])
 
+  const setCount = useCallback(
+    (count: number) => {
+      if (!gallerySlug || !photoId) {
+        return
+      }
+      setValue({ count: Math.max(0, count), key: `${gallerySlug}:${photoId}` })
+    },
+    [gallerySlug, photoId],
+  )
+
   useEffect(() => {
     void refresh()
     return () => requestRef.current?.abort()
   }, [refresh])
 
-  return { count: value.key === key ? value.count : null, refresh }
+  return { count: value.key === key ? value.count : null, refresh, setCount }
 }

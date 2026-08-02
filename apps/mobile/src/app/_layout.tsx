@@ -68,5 +68,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  photoScreen: { backgroundColor: '#000' },
+  photoScreen: { backgroundColor: 'transparent' },
 })

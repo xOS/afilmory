@@ -4,6 +4,7 @@ import SwiftUI
 import UIKit
 
 public final class PhotoSheetsModule: Module {
+  private var commentsSession: SheetPromiseSession?
   private var filterSession: SheetPromiseSession?
   private var profileSession: SheetPromiseSession?
   private var uploadReviewSession: SheetPromiseSession?
@@ -103,6 +104,92 @@ public final class PhotoSheetsModule: Module {
         anchor: request.anchor,
         preferredContentSize: CGSize(width: 430, height: 620)
       )
+      navigationController.presentationController?.delegate = session
+      presenter.present(navigationController, animated: true)
+    }
+    .runOnQueue(.main)
+
+    AsyncFunction("presentPhotoComments") { (request: PhotoCommentsSheetRequest, promise: Promise) in
+      guard self.commentsSession == nil else {
+        promise.reject("ERR_COMMENTS_SHEET_ACTIVE", "The comments sheet is already presented.")
+        return
+      }
+      guard let localization = CommentLocalization.decode(request.localizationJSON) else {
+        promise.reject(
+          "ERR_COMMENTS_LOCALIZATION",
+          "The comments sheet localization payload is invalid."
+        )
+        return
+      }
+      guard let presenter = self.appContext?.utilities?.currentViewController() else {
+        promise.reject(
+          "ERR_COMMENTS_SHEET_PRESENTER",
+          "Unable to find a view controller for the comments sheet."
+        )
+        return
+      }
+
+      // Expo's runOnQueue(.main) guarantee is dynamic and is not visible to
+      // Swift's actor checker, so bridge the verified queue at this boundary.
+      let store = MainActor.assumeIsolated {
+        CommentsStore(request: request, localization: localization)
+      }
+      let session = SheetPromiseSession(
+        promise: promise,
+        cancellationValue: {
+          MainActor.assumeIsolated { store.result.dictionary }
+        }
+      ) { [weak self] in
+        self?.commentsSession = nil
+      }
+      self.commentsSession = session
+
+      let hostingController = UIHostingController(rootView: PhotoCommentsSheetView(store: store))
+      hostingController.navigationItem.title = localization.title
+      if !request.photoTitle.isEmpty {
+        hostingController.navigationItem.prompt = request.photoTitle
+      }
+      hostingController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+        title: localization.done,
+        image: nil,
+        primaryAction: UIAction { [weak hostingController, weak session] _ in
+          session?.complete(with: MainActor.assumeIsolated { store.result.dictionary })
+          hostingController?.dismiss(animated: true)
+        },
+        menu: nil
+      )
+      MainActor.assumeIsolated {
+        store.onRequestSignIn = { [weak hostingController, weak session] in
+          session?.complete(with: MainActor.assumeIsolated { store.result.dictionary })
+          hostingController?.dismiss(animated: true)
+        }
+      }
+
+      let navigationController = self.makeNavigationController(
+        root: hostingController,
+        presenter: presenter,
+        anchor: nil,
+        preferredContentSize: CGSize(width: 520, height: 700)
+      )
+      if let sheet = navigationController.sheetPresentationController {
+        let compactIdentifier = UISheetPresentationController.Detent.Identifier(
+          "afilmory.photo-comments.compact"
+        )
+        let expandedIdentifier = UISheetPresentationController.Detent.Identifier(
+          "afilmory.photo-comments.expanded"
+        )
+        sheet.detents = [
+          .custom(identifier: compactIdentifier) { context in
+            context.maximumDetentValue * 0.62
+          },
+          .custom(identifier: expandedIdentifier) { context in
+            context.maximumDetentValue * 0.92
+          },
+        ]
+        sheet.selectedDetentIdentifier = compactIdentifier
+        sheet.prefersGrabberVisible = true
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+      }
       navigationController.presentationController?.delegate = session
       presenter.present(navigationController, animated: true)
     }

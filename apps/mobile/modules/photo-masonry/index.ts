@@ -128,8 +128,9 @@ export interface PhotoMapPressEvent {
 
 export interface PhotoMapViewProps extends ViewProps {
   photos: PhotoMapItem[]
-  state: 'empty' | 'error' | 'loading' | 'pending' | 'ready' | 'signedOut'
+  state: 'empty' | 'error' | 'filteredEmpty' | 'loading' | 'pending' | 'ready' | 'signedOut'
   stringsJSON: string
+  onClearFilters?: () => void
   onPhotoPress?: (event: { nativeEvent: PhotoMapPressEvent }) => void
   onRetry?: () => void
   onSignIn?: () => void
