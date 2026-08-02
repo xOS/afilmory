@@ -22,19 +22,19 @@ struct PhotoInfoRowRecord: Record, Identifiable {
 struct PhotoInfoSectionRecord: Record, Identifiable {
   @Field var id: String = ""
   @Field var title: String = ""
+  @Field var summary: String?
   @Field var rows: [PhotoInfoRowRecord] = []
 }
 
-struct PhotoCaptureParameterRecord: Record, Identifiable {
-  @Field var id: String = ""
-  @Field var label: String = ""
-  @Field var value: String = ""
-}
-
-struct PhotoToneAnalysisRecord: Record {
-  @Field var histogramUrl: String = ""
-  @Field var metrics: [PhotoInfoRowRecord] = []
-  @Field var tone: PhotoInfoRowRecord = .init()
+struct PhotoInfoGearRecord: Record {
+  @Field var model: String = ""
+  @Field var formatBadge: String?
+  @Field var styleBadge: String?
+  @Field var lens: String?
+  @Field var rating: Int = 0
+  @Field var specs: [String] = []
+  @Field var tone: String?
+  @Field var exposure: [String] = []
 }
 
 struct PhotoMapLocationRecord: Record {
@@ -43,24 +43,23 @@ struct PhotoMapLocationRecord: Record {
 }
 
 struct PhotoInfoLocalizationRecord: Record {
-  @Field var captureParameters: String = ""
   @Field var done: String = ""
   @Field var histogram: String = ""
   @Field var histogramAccessibilityLabel: String = ""
   @Field var histogramFailure: String = ""
   @Field var mapAccessibilityLabel: String = ""
+  @Field var ratingLabel: String = ""
   @Field var tags: String = ""
   @Field var title: String = ""
-  @Field var toneAnalysis: String = ""
 }
 
 struct PhotoInfoSheetRecord: Record {
-  @Field var title: String = ""
+  @Field var gear: PhotoInfoGearRecord = .init()
   @Field var description: String?
+  @Field var histogramUrl: String?
   @Field var sections: [PhotoInfoSectionRecord] = []
-  @Field var captureParameters: [PhotoCaptureParameterRecord] = []
   @Field var tags: [String] = []
-  @Field var toneAnalysis: PhotoToneAnalysisRecord?
+  @Field var place: String?
   @Field var mapLocation: PhotoMapLocationRecord?
   @Field var emptyMessage: String?
   @Field var localization: PhotoInfoLocalizationRecord = .init()

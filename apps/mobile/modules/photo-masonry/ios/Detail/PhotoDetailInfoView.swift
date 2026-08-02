@@ -5,6 +5,8 @@ import UIKit
 final class PhotoDetailInfoView: UIView {
   private var info = PhotoInfoSheetRecord()
   private var hostingController: UIHostingController<PhotoInfoInspectorView>!
+  private var scrollEdgeInteraction: UIScrollEdgeElementContainerInteraction?
+  private weak var edgeEffectScrollView: UIScrollView?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -23,6 +25,35 @@ final class PhotoDetailInfoView: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     hostingController.view.frame = bounds
+  }
+
+  /// Wires the hosted scroll view to the detail toolbar so content passing under
+  /// it gets the system soft edge effect. SwiftUI cannot do this itself — the
+  /// toolbar is a UIKit sibling, so it is invisible to `scrollEdgeEffectStyle`.
+  func installScrollEdgeEffect(under container: UIView) {
+    guard let scrollView = firstScrollView(in: self), scrollView !== edgeEffectScrollView else { return }
+    if let interaction = scrollEdgeInteraction {
+      container.removeInteraction(interaction)
+    }
+    scrollView.bottomEdgeEffect.style = .soft
+    let interaction = UIScrollEdgeElementContainerInteraction()
+    interaction.scrollView = scrollView
+    interaction.edge = .bottom
+    container.addInteraction(interaction)
+    scrollEdgeInteraction = interaction
+    edgeEffectScrollView = scrollView
+  }
+
+  private func firstScrollView(in view: UIView) -> UIScrollView? {
+    if let scrollView = view as? UIScrollView {
+      return scrollView
+    }
+    for subview in view.subviews {
+      if let found = firstScrollView(in: subview) {
+        return found
+      }
+    }
+    return nil
   }
 
   override func didMoveToWindow() {

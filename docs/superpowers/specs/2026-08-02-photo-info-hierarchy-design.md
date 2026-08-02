@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-02
 **Scope:** 重建 mobile 端 Photo Detail info 面板的信息层级：新增一张 Apple Photos 式器材卡吸收高频字段，其余长尾收进 6 个带摘要值的折叠分组，并去掉 6 处重复渲染。
-**Touches:** `apps/mobile/modules/photo-masonry/ios/Sheets/**`、`apps/mobile/modules/photo-masonry/ios/Detail/PhotoDetailInfoView.swift`、`apps/mobile/src/modules/photo-viewer/photoInfoModel.ts`、`apps/mobile/src/native/photoSheets.ts`、`locales/mobile/*.json`。
+**Touches:** `apps/mobile/modules/photo-masonry/ios/Sheets/**`、`apps/mobile/modules/photo-masonry/ios/Detail/PhotoDetailView.swift`、`apps/mobile/src/modules/photo-viewer/photoInfoModel.ts`、`apps/mobile/src/native/photoSheets.ts`、`locales/mobile/*.json`。
 **不改：** 面板的呈现形态。`PhotoDetailInspectorPresenter` 的 pan 驱动上推面板、iPad 侧栏、`PhotoSheetsModule` 的独立 sheet 全部保持现状，本设计只改这些容器里渲染的内容。
 
 ## Problem
@@ -24,10 +24,12 @@
 | 首屏结构 | 一张统一器材卡 → 标签 → 地图 → 折叠分组表 |
 | 器材卡顺序 | 机身在前、曝光在后（标题行 / 镜头行 / 规格行 / 曝光条） |
 | 长尾处理 | 6 个 `DisclosureGroup`，收起时右侧显示一行摘要值 |
+| 容器 | `ScrollView` + `LazyVStack` 自绘卡片，**不用 `List(.insetGrouped)`** |
+| 卡片圆角 | 9pt continuous，实测对齐 Photos |
 | 地图 | 占首屏（M1），不收进折叠组 |
 | 曝光条 | 五格：ISO / 等效焦距 / EV / 光圈 / 快门；无第二行标签，单位后缀即标签 |
 | 曝光补偿 | 常驻第 3 格，`0 ev` 也照常显示，不做「非零才显示」 |
-| 焦距分工 | 镜头行给**实际焦距**，曝光条给**等效焦距** |
+| 焦距 | 实际与等效**合并进曝光条同一格**：`70→105 mm`；两者相等时只出一个数 |
 | 色调 | 类型升为器材卡上的胶囊；直方图与四个指标留在折叠组 |
 | 评分 | 镜头行右侧星标，`rating <= 0` 时不渲染 |
 | 删除的字段 | APEX `ShutterSpeedValue`、APEX `ApertureValue`（各自的真值已在曝光条） |
@@ -57,13 +59,25 @@
 | 标题 | 机身 | `joinMakeAndModel(Make, Model)` → `photo.camera` → `photo.title` |
 | 标题·徽标 1 | 格式 | `photo.format.toUpperCase()`，恒在 |
 | 标题·徽标 2 | 胶片模拟 | `formatFilmMode(FujiRecipe.FilmMode)`，仅富士机身 |
-| 镜头 | 镜头名 — 实际焦距 最大光圈 | `LensMake/LensModel` → `photo.lens`；`FocalLength`；`MaxApertureValue` |
+| 镜头 | 镜头名（不带任何数字） | `LensMake/LensModel` → `photo.lens` |
 | 镜头·右 | 评分星标 | `photo.rating`，`<= 0` 不渲染 |
 | 规格 | 像素 • 尺寸 • 文件大小 | `formatMegapixels` / `width × height` / `formatFileSize` |
 | 规格·右 | 色调胶囊 | `toneAnalysis.toneType` |
-| 曝光条 | ISO · 等效焦距 · EV · 光圈 · 快门 | `ISO` / `FocalLengthIn35mmFormat` / `ExposureCompensation` / `FNumber` / `ExposureTime` |
+| 曝光条 | ISO · 焦距对 · EV · 光圈 · 快门 | `ISO` / `FocalLength`+`FocalLengthIn35mmFormat` / `ExposureCompensation` / `FNumber` / `ExposureTime` |
 
-`MaxApertureValue` 由 exiftool 输出时已完成 APEX → f 值转换（`packages/builder/src/image/exif.ts` 用 `exiftool-vendored` 默认 print conversion），直接走现有 `formatAperture` 即可。
+### 镜头行为什么不带数字
+
+初版把实际焦距和最大光圈挂在镜头行，两个问题：
+
+**最大光圈是第三次重复。** 恒定光圈变焦（以及任何开到最大光圈拍的照片）上，它和曝光条里的实拍光圈是同一个数；而镜头型号串本身几乎总是已经写了一遍——`TAMRON 17-70mm F/2.8 DiIII-A VC RXD — 70 mm ƒ2.8 … ƒ2.8`，同一信息出现三次。
+
+**两个焦距是一个事实的两种单位。** 70mm 是物理焦距，105mm 是它乘 APS-C 系数；把两个无标签的 `mm` 摆在不同位置，读者必须先知道「镜头行=实际、曝光条=等效」才看得懂，不可发现。参照的 Apple 面板其实不是这个结构——它的 `主相机 — 26 mm` 与条里的 `52 mm` **都是 35mm 等效**，一个是「这颗镜头是什么」、一个是「这张用了什么」，全程一套单位，从不显示物理焦距。位置照搬了，语义搬错了。
+
+因此：镜头行只留型号名，焦距合并进曝光条同一格 `70→105 mm`（`formatFocalPair`），两值相等或只有其一时退化为单个数字。
+
+实测等宽未被破坏——五格宽 76.0 / 72.7 / 72.3 / 72.7 / 76.0 pt，中间三格相等，两端多出的是曝光条自身 4pt 水平内边距。`70→105 mm` 在 `.caption` 等宽数字下约 62pt，370pt 卡片五等分每格 72pt，`ISO 12800`、`1/10000 s` 也都在余量内；只有 iPhone SE 那档 288pt 卡片会略溢出，由既有的 `minimumScaleFactor(0.75)` 兜住。
+
+副作用是好的：镜头行腾出整行宽度，型号从 `DiIII-...` 变成 `DiIII-A VC RXD B07...`。
 
 ### 视觉规格
 
@@ -83,7 +97,20 @@
 
 标题行底色比卡体深一档，分隔线走 `Divider()`。**具体是 `.tertiarySystemFill` 叠加还是别的层级，实现时在模拟器上与 Photos 并排比对确定**——这类取值从 header 里推不出来，项目既有 spec 也是这个做法。
 
-内边距：卡内水平 16pt；标题行垂直 9pt；镜头行与规格行间距 3pt，body 垂直 10pt；曝光条垂直 7pt。分组外边距沿用 `.insetGrouped` 系统默认，不覆盖。
+内边距：卡内水平 16pt；标题行垂直 9pt；镜头行与规格行间距 3pt，body 垂直 10pt；曝光条垂直 7pt。
+
+### 为什么不用 `List(.insetGrouped)`
+
+iOS 26 的 `.insetGrouped` 把 section 圆角写死在 **20pt**，SwiftUI 只暴露 `listSectionMargins` / `listSectionSpacing` / `listRowInsets`，**没有圆角 API**（已查 SDK `swiftinterface` 确认）。对着模拟器上真实的 Photos 面板量：两者左右边距都是 16pt、卡宽都是 370pt，唯独圆角 Photos 只有 ~7pt，差 3 倍——这是"看着别扭但说不上哪里怪"的来源。
+
+因此容器改成 `ScrollView` + `LazyVStack`，卡片用 `RoundedRectangle(cornerRadius: 9, style: .continuous)` 自绘。校准数据（顶边逐行横向内缩，px @3x）：
+
+```
+Photos    [21, 16, 13, 11, 10,  8, 7, 6, 6, 5, 4, 3, 3, 2, 2]
+Afilmory  [22, 18, 15, 13, 11, 10, 9, 8, 7, 6, 5, 4, 4, 3, 3]
+```
+
+代价：`DisclosureGroup` 脱离 `List` 之后不可用。它把 label 和 chevron 都走 tint，先是整排标题变蓝；改用 `.tint(Color(.tertiaryLabel))` 压色后更糟——**`.primary` 这类层级样式是相对当前 tint 解析的，不是绝对 label 色**，于是标题跟着变灰、chevron 反而最亮，层级完全倒置。折叠行因此改为自绘：`Button` + `.buttonStyle(.plain)`，三档颜色写死成 `Color(.label)` / `Color(.secondaryLabel)` / `Color(.tertiaryLabel)`，chevron 用 `rotationEffect` 转 90°。
 
 ### 降级
 
@@ -93,7 +120,7 @@
 |---|---|
 | 机身 | 标题回退链 `photo.camera` → `photo.title` |
 | 镜头 | 整个镜头行不渲染，规格行上提 |
-| 最大光圈 | 镜头行只留 `镜头名 — 23 mm` |
+| 最大光圈 | 从不渲染——见下 |
 | 评分 / 色调 / 胶片模拟徽标 | 各自缺失即不渲染，不占位 |
 | 曝光条单值 | 该格不出现，其余重新等分（不填 `—`） |
 | 曝光条五值全缺 | 整条不渲染 |
@@ -138,8 +165,9 @@
 | 基础信息 | artist / copyright / software | 归属与处理 |
 | 拍摄参数 | focal-length / aperture / shutter-speed / iso / exposure-bias | 器材卡曝光条 |
 | 设备信息 | camera | 器材卡标题 |
-| 设备信息 | lens / lens-make / focal-length / max-aperture | 器材卡镜头行（lens-make 沿用现有「已包含则不重复」判断） |
-| 设备信息 | focal-length-35mm | 器材卡曝光条 |
+| 设备信息 | lens / lens-make | 器材卡镜头行（lens-make 沿用现有「已包含则不重复」判断） |
+| 设备信息 | focal-length + focal-length-35mm | 器材卡曝光条，合并为一格 |
+| 设备信息 | max-aperture | **删除**（型号串与曝光条各已写过一次） |
 | 拍摄模式 | 11 行 | 曝光与测光 |
 | 富士胶片模拟 | 14 行 | 胶片模拟（FilmMode 同时升为标题徽标） |
 | 位置信息 | latitude / longitude / altitude / address | 位置详情 |
@@ -207,6 +235,20 @@ interface PhotoInfoGear {
 
 **下拉关闭。** `PhotoDetailInspectorPresenter.gestureRecognizerShouldBegin` 靠 hit-test 链找 `UIScrollView` 判断是否滚到顶。`List` 依旧由 `UIScrollView` 支撑，`DisclosureGroup` 不改变这一点，逻辑原样保留。
 
+**底部 soft edge 必须走 UIKit 接线。** 详情页工具栏是 `PhotoDetailView` 的兄弟 UIView，不在 SwiftUI 层级里，所以 `.scrollEdgeEffectStyle(.soft, for: .bottom)` 无论配不配 `contentMargins` 还是 `safeAreaBar` 都不会渲染——SwiftUI 根本不知道底下有 bar。按 `PhotoMasonryView` 顶部已有的先例走 UIKit：
+
+```swift
+scrollView.bottomEdgeEffect.style = .soft
+let interaction = UIScrollEdgeElementContainerInteraction()
+interaction.scrollView = scrollView
+interaction.edge = .bottom
+toolbar.addInteraction(interaction)
+```
+
+`PhotoDetailInfoView.installScrollEdgeEffect(under:)` 在 hosting controller 的视图树里找到第一个 `UIScrollView` 再接线，由 `PhotoDetailView.layoutSubviews` 反复调用（内部按 scroll view 身份去重），因为 SwiftUI 的 scroll view 要等首次布局后才存在。
+
+**沉浸模式单击手势必须放行面板内的点击。** `PhotoDetailView.gestureRecognizer(_:shouldReceive:)` 原先只排除 `[navigationBar, toolbar, reactionRail]`，而 `UITapGestureRecognizer.cancelsTouchesInView` 默认为 `true` —— 面板此前是只读列表（只有滚动这一 pan 手势），所以这个洞一直没暴露；折叠分组需要点击，`infoView` 必须加进排除列表，否则每一次展开都会被沉浸手势吞掉。实测确认。
+
 **无障碍。** 器材卡四行各自 `.accessibilityElement(children: .combine)`；曝光条整体合并成一个元素，读作「ISO 400，35 毫米，曝光补偿 +0.3，光圈 f2，快门 1/250 秒」；`DisclosureGroup` 的展开态由系统播报，摘要值并入 label。
 
 ## i18n
@@ -237,6 +279,6 @@ mobile.photoInfo.attribution
 
 ## 遗留到实现时在模拟器上定的
 
-1. 标题行底色相对卡体的深度层级（`.tertiarySystemFill` 叠加 vs 别的层级）。
+1. ~~标题行底色相对卡体的深度层级。~~ 已定：标题行 `.quaternarySystemFill`，格式徽标 `.tertiarySystemFill`（两者必须差一档，否则徽标在标题行上消失）。
 2. 曝光条五格在 320pt 宽（iPhone SE / 侧栏 380pt）下是否会挤——若挤，等效焦距格与 EV 格允许缩到 `.caption2`，顺序不变。
 3. 机身名过长时标题行的截断点：徽标不压缩、机身名 `.truncationMode(.tail)`，需确认 `Panasonic DC-S5M2X` + 两个徽标在最窄场景下的表现。

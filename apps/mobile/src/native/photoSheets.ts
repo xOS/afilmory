@@ -3,26 +3,12 @@ import type { ViewProps } from 'react-native'
 
 import { getGalleryApiBaseUrl } from '@/api/client'
 import { getIntlLocale, i18n, translate } from '@/i18n'
-import type {
-  CaptureParameter,
-  PhotoInfoMapLocation,
-  PhotoInfoSection,
-  PhotoInfoToneAnalysis,
-} from '@/modules/photo-viewer/photoInfoModel'
+import type { PhotoInfoSheetModel } from '@/modules/photo-viewer/photoInfoModel'
 import type { FilterOptions } from '@/modules/photos/filters/aggregates'
 import type { PhotoFilters } from '@/modules/photos/filters/filterTypes'
 import { DATE_PRESET_KEYS } from '@/modules/photos/filters/filterTypes'
 
-export interface NativePhotoInfoSheet {
-  title: string
-  description: string | null
-  sections: PhotoInfoSection[]
-  captureParameters: CaptureParameter[]
-  tags: string[]
-  toneAnalysis: PhotoInfoToneAnalysis | null
-  mapLocation: PhotoInfoMapLocation | null
-  emptyMessage: string | null
-}
+export type NativePhotoInfoSheet = PhotoInfoSheetModel
 
 export interface NativePresentationAnchor {
   x: number
@@ -32,15 +18,14 @@ export interface NativePresentationAnchor {
 }
 
 interface NativePhotoInfoLocalization {
-  captureParameters: string
   done: string
   histogram: string
   histogramAccessibilityLabel: string
   histogramFailure: string
   mapAccessibilityLabel: string
+  ratingLabel: string
   tags: string
   title: string
-  toneAnalysis: string
 }
 
 export interface NativePhotoInfoSheetPayload extends NativePhotoInfoSheet {
@@ -198,15 +183,14 @@ export function buildNativePhotoInfoPayload(info: NativePhotoInfoSheet): NativeP
   return {
     ...info,
     localization: {
-      captureParameters: translate('exif.capture.parameters'),
       done: translate('common.done'),
       histogram: translate('exif.histogram'),
       histogramAccessibilityLabel: translate('sheet.histogram.accessibility'),
       histogramFailure: translate('sheet.histogram.failed'),
       mapAccessibilityLabel,
+      ratingLabel: translate('exif.rating'),
       tags: translate('exif.tags'),
       title: translate('sheet.info'),
-      toneAnalysis: translate('exif.tone.analysis.title'),
     },
   }
 }
