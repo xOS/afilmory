@@ -359,6 +359,13 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     updateLivePhotoBadgeVisibility()
   }
 
+  func setOpeningPlaceholderImage(_ image: UIImage) {
+    // The masonry thumbnail is already decoded and visually identical at the
+    // source rect. Reusing it avoids exposing ThumbHash while the shared photo
+    // is expanding and the viewer's regular image request resolves from cache.
+    previewImageView.image = image
+  }
+
   // Looping modes never finish on their own, so hiding the badge while they run
   // would strand the user with no way back to the mode menu.
   private func updateLivePhotoBadgeVisibility() {

@@ -19,12 +19,7 @@ final class PhotoViewerView: ExpoView {
   var keyboardNextTitle = ""
   var keyboardPreviousTitle = ""
   var interactiveDismissEnabled = true
-  var infoPresented = false {
-    didSet {
-      guard infoPresented != oldValue else { return }
-      configureZoomTransitionWhenReady()
-    }
-  }
+  var infoPresented = false
 
   var livePhotoStringsJSON = "" {
     didSet {
@@ -50,7 +45,7 @@ final class PhotoViewerView: ExpoView {
   var transitionId = "" {
     didSet {
       guard transitionId != oldValue else { return }
-      configureZoomTransitionWhenReady()
+      configureRouteTransitionWhenReady()
     }
   }
 
@@ -63,7 +58,6 @@ final class PhotoViewerView: ExpoView {
   private lazy var infoPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleInfoPan))
   private var externalTapGestureRecognizer: UITapGestureRecognizer?
   private weak var configuredScreen: RNSScreen?
-  private var configuredInfoPresented: Bool?
   private var configuredTransitionId = ""
   private var prefetchTokens: [Int: SDWebImagePrefetchToken] = [:]
   private var liveBadgeAlpha: CGFloat = 1
@@ -163,7 +157,7 @@ final class PhotoViewerView: ExpoView {
   override func didMoveToSuperview() {
     super.didMoveToSuperview()
     if superview != nil {
-      configureZoomTransitionWhenReady()
+      configureRouteTransitionWhenReady()
       pushScreenTraitsWhenReady()
       return
     }
@@ -355,35 +349,10 @@ final class PhotoViewerView: ExpoView {
     }
   }
 
-  private func targetRect(in viewController: UIViewController) -> CGRect? {
-    guard photos.indices.contains(currentIndex) else { return nil }
-    let photo = photos[currentIndex]
-    let container = convert(bounds, to: viewController.view)
-    let width = CGFloat(photo.width)
-    let height = CGFloat(photo.height)
-    guard width > 0, height > 0, container.width > 0, container.height > 0 else {
-      return container
-    }
-
-    let aspectRatio = width / height
-    var targetWidth = container.width
-    var targetHeight = targetWidth / aspectRatio
-    if targetHeight > container.height {
-      targetHeight = container.height
-      targetWidth = targetHeight * aspectRatio
-    }
-    return CGRect(
-      x: container.midX - targetWidth / 2,
-      y: container.midY - targetHeight / 2,
-      width: targetWidth,
-      height: targetHeight
-    )
-  }
-
-  private func configureZoomTransitionWhenReady() {
+  private func configureRouteTransitionWhenReady() {
     guard superview != nil, !transitionId.isEmpty else { return }
     DispatchQueue.main.async { [weak self] in
-      self?.configureZoomTransition()
+      self?.configureRouteTransition()
     }
   }
 
@@ -402,37 +371,20 @@ final class PhotoViewerView: ExpoView {
     screenView.statusBarAnimation = .fade
   }
 
-  private func configureZoomTransition() {
+  private func configureRouteTransition() {
     guard let screen = findScreen() else { return }
     guard configuredScreen !== screen
       || configuredTransitionId != transitionId
-      || configuredInfoPresented != infoPresented
     else { return }
 
-    if infoPresented {
-      screen.preferredTransition = nil
-      configuredScreen = screen
-      configuredTransitionId = transitionId
-      configuredInfoPresented = infoPresented
-      return
-    }
-
-    let activeTransitionId = transitionId
-    let options = UIViewController.Transition.ZoomOptions()
-    options.alignmentRectProvider = { [weak self] context in
-      self?.targetRect(in: context.zoomedViewController)
-    }
-    // The system pan scales the whole screen — chrome, backdrop and all.
-    // PhotoDetailView owns the Photos-style drag instead; the zoom transition
-    // stays solely for the present animation and the committed fly-home pop.
-    options.interactiveDismissShouldBegin = { _ in false }
-    screen.preferredTransition = .zoom(options: options) { _ in
-      PhotoTransitionRegistry.shared.sourceView(id: activeTransitionId)
-    }
+    // The system zoom treats the complete RNSScreen as the shared element.
+    // PhotoDetailView instead owns both directions as a photo-only transform,
+    // so navigation must commit without adding a second visible animation.
+    screen.preferredTransition = nil
+    screen.screenView().stackAnimation = .none
 
     configuredScreen = screen
     configuredTransitionId = transitionId
-    configuredInfoPresented = infoPresented
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -476,15 +428,6 @@ final class PhotoViewerView: ExpoView {
     collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
   }
 
-  func screenContainerView() -> UIView? {
-    findScreen()?.view
-  }
-
-  func sourceThumbnailView() -> UIView? {
-    guard !transitionId.isEmpty else { return nil }
-    return PhotoTransitionRegistry.shared.sourceView(id: transitionId)
-  }
-
   func currentPhotoId() -> String? {
     guard photos.indices.contains(currentIndex) else { return nil }
     return photos[currentIndex].id
@@ -514,9 +457,13 @@ final class PhotoViewerView: ExpoView {
     )
   }
 
-  // The zoom pop replays the whole-screen morph from its canonical fullscreen
-  // state, which cannot continue from a custom dragged position — the commit
-  // animation is hand-rolled instead, so the pop itself must not animate.
+  func setOpeningPlaceholderImage(_ image: UIImage?) {
+    guard let image else { return }
+    currentCell()?.setOpeningPlaceholderImage(image)
+  }
+
+  // The native photo has already completed the visible close. Keep the route
+  // pop animation-less so RNScreens cannot add a second page-level motion.
   func disableCloseTransition() {
     guard let screen = findScreen() else { return }
     screen.preferredTransition = nil

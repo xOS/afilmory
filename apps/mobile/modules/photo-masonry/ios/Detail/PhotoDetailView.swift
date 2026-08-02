@@ -1,6 +1,12 @@
 import ExpoModulesCore
 import UIKit
 
+private enum PhotoOpeningState {
+  case waiting
+  case animating
+  case completed
+}
+
 final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   let onCommentsRequest = EventDispatcher()
   let onIndexChange = EventDispatcher()
@@ -47,6 +53,11 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   private var visibility = PhotoDetailChromeVisibility(userHidden: false, infoProgress: 0, zoomed: false)
   private var lastLayoutSize = CGSize.zero
   private var presenterSnapshotView: PhotoPresenterSnapshotView?
+  private var pendingOpeningSnapshot: PhotoOpeningSnapshot?
+  private var openingFallbackWorkItem: DispatchWorkItem?
+  private var openingState = PhotoOpeningState.waiting
+  private var transitionID = ""
+  private var hasReceivedTransitionID = false
   private var dismissCommitted = false
   private var dragTranslation = CGPoint.zero
   private var dragScale: CGFloat = 1
@@ -97,9 +108,10 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     }
     // Reapplying inspector layout sets frames on the media viewport, which is
     // undefined while the dismiss drag has a transform on it.
-    if !visibility.dismissing {
+    if !visibility.dismissing, openingState != .animating {
       inspector.reapplyProgress()
     }
+    beginOpeningTransitionIfReady()
   }
 
   override func safeAreaInsetsDidChange() {
@@ -110,6 +122,10 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
+      openingFallbackWorkItem?.cancel()
+      openingFallbackWorkItem = nil
+      pendingOpeningSnapshot?.removeFromSuperview()
+      pendingOpeningSnapshot = nil
       let snapshot = presenterSnapshotView
       presenterSnapshotView = nil
       if dismissCommitted {
@@ -119,52 +135,176 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
       }
       return
     }
-    // The navigation controller detaches the presenter's view once the push
-    // settles, so the grid must be captured while the transition still has it
-    // on screen — and synchronously, before the zoom transition hides the
-    // source thumbnail, or the frozen copy carries a black hole in its place.
-    capturePresenterSnapshot()
-    if presenterSnapshotView == nil {
-      DispatchQueue.main.async { [weak self] in
-        self?.capturePresenterSnapshot()
-      }
+    beginOpeningTransitionIfReady()
+    DispatchQueue.main.async { [weak self] in
+      self?.beginOpeningTransitionIfReady()
     }
   }
 
-  private func capturePresenterSnapshot() {
-    guard presenterSnapshotView == nil,
-          let screenView = viewer.screenContainerView(),
-          let container = screenView.superview,
-          let presenterView = viewer.presenterScreenView(),
-          presenterView.window != nil,
-          let snapshotContent = presenterView.snapshotView(afterScreenUpdates: false)
+  private static let openingDuration: TimeInterval = 0.42
+  private static let openingBackdropDuration: TimeInterval = 0.24
+  private static let openingChromeDuration: TimeInterval = 0.16
+
+  private func beginOpeningTransitionIfReady() {
+    guard openingState == .waiting, hasReceivedTransitionID else { return }
+    guard !transitionID.isEmpty else {
+      completeOpeningWithoutAnimation()
+      return
+    }
+    if pendingOpeningSnapshot == nil {
+      pendingOpeningSnapshot = PhotoTransitionRegistry.shared.takeOpeningSnapshot(id: transitionID)
+    }
+    guard let openingSnapshot = pendingOpeningSnapshot,
+          let hostWindow = openingSnapshot.hostWindow,
+          window === hostWindow,
+          bounds.width > 0,
+          bounds.height > 0,
+          photos.indices.contains(currentIndex)
     else { return }
 
-    let sourceView = viewer.sourceThumbnailView()
-    let hostWindow = screenView.window
-    let snapshot = PhotoPresenterSnapshotView(
-      frame: screenView.frame,
-      contentView: snapshotContent,
-      handoffFrameInWindow: hostWindow.map { screenView.convert(screenView.bounds, to: $0) }
-        ?? screenView.frame,
+    viewer.layoutIfNeeded()
+    guard let imageFrame = viewer.currentImageFrame() else { return }
+    viewer.setOpeningPlaceholderImage(openingSnapshot.sourceImage)
+    let imageFrameInViewport = viewer.convert(imageFrame, to: mediaViewport)
+    let sourceRect = convert(openingSnapshot.sourceFrameInWindow, from: hostWindow)
+    let snapshotFrame = convert(openingSnapshot.frameInWindow, from: hostWindow)
+    guard let openingTransition = mediaViewportTransition(
+      imageFrame: imageFrameInViewport,
+      targetRect: sourceRect
+    ) else { return }
+
+    openingState = .animating
+    openingFallbackWorkItem?.cancel()
+    openingFallbackWorkItem = nil
+    pendingOpeningSnapshot = nil
+    isUserInteractionEnabled = false
+
+    let sourceView = PhotoTransitionRegistry.shared.sourceView(id: transitionID)
+    let presenter = PhotoPresenterSnapshotView(
+      frame: snapshotFrame,
+      contentView: openingSnapshot.contentView,
+      handoffFrameInWindow: openingSnapshot.frameInWindow,
       hostWindow: hostWindow,
-      presenterView: presenterView,
+      presenterView: viewer.presenterScreenView(),
       sourceView: sourceView
     )
-    snapshot.isHidden = true
 
-    // Photos keeps a blank slot in the grid where the previewed photo came
-    // from, and the committed drag lands the photo back into it. The slot is
-    // painted onto the snapshot from the same rect the fly targets, so the
-    // landing always lines up regardless of the system's own source-hiding.
-    if let source = sourceView, source.window != nil {
-      let holeRect = source.convert(source.bounds, to: presenterView)
-      snapshot.coverLandingSlot(holeRect)
-      flyTargetRect = source.convert(source.bounds, to: self)
+    UIView.performWithoutAnimation {
+      insertSubview(presenter, belowSubview: backgroundView)
+      let holeRect = presenter.convert(sourceRect, from: self)
+      presenter.coverLandingSlot(holeRect)
+      presenterSnapshotView = presenter
+      flyTargetRect = sourceRect
+
+      backgroundView.alpha = 0
+      mediaViewport.alpha = 1
+      mediaViewport.transform = openingTransition.transform
+      setOpeningChromeAlpha(0)
+      layoutIfNeeded()
     }
 
-    container.insertSubview(snapshot, belowSubview: screenView)
-    presenterSnapshotView = snapshot
+    guard !UIAccessibility.isReduceMotionEnabled else {
+      completeOpeningTransition()
+      return
+    }
+
+    UIView.animate(
+      withDuration: Self.openingDuration,
+      delay: 0,
+      usingSpringWithDamping: 0.92,
+      initialSpringVelocity: 0,
+      options: [.allowUserInteraction, .beginFromCurrentState],
+      animations: { [self] in
+        mediaViewport.transform = .identity
+      },
+      completion: { [weak self] _ in self?.completeOpeningTransition() }
+    )
+    UIView.animate(
+      withDuration: Self.openingBackdropDuration,
+      delay: 0,
+      options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut],
+      animations: { [self] in backgroundView.alpha = 1 }
+    )
+    UIView.animate(
+      withDuration: Self.openingChromeDuration,
+      delay: Self.openingDuration - Self.openingChromeDuration,
+      options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut],
+      animations: visibilityChanges()
+    )
+  }
+
+  private func completeOpeningTransition() {
+    guard openingState != .completed else { return }
+    openingState = .completed
+    openingFallbackWorkItem?.cancel()
+    openingFallbackWorkItem = nil
+    UIView.performWithoutAnimation { [self] in
+      backgroundView.alpha = 1
+      mediaViewport.alpha = 1
+      mediaViewport.transform = .identity
+      applyVisibility(animated: false)
+      presenterSnapshotView?.isHidden = true
+      isUserInteractionEnabled = true
+      setNeedsLayout()
+    }
+  }
+
+  private func completeOpeningWithoutAnimation() {
+    guard openingState == .waiting else { return }
+    pendingOpeningSnapshot?.removeFromSuperview()
+    pendingOpeningSnapshot = nil
+    openingState = .completed
+    openingFallbackWorkItem?.cancel()
+    openingFallbackWorkItem = nil
+    backgroundView.alpha = 1
+    mediaViewport.alpha = 1
+    mediaViewport.transform = .identity
+    applyVisibility(animated: false)
+    isUserInteractionEnabled = true
+  }
+
+  private func scheduleOpeningFallback() {
+    guard openingState == .waiting, openingFallbackWorkItem == nil else { return }
+    let workItem = DispatchWorkItem { [weak self] in
+      self?.completeOpeningWithoutAnimation()
+    }
+    openingFallbackWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
+  }
+
+  private func setOpeningChromeAlpha(_ alpha: CGFloat) {
+    navigationBar.alpha = alpha
+    toolbar.alpha = alpha
+    topScrim.alpha = alpha
+    bottomScrim.alpha = alpha
+    viewer.setLiveBadgeAlpha(alpha)
+  }
+
+  private func mediaViewportTransition(
+    imageFrame: CGRect,
+    targetRect: CGRect
+  ) -> (transform: CGAffineTransform, translation: CGPoint)? {
+    guard imageFrame.width > 0,
+          imageFrame.height > 0,
+          targetRect.width > 0,
+          targetRect.height > 0
+    else { return nil }
+
+    let scale = max(targetRect.width / imageFrame.width, targetRect.height / imageFrame.height)
+    let viewportCenter = CGPoint(x: mediaViewport.bounds.midX, y: mediaViewport.bounds.midY)
+    let imageOffset = CGPoint(
+      x: imageFrame.midX - viewportCenter.x,
+      y: imageFrame.midY - viewportCenter.y
+    )
+    let translation = CGPoint(
+      x: targetRect.midX - mediaViewport.center.x - scale * imageOffset.x,
+      y: targetRect.midY - mediaViewport.center.y - scale * imageOffset.y
+    )
+    return (
+      CGAffineTransform(translationX: translation.x, y: translation.y)
+        .scaledBy(x: scale, y: scale),
+      translation
+    )
   }
 
   func setPhotos(_ photos: [MasonryPhoto]) {
@@ -172,6 +312,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     currentIndex = clampedIndex(initialIndex)
     viewer.setPhotos(photos)
     updateCurrentMetadata()
+    setNeedsLayout()
   }
 
   func setInitialIndex(_ index: Int) {
@@ -179,10 +320,23 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     currentIndex = clampedIndex(index)
     viewer.initialIndex = index
     updateCurrentMetadata()
+    setNeedsLayout()
   }
 
   func setTransitionID(_ id: String) {
+    transitionID = id
+    hasReceivedTransitionID = true
     viewer.transitionId = id
+    if id.isEmpty {
+      completeOpeningWithoutAnimation()
+      return
+    }
+    pendingOpeningSnapshot = PhotoTransitionRegistry.shared.takeOpeningSnapshot(id: id)
+    scheduleOpeningFallback()
+    setNeedsLayout()
+    DispatchQueue.main.async { [weak self] in
+      self?.beginOpeningTransitionIfReady()
+    }
   }
 
   func setMetadataJSON(_ json: String) {
@@ -407,29 +561,22 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
 
     if let targetRect = flyTargetRect,
        currentIndex == initialIndex,
-       let imageFrame = viewer.currentImageFrame() {
+       let imageFrame = viewer.currentImageFrame(),
+       let flyTransition = mediaViewportTransition(
+         imageFrame: viewer.convert(imageFrame, to: mediaViewport),
+         targetRect: targetRect
+       ) {
       // Masonry cells preserve the photo's aspect ratio, so the aspect-fit
       // rect maps exactly onto the blank slot — landing there and popping
       // without animation swaps to the identical live cell.
-      let scale = max(targetRect.width / imageFrame.width, targetRect.height / imageFrame.height)
-      let viewportCenter = CGPoint(x: mediaViewport.bounds.midX, y: mediaViewport.bounds.midY)
-      let imageOffset = CGPoint(
-        x: imageFrame.midX - viewportCenter.x,
-        y: imageFrame.midY - viewportCenter.y
-      )
-      let translationX = targetRect.midX - mediaViewport.center.x - scale * imageOffset.x
-      let translationY = targetRect.midY - mediaViewport.center.y - scale * imageOffset.y
-      let flyTransform = CGAffineTransform(translationX: translationX, y: translationY)
-        .scaledBy(x: scale, y: scale)
-      let targetTranslation = CGPoint(x: translationX, y: translationY)
       let duration = dismissSettlingDuration(
         from: dragTranslation,
-        to: targetTranslation,
+        to: flyTransition.translation,
         velocity: velocity
       )
       let springVelocity = normalizedSpringVelocity(
         from: dragTranslation,
-        to: targetTranslation,
+        to: flyTransition.translation,
         velocity: velocity
       )
 
@@ -440,7 +587,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
         initialSpringVelocity: springVelocity,
         options: [.allowUserInteraction, .beginFromCurrentState],
         animations: { [self] in
-          mediaViewport.transform = flyTransform
+          mediaViewport.transform = flyTransition.transform
         },
         completion: { [weak self] _ in self?.completeDismissAndRequestClose() }
       )
@@ -571,7 +718,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
       mediaViewport.alpha = 0
       layoutIfNeeded()
     }
-    requestClose()
+    onRequestClose([:])
   }
 
   private func applyScreenTraits() {
@@ -695,8 +842,10 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   }
 
   private func requestClose() {
+    guard openingState == .completed, !dismissCommitted else { return }
     setReactionRailPresented(false, animated: false)
-    onRequestClose([:])
+    dismissDragBegan()
+    commitDismissDrag(velocity: .zero)
   }
 
   private func requestComments() {
@@ -755,7 +904,7 @@ private final class PhotoPresenterSnapshotView: UIView {
     contentView: UIView,
     handoffFrameInWindow: CGRect,
     hostWindow: UIWindow?,
-    presenterView: UIView,
+    presenterView: UIView?,
     sourceView: UIView?
   ) {
     self.contentView = contentView
@@ -850,10 +999,9 @@ private final class PhotoPresenterSnapshotView: UIView {
       presenterReadySince = nil
     }
 
-    // The source view can report visible before UIKit has removed the final
-    // zoom-transition suppression from its rendered contents. A short stable
-    // interval bridges that private transition state without relying on a
-    // fixed number of frames or the device's refresh rate.
+    // The source view can report visible before RNScreens and Core Animation
+    // have committed its final layer tree. A short stable interval bridges
+    // that compositor handoff without relying on a fixed frame count.
     if let presenterReadySince,
        displayLink.timestamp - presenterReadySince >= 0.18 {
       finishHandoff(animated: true)
@@ -880,10 +1028,8 @@ private final class PhotoPresenterSnapshotView: UIView {
           !(sourceView is UIImageView) || (sourceView as? UIImageView)?.image != nil
     else { return false }
 
-    // UIKit's zoom presentation may keep the source thumbnail hidden for one
-    // additional frame after its screen is reattached. Window membership alone
-    // is therefore insufficient; every ancestor through the presenter must be
-    // visibly composited before the frozen grid can be released.
+    // Window membership alone is insufficient: every ancestor through the
+    // presenter must be visibly composited before the frozen grid is released.
     var candidate: UIView? = sourceView
     while let view = candidate {
       let renderedOpacity = view.layer.presentation()?.opacity ?? view.layer.opacity
@@ -932,10 +1078,9 @@ private final class PhotoPresenterSnapshotView: UIView {
       return
     }
 
-    // Keep a stable copy of the destination cell above the live grid while
-    // UIKit releases its private zoom-transition source suppression. The copy
-    // is noninteractive and visually identical, so this additional bridge is
-    // imperceptible but prevents the final one-frame black cell.
+    // Keep a stable copy of the destination cell above the live grid through
+    // its final compositor commit. The copy is noninteractive and visually
+    // identical, preventing a one-frame empty source slot.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak landingSlotReplica] in
       guard let self, let landingSlotReplica else { return }
       UIView.animate(

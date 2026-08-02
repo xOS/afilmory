@@ -1,26 +1,30 @@
-# Mobile Photo Viewer — Photos-Style Interactive Dismiss — Design
+# Mobile Photo Viewer — Photos-Style Symmetric Photo Transition — Design
 
 **Date:** 2026-08-02
-**Scope:** During the swipe-down dismiss, only the current photo tracks the finger. Chrome fades out instantly; the black backdrop is an isolated full-bleed layer that only changes opacity, following drag progress. Today the system zoom transition scales the entire screen — chrome, backdrop and all.
-**Touches:** `apps/mobile/modules/photo-masonry/ios/PhotoViewerView.swift`, `PhotoDetailView.swift`, `PhotoDetailChromeVisibility.swift`, `PhotoViewerCell.swift`, `apps/mobile/src/app/_layout.tsx`, `apps/mobile/src/modules/photo-viewer/PhotoDetailScreen.tsx`.
+**Scope:** Opening and closing are the same photo-only transition in opposite directions. The masonry page remains geometrically fixed; only the selected photo translates and scales. The black backdrop is a fixed, full-bleed layer that changes opacity, and detail chrome enters after the photo has established the transition.
+**Touches:** `apps/mobile/modules/photo-masonry/ios/Core/PhotoTransitionRegistry.swift`, `Detail/PhotoDetailView.swift`, `Detail/PhotoDetailChromeVisibility.swift`, `Viewer/PhotoViewerView.swift`, `Viewer/PhotoViewerCell.swift`, `apps/mobile/src/app/_layout.tsx`, `apps/mobile/src/modules/photo-viewer/PhotoDetailScreen.tsx`.
 
 ## Problem
 
-Dismiss rides the iOS 18+ zoom transition (`screen.preferredTransition = .zoom` in `PhotoViewerView.configureZoomTransition`). Its interactive pan scales the zoomed `RNSScreen`'s whole view, so the navigation bar, toolbar, scrims and the stacked black backgrounds all shrink together as one page. Apple Photos instead keeps only the image under the finger: chrome vanishes the moment the gesture starts, the image alone translates and scales with the drag, and the backdrop is an isolated layer that purely cross-fades with progress — it never moves or shrinks.
+The iOS 18+ zoom transition treats the complete `RNSScreen` as the shared element. On opening it scales the entire destination view from the thumbnail, including backdrop and chrome; on interactive dismissal it shrinks the same complete page. This cannot express the Photos behavior: the presenter remains stationary, the selected photo alone moves between source and fullscreen geometry, and the backdrop only cross-fades. The route transition and the visual photo transition therefore require separate ownership.
 
 ## Decisions (confirmed)
 
 | Decision | Choice |
 |---|---|
+| Transition symmetry | Opening and closing use the same source/fullscreen geometry and transform calculation in opposite directions |
+| Route transition | Animation-less in both directions (`preferredTransition = nil`, `stackAnimation = .none`); route state changes underneath the native visual handoff |
+| Opening snapshot | Capture the complete presenter synchronously at press time and retain it above the window until `PhotoDetailView` is ready, preventing navigation or React mounting from exposing an intermediate screen |
+| Opening photo | Reuse the already-decoded source-cell image as the viewer placeholder, then animate only `mediaViewport` from source geometry to identity |
+| Opening choreography | Backdrop remains full-bleed and fades 0→1 independently; detail chrome appears only during the final 0.16s of the photo's 0.42s spring |
 | Drag tracking | Own `UIPanGestureRecognizer` on `PhotoDetailView`; transforms **only** `mediaViewport` (translate with finger, scale 1→0.68 by progress) |
-| System interactive dismiss | Disabled (`interactiveDismissShouldBegin` returns false) — it can only scale the whole screen, which is exactly the wrong shape |
-| Zoom transition | Kept **only for the present animation**. The pop is animation-less (`preferredTransition = nil` + `stackAnimation = .none` at commit): frame analysis showed the zoom pop replays its whole-screen morph from the canonical fullscreen state (own dimming layer + source-thumbnail overlay), which cannot continue from a dragged position |
+| System interactive dismiss | Absent because the route has no zoom transition; the local detail pan is the only interactive dismiss owner |
 | Backdrop | Single full-bleed black `backgroundView` at the bottom of `PhotoDetailView`; alpha = 1 − progress during the drag, never transformed |
 | Grid placeholder | The masonry keeps a blank slot where the previewed photo came from — painted onto the presenter snapshot at capture time from the same rect the commit animation targets |
 | Chrome fade | Instant (~0.15s ease-out) on gesture begin via `PhotoDetailChromeVisibility.dismissing` |
 | Commit rule | progress > 0.45 (of 340 pt), or downward velocity > 1200 pt/s with ≥100 pt travelled — anything less springs back |
 | Commit animation | Photo flies into the blank slot with a projected release-velocity spring (0.26–0.42s); masonry cells preserve aspect ratio so the aspect-fit rect maps exactly onto the cell. If the pager moved to another photo, fall back to drifting out along the gesture while fading |
-| Presenter handoff | At landing, atomically replace the moving photo with the complete frozen grid, then retain that snapshot above the `RNScreens` hierarchy until the live presenter has rendered stably. A source-cell replica bridges UIKit's final zoom-source suppression before removal |
+| Presenter handoff | At landing, atomically replace the moving photo with the complete frozen grid, then retain that snapshot above the `RNScreens` hierarchy until the live presenter has rendered stably. A source-cell replica bridges the final compositor commit before removal |
 | Snapshot release | Clear the snapshot's opaque black backing atomically before cross-fading its grid content. Never fade the backing and content together, which creates a transient full-screen luminance dip |
 | Cancel | Project release velocity into the return spring; restore the backdrop with a short ease and delay chrome restoration into the settling phase so these layers do not race the image |
 
@@ -29,6 +33,17 @@ Dismiss rides the iOS 18+ zoom transition (`screen.preferredTransition = .zoom` 
 ### Backdrop consolidation
 
 The black backdrop previously lived on four stacked views (`PhotoDetailView`, `mediaViewport`, `viewer`, `collectionView`) plus cell layers and two JS layers. All become clear; one black `backgroundView` sits at the bottom of `PhotoDetailView`'s subview stack. The JS side (`PhotoDetailScreen` root, the route's `contentStyle`) is transparent so the masonry grid actually shows through once the backdrop fades. `PhotoViewerView` has no standalone JS consumers, so clearing its background is safe.
+
+### Opening transition (`PhotoTransitionRegistry` → `PhotoDetailView`)
+
+The source tap creates a transition session before React pushes the detail route. The registry captures the host window synchronously, records the source-cell frame and decoded thumbnail, and places the frozen presenter above the window. When the detail view has a transition ID, a window, valid bounds and a laid-out current image, it claims that snapshot and performs the inverse of the close transform.
+
+- **Initial state:** frozen masonry is visible; its source slot is covered; `mediaViewport` is transformed onto that slot; backdrop and detail chrome have alpha 0.
+- **Photo phase:** spring `mediaViewport.transform` to identity over 0.42s. The frozen masonry does not translate or scale.
+- **Backdrop phase:** animate the fixed `backgroundView.alpha` from 0 to 1 over 0.24s.
+- **Chrome phase:** delay navigation and toolbar appearance until the final 0.16s.
+- **Handoff:** after the photo reaches identity, remove the frozen presenter and expose the live detail hierarchy in the same state.
+- **Fallback:** if no valid transition session exists, reveal the detail view without a shared-element animation. Reduce Motion also applies the final values directly.
 
 ### Drag gesture (`PhotoDetailView`)
 
@@ -45,21 +60,25 @@ The black backdrop previously lived on four stacked views (`PhotoDetailView`, `m
 - `transitionCoordinator` does not exist yet when `interactiveDismissShouldBegin` runs; it appears several frames later. Moot now that the drag is owned locally.
 - axe's `swipe` HID synthesis never triggers the system dismiss pan; `axe drag` (explicit touch-move stream) does. Local `UIPanGestureRecognizer`s respond to both.
 - Removing the frozen presenter when `PhotoDetailView.window` became `nil` exposed an approximately 96ms interval before the React route's presenter was rendered, producing the intermittent whole-screen flash. Window-level snapshot ownership closes that interval.
-- UIKit can keep the zoom transition's source thumbnail suppressed for another 1–2 frames after the presenter is attached. The destination-cell replica prevents that private transition state from appearing as a black-cell flash.
+- RNScreens can report the presenter attached before the final Core Animation layer tree is visibly committed. The destination-cell replica bridges that compositor handoff and prevents a one-frame empty source slot.
+- Starting the opening transition from ThumbHash exposed several visibly soft frames even when geometry was correct. Injecting the source cell's decoded image into the viewer makes the visual element continuous from the first frame.
 
 ## Edge cases
 
-- **Info panel open:** inspector owns vertical pans; the dismiss pan refuses (`progress ≤ 0.001` gate). `infoPresented` still disables the zoom transition entirely.
+- **Info panel open:** inspector owns vertical pans; the dismiss pan refuses (`progress ≤ 0.001` gate).
 - **Zoomed image / Live Photo hold:** refused by the begin gate, same rules as before.
 - **Immersive mode:** chrome alphas already 0; `dismissing` is a no-op on top; cancel restores the `userHidden` state.
 - **Horizontal paging:** unchanged — vertical-dominant drags never begin the pager pan, and the pager requires the dismiss pan to fail.
 
 ## Verification
 
-On the simulator (use `axe drag`, not `axe swipe`), three paths:
+On the simulator, verify these paths:
 
-1. Slow drag down — chrome disappears immediately, backdrop stays full-bleed and dissolves with progress, only the photo translates/scales with the finger, grid visible behind.
-2. Release early — cancel: photo springs back, backdrop and chrome fade back in, immersive state preserved.
-3. Long/fast drag — commit: photo continues from the release velocity into its thumbnail, then the frozen presenter hands off to the live grid without a black frame or black source cell.
+1. Open from the grid — grid/header/tab-bar geometry remains fixed; the selected photo stays sharp while expanding; backdrop fades independently; detail chrome enters late.
+2. Slow drag down — chrome disappears immediately, backdrop stays full-bleed and dissolves with progress, only the photo translates/scales with the finger, grid visible behind.
+3. Release early — cancel: photo springs back, backdrop and chrome fade back in, immersive state preserved.
+4. Long/fast drag — commit: photo continues from the release velocity into its thumbnail, then the frozen presenter hands off to the live grid without a black frame or black source cell.
+5. Tap Back — use the same photo-only close path, finish the route pop, and allow the same source photo to open again immediately.
+6. Repeat open/close cycles and inspect the recording for any full-screen luminance dip.
 
-`pnpm --filter @afilmory/mobile type-check` for the JS edits.
+Run `pnpm --filter @afilmory/mobile type-check` and compile the iOS application after native changes.
