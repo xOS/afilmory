@@ -112,6 +112,16 @@ Bootstrap (`_layout.tsx`, `(tabs)/_layout.tsx`, `index.tsx`), the auth module in
 
 **Kept, trimmed:** `galleries/api.ts` shrinks to `fetchFeaturedGalleries` and `fetchGalleryPreviewPhotos`; `galleries/types.ts` keeps `GalleryCoverPhoto`. Both serve the sign-in showcase.
 
+**Studio is partial-file surgery, not file deletion.** `studio/api.ts` and `studio/format.ts` are shared with Studio screens that stay in React, so only the library page's share moves:
+
+| Symbol | Only consumer | Outcome |
+|---|---|---|
+| `listPhotoAssets`, `getPhotoAssetSummary`, `updatePhotoAssetTags` | `StudioLibraryScreen` | Move to Swift; delete from `studio/api.ts` |
+| `photoAssetToGalleryPhoto`, `parseTags` | `StudioLibraryScreen` | Move to Swift; delete from `studio/format.ts` |
+| `formatBytes`, `formatCount`, `formatDateTime`, `formatTrendMonth`, `collectSettingFields` | Home, Analytics, Operations, Comments, Site | **Keep** — those screens stay in React |
+
+`studio/format.test.mjs` follows the same split: the `photoAssetToGalleryPhoto` and `parseTags` cases port to XCTest, the rest of the file stays.
+
 > `fetchFeaturedGalleries` ends up with two implementations — Swift for the Explore list, TypeScript for the sign-in showcase. That is accepted: the showcase is decorative, pre-auth, and reads a different shape (`GalleryCoverPhoto`). Rewriting the sign-in screen to remove the duplication costs more than the duplication does.
 
 ## Testing

@@ -117,7 +117,7 @@ Localization.t("filter.summary.cameras", count: n)
 `GalleryPhoto` is the single domain model. Both sources normalize into it:
 
 - `ManifestDecoding` — `GET {galleryOrigin}/api/manifest`, port of `fetchGalleryManifest` (`src/modules/galleries/api.ts:85`): drop entries without `thumbnailUrl`, sort by `dateTaken` descending, then map with defaults and derive `camera`, `lens`, `aspectRatio` and live-photo state.
-- `StudioAssetDecoding` — the admin path, port of `listPhotoAssets()` + `getPhotoAssetSummary()` + `photoAssetToGalleryPhoto`.
+- `StudioAssetDecoding` — the admin path, port of `listPhotoAssets()` and `getPhotoAssetSummary()` from `src/modules/studio/api.ts` plus `photoAssetToGalleryPhoto` from `src/modules/studio/format.ts`. Both files are shared with Studio screens that stay in React, so this is partial-file surgery — see the controllers spec for the exact symbol split.
 
 **The studio feed keeps its raw assets.** Studio's management UI reads fields that normalization discards — `availableTags` walks `asset.manifest.data.tags`, and the tag editor computes `commonTags` over selected raw assets. So the studio bucket stores the decoded `GalleryPhoto` *and* the originating asset, rather than throwing the asset away after mapping. The controllers spec depends on this.
 
