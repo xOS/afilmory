@@ -1,41 +1,81 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AccessibilityInfo, Alert } from 'react-native'
+import { AccessibilityInfo } from 'react-native'
 
 import { useTranslation } from '@/i18n'
 
 import { addPhotoReaction, fetchPhotoReactionCounts } from './photoReactionApi'
 import type { PhotoReaction, PhotoReactionState } from './photoReactionState'
 import {
+  addLocalReactions,
   createPhotoReactionState,
   mergePhotoReactionCounts,
-  rollbackLocalPhotoReaction,
-  toggleLocalPhotoReaction,
+  rollbackLocalReactions,
 } from './photoReactionState'
+import type { PhotoReactionFlush, PhotoReactionTally } from './photoReactionTally'
+import {
+  accumulateReactionTally,
+  drainReactionTally,
+  expireReactionTally,
+  REACTION_MERGE_WINDOW_MS,
+} from './photoReactionTally'
 
 interface PhotoReactionSnapshot {
   key: string | null
-  pending: ReadonlySet<PhotoReaction>
   state: PhotoReactionState
 }
 
 function createSnapshot(key: string | null): PhotoReactionSnapshot {
-  return { key, pending: new Set(), state: createPhotoReactionState() }
+  return { key, state: createPhotoReactionState() }
 }
 
 export function usePhotoReactions(gallerySlug: string | null, photoId: string | null) {
   const { t } = useTranslation()
   const key = gallerySlug && photoId ? `${gallerySlug}:${photoId}` : null
   const [snapshot, setSnapshot] = useState<PhotoReactionSnapshot>(() => createSnapshot(key))
+  const [failureNonce, setFailureNonce] = useState(0)
   const snapshotRef = useRef(snapshot)
+  const tallyRef = useRef<PhotoReactionTally | null>(null)
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const publish = useCallback((next: PhotoReactionSnapshot) => {
     snapshotRef.current = next
     setSnapshot(next)
   }, [])
 
+  const submit = useCallback(
+    (slug: string, id: string, ownerKey: string, flush: PhotoReactionFlush) => {
+      void addPhotoReaction(slug, id, flush.reaction, flush.count)
+        .then(() => {
+          AccessibilityInfo.announceForAccessibility(
+            flush.count > 1
+              ? t('photo.reaction.burst', { count: flush.count, reaction: flush.reaction })
+              : t('photo.reaction.success'),
+          )
+        })
+        .catch((error) => {
+          console.error('Failed to add photo reaction', error)
+          const latest = snapshotRef.current
+          if (latest.key === ownerKey) {
+            publish({ ...latest, state: rollbackLocalReactions(latest.state, flush.reaction, flush.count) })
+          }
+          // The rail is native and JS has no haptic engine, so the bumped nonce
+          // is what asks it to buzz.
+          setFailureNonce(nonce => nonce + 1)
+          AccessibilityInfo.announceForAccessibility(t('photo.reaction.failed'))
+        })
+    },
+    [publish, t],
+  )
+
+  const clearFlushTimer = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
-    const initial = createSnapshot(key)
-    publish(initial)
+    publish(createSnapshot(key))
     if (!gallerySlug || !photoId || !key) {
       return
     }
@@ -53,60 +93,50 @@ export function usePhotoReactions(gallerySlug: string | null, photoId: string | 
           console.error('Failed to load photo reactions', error)
         }
       })
-    return () => controller.abort()
-  }, [gallerySlug, key, photoId, publish])
 
-  const addReaction = useCallback(
-    (reaction: PhotoReaction) => {
-      if (!gallerySlug || !photoId || !key) {
+    return () => {
+      controller.abort()
+      clearFlushTimer()
+      const { flush } = drainReactionTally(tallyRef.current)
+      tallyRef.current = null
+      if (flush) {
+        submit(gallerySlug, photoId, key, flush)
+      }
+    }
+  }, [clearFlushTimer, gallerySlug, key, photoId, publish, submit])
+
+  const addReactions = useCallback(
+    (reaction: PhotoReaction, count: number) => {
+      if (!gallerySlug || !photoId || !key || count <= 0) {
         return
       }
 
       const current = snapshotRef.current.key === key ? snapshotRef.current : createSnapshot(key)
-      if (current.pending.has(reaction)) {
-        return
+      publish({ ...current, state: addLocalReactions(current.state, reaction, count) })
+
+      const step = accumulateReactionTally(tallyRef.current, reaction, count, Date.now())
+      if (step.flush) {
+        submit(gallerySlug, photoId, key, step.flush)
       }
+      tallyRef.current = step.tally
 
-      const wasActive = current.state.activeReactions.includes(reaction)
-      const toggled = toggleLocalPhotoReaction(current.state, reaction)
-      if (wasActive) {
-        publish({ ...current, state: toggled })
-        return
-      }
-
-      const pending = new Set(current.pending)
-      pending.add(reaction)
-      publish({ ...current, pending, state: toggled })
-
-      void addPhotoReaction(gallerySlug, photoId, reaction)
-        .then(() => AccessibilityInfo.announceForAccessibility(t('photo.reaction.success')))
-        .catch((error) => {
-          console.error('Failed to add photo reaction', error)
-          const latest = snapshotRef.current
-          if (latest.key === key) {
-            publish({ ...latest, state: rollbackLocalPhotoReaction(latest.state, reaction) })
-          }
-          Alert.alert(t('photo.reaction.failed'))
-          AccessibilityInfo.announceForAccessibility(t('photo.reaction.failed'))
-        })
-        .finally(() => {
-          const latest = snapshotRef.current
-          if (latest.key !== key) {
-            return
-          }
-          const nextPending = new Set(latest.pending)
-          nextPending.delete(reaction)
-          publish({ ...latest, pending: nextPending })
-        })
+      clearFlushTimer()
+      flushTimerRef.current = setTimeout(() => {
+        flushTimerRef.current = null
+        const expired = expireReactionTally(tallyRef.current, Date.now())
+        tallyRef.current = expired.tally
+        if (expired.flush) {
+          submit(gallerySlug, photoId, key, expired.flush)
+        }
+      }, REACTION_MERGE_WINDOW_MS)
     },
-    [gallerySlug, key, photoId, publish, t],
+    [clearFlushTimer, gallerySlug, key, photoId, publish, submit],
   )
 
   const current = snapshot.key === key ? snapshot : createSnapshot(key)
   return {
-    activeReactions: current.state.activeReactions,
-    addReaction,
+    addReactions,
     counts: current.state.counts,
-    pendingReactions: current.pending,
+    failureNonce,
   }
 }

@@ -39,6 +39,10 @@ public final class PhotoDetailModule: Module {
         view.setReactionItemsJSON(json)
       }
 
+      Prop("reactionFailureNonce") { (view: PhotoDetailView, nonce: Double) in
+        view.setReactionFailureNonce(nonce)
+      }
+
       Prop("socialActionsEnabled") { (view: PhotoDetailView, enabled: Bool) in
         view.setSocialActionsEnabled(enabled)
       }

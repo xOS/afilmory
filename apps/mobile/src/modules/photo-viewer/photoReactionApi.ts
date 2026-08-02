@@ -22,10 +22,15 @@ export async function fetchPhotoReactionCounts(
   return normalizePhotoReactionCounts(response.data?.reactions)
 }
 
-export async function addPhotoReaction(gallerySlug: string, photoId: string, reaction: PhotoReaction): Promise<void> {
+export async function addPhotoReaction(
+  gallerySlug: string,
+  photoId: string,
+  reaction: PhotoReaction,
+  count: number,
+): Promise<void> {
   await galleryApiClient('/reactions/add', {
     baseURL: getGalleryApiBaseUrl(gallerySlug),
-    body: { reaction, refKey: photoId },
+    body: { count, reaction, refKey: photoId },
     method: 'POST',
   })
 }

@@ -46,12 +46,31 @@ That second model is ours. The parts worth taking: repeat-to-accumulate, hold-to
 
 | Metric | Value |
 |---|---|
-| Item diameter, at rest | 34pt (was 40) |
-| Item diameter, under finger | 52pt |
-| Item diameter, immediate neighbours | 42pt |
-| Item spacing | 6pt |
+| Item diameter, at rest | 36pt (was 40) |
+| Item diameter, under finger | 48pt |
+| Item diameter, immediate neighbours | ~42pt (falls out of the curve) |
+| Item spacing | 10pt |
 | Lift of magnified item | 12pt |
-| Magnification curve | `scale = 1 + 0.53 · exp(-(d/σ)²)`, σ ≈ 1.2 × item pitch |
+| Magnification curve | `scale = 1 + A · exp(-(d/σ)²)`, `A = peak/rest - 1`, σ = 1.2 × item pitch |
+
+The rail is **one glass surface**: a single `UIGlassEffect` capsule with the six
+reactions on it as plain buttons. Not six `UIGlassEffect` circles inside a
+`UIGlassContainerEffect` — that renders as six separate pucks, and closing the gap
+enough to fuse them just produces a wobbling liquid blob. One container, one group.
+The magnified reaction rises out of the capsule, so neither the effect view nor its
+content view may clip.
+
+Items are laid out in the **content view's** coordinate space. Deriving their centre
+from `container.frame.midY` instead of `container.bounds.midY` silently drops every
+reaction by the container's own offset inside the rail and lands the whole group on
+top of the toolbar.
+
+The rest/peak/spacing triple is constrained, not chosen freely: rest positions stay
+fixed during a scrub so the index under the finger cannot shift, which means the peak
+radius plus its neighbour's radius must still fit inside one pitch. At 36/48/10 that
+is 24 + 21 ≤ 46. A more aggressive peak overlaps its neighbour, and overlapping glass
+circles trigger the container effect's merge blob. `PhotoDetailReactionGeometryTests`
+asserts the constraint so a later tweak to the numbers fails loudly.
 
 Geometry tracks the finger with no follow animation. Any lag desynchronises the visual from the `selectionChanged()` tick and the whole thing stops feeling connected.
 
@@ -75,7 +94,53 @@ each 180ms → localCount += 1, emit particle, ramped transient, combo bubble +1
 
 `.cancelled` commits rather than discards. Particles have already flown; the visual promise should be honoured.
 
-**The target locks once streaming begins.** Horizontal drags no longer switch emoji. This keeps a gesture's product to exactly one `{reaction, count}` and one request. Allowing mid-stream switching would make the payload a map and force partial-failure handling, for an interaction that is awkward anyway once particles are in flight.
+**The target locks once streaming begins, and the bar collapses to say so.** A rail
+that keeps showing six targets while ignoring five of them is an interface lying about
+what it accepts. So entering the stream contracts the capsule onto the pressed
+reaction — it becomes the single button it actually is, and the constraint needs no
+explaining. This keeps a gesture's product to exactly one `{reaction, count}` and one
+request; allowing mid-stream switching would make the payload a map and force
+partial-failure handling, for an interaction that is awkward anyway once particles are
+in flight.
+
+| Collapse | Value |
+|---|---|
+| Button diameter | 56pt, bottom edge pinned to the capsule's own bottom so it grows upward, away from the toolbar |
+| Chosen reaction | scales to 40pt and slides to the button's centre |
+| The other five | converge on that same centre, shrink to 0.42, fade out |
+| Timing | discrete at the 400ms hold — the bar is still until then, then springs (0.26s, damping 0.68) |
+| Return | 0.16s ease-out, no overshoot |
+
+The collapse anchors on the **pressed item's x**, never the rail's centre: what sits
+under a held finger must not move out from under it.
+
+Two deliberate rejections. The hold is **not** a progressive charge that contracts as
+you hold — a discrete snap keeps the commit crisp and on the same beat as the trigger
+haptic, and it avoids a whole interruptible-progress machinery (dwell threshold,
+movement reset, geometry interpolated from a 0→1 value). And the other five are
+**sucked in**, not faded in place: the capsule and its contents are one body of liquid
+contracting, not a shell shrinking while glyphs independently disappear.
+
+Item scale is applied by `transform`, not by font size and bounds — a font change snaps
+instantly and would tear away from the animated frame around it.
+
+### The collapsed button
+
+| Element | Behaviour |
+|---|---|
+| Charge ring | 3pt stroke inset 4pt outside the button, filling clockwise from 12 o'clock as `pendingCount / comboCap`; 0.18s linear per shot, matching the stream interval so it reads as continuous |
+| Reaction | stays visible, pulsing to 1.09× and back over 0.14s on each shot |
+| Combo count | stays above the button as `×N` |
+
+The ring exists because **the cap is otherwise invisible**: at 50 the count freezes and
+the haptic changes character, which reads as the control breaking rather than as a
+limit being reached. It also keeps the reaction on screen — swapping the emoji out for
+the number would mean not being able to see what you are sending while you send it.
+
+A stream shot must **not** run a full layout pass. The collapse spring is still in
+flight on the same views, and rewriting those frames outside its animation block
+replaces the running animation and swallows the overshoot. Shots touch only the ring,
+the pulse, and the combo label.
 
 **Combo cap is 50 per gesture.** At the cap, visuals and haptics hold at their top state and the count stops rising.
 
@@ -171,6 +236,10 @@ The current `Alert.alert` is disproportionate: a modal interrupting full-screen 
 
 Failure instead **rolls the count back silently, fires `notification(.error)`, and announces via `AccessibilityInfo.announceForAccessibility`**. Haptics are a notification channel and this is what they are for; the announcement keeps the information available to assistive tech. `photo.reaction.failed` stays as the announcement string.
 
+The haptic engine lives on the native side, so the failure travels back down as a
+`reactionFailureNonce` prop that the hook increments. `PhotoDetailView` buzzes on any
+increase and ignores the initial zero.
+
 ### i18n
 
 New key `photo.reaction.burst` = `"Sent {{count}} {{reaction}}"`, announced when a flush of `count > 1` succeeds; a flush of `count === 1` keeps `photo.reaction.success`. Added to `locales/mobile/en.json` first, then the other five.
@@ -197,13 +266,24 @@ That is the entire backend change — one schema field and one method signature.
 
 | File | Responsibility |
 |---|---|
-| `PhotoDetailReactionRailView.swift` | Layout, scrub geometry, hit testing, gesture state machine |
+| `PhotoDetailReactionRailView.swift` | Layout, hit testing, gesture state machine, afterglow, a11y elements |
+| `PhotoDetailReactionGeometry.swift` | Metrics and the pure scrub maths — the unit-testable part |
 | `PhotoDetailReactionBurstLayer.swift` | Particle spawn, animation, recycling, on-screen cap |
 | `PhotoDetailReactionHaptics.swift` | UIKit generators, `CHHapticEngine` lifecycle, capability gating |
+| `PhotoDetailReactionLabels.swift` | The count badge and the focus/combo label |
 
-The current file is 189 lines; Dock geometry, particles and a haptic engine together would push it well past the 500-line ceiling. Each of the three is independently readable and independently testable.
+The original file was 189 lines; Dock geometry, particles and a haptic engine together would push one file well past the 500-line ceiling. Each of the five is independently readable, and the geometry one is independently testable.
 
-**Adding these two files requires a `pod install`** — the podspec's `**/*.{h,m,mm,swift}` glob expands to a fixed file list at install time, so new files are invisible to Xcode until then.
+The burst layer is hosted by `PhotoDetailView`, not by the rail: particles travel 128pt
+upward and would be clipped by the rail's own bounds. The rail reports a spawn point
+through `onEmitParticle` and the detail view converts it into the burst layer's space.
+It is inserted **below** the rail — particles rise straight through where the combo
+counter sits, and above the rail they hide the one number the gesture exists to show.
+
+The rail also anchors to `toolbar.reactionsItemFrame(in:)`, not to the toolbar's own
+frame, so the gap is measured against the glass button the rail belongs to.
+
+**Adding these files requires a `pod install`** — the podspec's `**/*.{h,m,mm,swift}` glob expands to a fixed file list at install time, so new files are invisible to Xcode until then.
 
 ## Verification
 

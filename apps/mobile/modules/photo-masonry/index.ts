@@ -49,6 +49,7 @@ export interface PhotoDetailActionEvent {
 }
 
 export interface PhotoDetailReactionEvent extends PhotoDetailActionEvent {
+  count: number
   reaction: string
 }
 
@@ -61,9 +62,7 @@ export interface PhotoDetailMetadataItem {
 
 export interface PhotoDetailReactionItem {
   accessibilityLabel: string
-  active: boolean
   count: number
-  pending: boolean
   reaction: string
 }
 
@@ -203,6 +202,7 @@ export interface NativePhotoDetailViewProps extends ViewProps {
   livePhotoStringsJSON: string
   commentCount: number
   reactionItemsJSON: string
+  reactionFailureNonce: number
   socialActionsEnabled: boolean
   onCommentsRequest?: (event: { nativeEvent: PhotoDetailActionEvent }) => void
   onIndexChange?: (event: { nativeEvent: PhotoDetailIndexChangeEvent }) => void

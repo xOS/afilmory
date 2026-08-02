@@ -128,6 +128,7 @@
   "photo.noExif": "No embedded EXIF metadata is available for this photo.",
   "photo.previous": "Previous photo",
   "photo.reaction.add": "React with {{reaction}}",
+  "photo.reaction.burst": "Sent {{count}} {{reaction}}",
   "photo.reaction.failed": "Unable to add reaction. Please try again.",
   "photo.reaction.open": "Add a reaction",
   "photo.reaction.success": "Reaction added",

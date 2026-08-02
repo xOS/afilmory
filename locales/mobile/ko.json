@@ -128,6 +128,7 @@
   "photo.noExif": "이 사진에는 내장 EXIF 메타데이터가 없습니다.",
   "photo.previous": "이전 사진",
   "photo.reaction.add": "{{reaction}} 반응 남기기",
+  "photo.reaction.burst": "{{reaction}} 반응 {{count}}개를 보냈습니다",
   "photo.reaction.failed": "반응을 추가하지 못했습니다. 다시 시도해 주세요.",
   "photo.reaction.open": "반응 추가",
   "photo.reaction.success": "반응을 추가했습니다",

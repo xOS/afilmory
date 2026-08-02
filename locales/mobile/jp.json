@@ -128,6 +128,7 @@
   "photo.noExif": "この写真には埋め込み EXIF メタデータがありません。",
   "photo.previous": "前の写真",
   "photo.reaction.add": "{{reaction}} でリアクション",
+  "photo.reaction.burst": "{{reaction}} を {{count}} 回送信しました",
   "photo.reaction.failed": "リアクションを追加できませんでした。もう一度お試しください。",
   "photo.reaction.open": "リアクションを追加",
   "photo.reaction.success": "リアクションを追加しました",

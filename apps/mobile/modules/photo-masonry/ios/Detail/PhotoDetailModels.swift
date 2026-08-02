@@ -19,9 +19,7 @@ struct PhotoDetailStrings: Decodable {
 
 struct PhotoDetailReactionItem: Decodable {
   let accessibilityLabel: String
-  let active: Bool
   let count: Int
-  let pending: Bool
   let reaction: String
 }
 

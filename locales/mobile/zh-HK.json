@@ -128,6 +128,7 @@
   "photo.noExif": "此相片沒有可用的內嵌 EXIF 資料。",
   "photo.previous": "上一張相片",
   "photo.reaction.add": "使用 {{reaction}} 回應",
+  "photo.reaction.burst": "已傳送 {{count}} 個 {{reaction}}",
   "photo.reaction.failed": "無法新增回應，請重試。",
   "photo.reaction.open": "新增回應",
   "photo.reaction.success": "已新增回應",

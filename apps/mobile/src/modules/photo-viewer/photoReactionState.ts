@@ -3,14 +3,14 @@ export const PHOTO_REACTIONS = ['👍', '😍', '🔥', '👏', '🌟', '🙌'] 
 export type PhotoReaction = (typeof PHOTO_REACTIONS)[number]
 
 export interface PhotoReactionState {
-  activeReactions: PhotoReaction[]
   counts: Record<string, number>
+  localDeltas: Record<string, number>
 }
 
 export function createPhotoReactionState(counts: Record<string, number> = {}): PhotoReactionState {
   return {
-    activeReactions: [],
     counts: { ...counts },
+    localDeltas: {},
   }
 }
 
@@ -28,42 +28,55 @@ export function normalizePhotoReactionCounts(value: unknown): Record<string, num
   return counts
 }
 
-function applyCountDelta(counts: Record<string, number>, reaction: PhotoReaction, delta: number) {
-  const nextCounts = { ...counts }
-  const nextCount = Math.max(0, (nextCounts[reaction] ?? 0) + delta)
-  if (nextCount === 0) {
-    delete nextCounts[reaction]
+function applyDelta(source: Record<string, number>, reaction: string, delta: number) {
+  const next = { ...source }
+  const value = Math.max(0, (next[reaction] ?? 0) + delta)
+  if (value === 0) {
+    delete next[reaction]
   }
   else {
-    nextCounts[reaction] = nextCount
+    next[reaction] = value
   }
-  return nextCounts
+  return next
 }
 
-export function toggleLocalPhotoReaction(state: PhotoReactionState, reaction: PhotoReaction): PhotoReactionState {
-  const isActive = state.activeReactions.includes(reaction)
-  return {
-    activeReactions: isActive
-      ? state.activeReactions.filter(item => item !== reaction)
-      : [...state.activeReactions, reaction],
-    counts: applyCountDelta(state.counts, reaction, isActive ? -1 : 1),
-  }
-}
-
-export function rollbackLocalPhotoReaction(state: PhotoReactionState, reaction: PhotoReaction): PhotoReactionState {
-  if (!state.activeReactions.includes(reaction)) {
+export function addLocalReactions(
+  state: PhotoReactionState,
+  reaction: PhotoReaction,
+  count: number,
+): PhotoReactionState {
+  if (count <= 0) {
     return state
   }
-  return toggleLocalPhotoReaction(state, reaction)
+  return {
+    counts: applyDelta(state.counts, reaction, count),
+    localDeltas: applyDelta(state.localDeltas, reaction, count),
+  }
 }
 
+export function rollbackLocalReactions(
+  state: PhotoReactionState,
+  reaction: PhotoReaction,
+  count: number,
+): PhotoReactionState {
+  if (count <= 0) {
+    return state
+  }
+  return {
+    counts: applyDelta(state.counts, reaction, -count),
+    localDeltas: applyDelta(state.localDeltas, reaction, -count),
+  }
+}
+
+// The initial snapshot can land after the viewer has already clapped, so the
+// local deltas are replayed on top of it instead of being overwritten.
 export function mergePhotoReactionCounts(
   state: PhotoReactionState,
   serverCounts: Record<string, number>,
 ): PhotoReactionState {
   let counts = normalizePhotoReactionCounts(serverCounts)
-  for (const reaction of state.activeReactions) {
-    counts = applyCountDelta(counts, reaction, 1)
+  for (const [reaction, delta] of Object.entries(state.localDeltas)) {
+    counts = applyDelta(counts, reaction, delta)
   }
   return { ...state, counts }
 }

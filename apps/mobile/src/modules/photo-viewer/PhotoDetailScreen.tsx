@@ -41,10 +41,7 @@ export function PhotoDetailScreen() {
   const gallerySlug = session?.gallerySlug ?? null
   const intlLocale = getIntlLocale(i18n.resolvedLanguage)
   const { count: commentCount, setCount: setCommentCount } = usePhotoCommentCount(gallerySlug, currentPhoto?.id ?? null)
-  const { activeReactions, addReaction, counts, pendingReactions } = usePhotoReactions(
-    gallerySlug,
-    currentPhoto?.id ?? null,
-  )
+  const { addReactions, counts, failureNonce } = usePhotoReactions(gallerySlug, currentPhoto?.id ?? null)
 
   useEffect(() => () => releasePhotoViewerSession(params.sessionId), [params.sessionId])
 
@@ -107,13 +104,11 @@ export function PhotoDetailScreen() {
   const reactionItemsJSON = useMemo(() => {
     const items: PhotoDetailReactionItem[] = PHOTO_REACTIONS.map(reaction => ({
       accessibilityLabel: t('photo.reaction.add', { reaction }),
-      active: activeReactions.includes(reaction),
       count: counts[reaction] ?? 0,
-      pending: pendingReactions.has(reaction),
       reaction,
     }))
     return JSON.stringify(items)
-  }, [activeReactions, counts, pendingReactions, t])
+  }, [counts, t])
 
   const handleIndexChange = useCallback((event: { nativeEvent: PhotoDetailIndexChangeEvent }) => {
     setCurrentIndex(event.nativeEvent.index)
@@ -153,9 +148,9 @@ export function PhotoDetailScreen() {
       if (currentPhoto?.id !== event.nativeEvent.id || !isPhotoReaction(event.nativeEvent.reaction)) {
         return
       }
-      addReaction(event.nativeEvent.reaction)
+      addReactions(event.nativeEvent.reaction, event.nativeEvent.count)
     },
-    [addReaction, currentPhoto?.id],
+    [addReactions, currentPhoto?.id],
   )
 
   if (!session || !currentPhoto) {
@@ -177,6 +172,7 @@ export function PhotoDetailScreen() {
         livePhotoStringsJSON={livePhotoStringsJSON}
         metadataJSON={metadataJSON}
         photos={photos}
+        reactionFailureNonce={failureNonce}
         reactionItemsJSON={reactionItemsJSON}
         socialActionsEnabled={session.gallerySlug !== null}
         stringsJSON={stringsJSON}

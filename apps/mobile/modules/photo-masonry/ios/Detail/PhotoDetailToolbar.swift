@@ -117,11 +117,13 @@ final class PhotoDetailToolbar: UIToolbar {
 
   // UIKit exposes no view for a plain UIBarButtonItem; the identifier it forwards
   // onto its backing button is the only public handle on the item's geometry.
-  func reactionsItemCenterX(in view: UIView) -> CGFloat? {
+  // Anything positioning itself against the bar must measure this, not the bar's
+  // own frame: the glass circles overflow well above `sizeThatFits`'s height.
+  func reactionsItemFrame(in view: UIView) -> CGRect? {
     guard socialActionsEnabled,
           let itemView = firstDescendant(withAccessibilityIdentifier: Self.reactionsAccessibilityIdentifier)
     else { return nil }
-    return itemView.convert(itemView.bounds, to: view).midX
+    return itemView.convert(itemView.bounds, to: view)
   }
 
   private func firstDescendant(withAccessibilityIdentifier identifier: String) -> UIView? {

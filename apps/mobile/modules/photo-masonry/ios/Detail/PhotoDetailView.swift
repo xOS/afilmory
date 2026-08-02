@@ -22,6 +22,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   private let navigationBar = PhotoDetailNavigationBar()
   private let toolbar = PhotoDetailToolbar()
   private let reactionRail = PhotoDetailReactionRailView()
+  private let reactionBurst = PhotoDetailReactionBurstLayer()
   private lazy var inspector = PhotoDetailInspectorPresenter(
     host: self,
     mediaViewport: mediaViewport,
@@ -50,6 +51,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   private var commentCount = -1
   private var socialActionsEnabled = false
   private var reactionRailPresented = false
+  private var reactionFailureNonce: Double = 0
   private var visibility = PhotoDetailChromeVisibility(userHidden: false, infoProgress: 0, zoomed: false)
   private var lastLayoutSize = CGSize.zero
   private var presenterSnapshotView: PhotoPresenterSnapshotView?
@@ -85,6 +87,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     addSubview(topScrim)
     addSubview(navigationBar)
     addSubview(toolbar)
+    // Particles rise straight through where the combo counter sits, so they go
+    // under the rail rather than over it.
+    addSubview(reactionBurst)
     addSubview(reactionRail)
 
     configureChrome()
@@ -102,6 +107,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     guard bounds.width > 0, bounds.height > 0 else { return }
 
     backgroundView.frame = bounds
+    infoView.installScrollEdgeEffect(under: toolbar)
     if lastLayoutSize != bounds.size {
       inspector.stopAnimationAtCurrentPosition()
       lastLayoutSize = bounds.size
@@ -369,6 +375,15 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     setNeedsLayout()
   }
 
+  // JS has no haptic engine of its own; a bumped nonce is how a failed submit
+  // asks the native side to buzz.
+  func setReactionFailureNonce(_ nonce: Double) {
+    let increased = nonce > reactionFailureNonce
+    reactionFailureNonce = nonce
+    guard increased else { return }
+    reactionRail.playFailureFeedback()
+  }
+
   func setSocialActionsEnabled(_ enabled: Bool) {
     socialActionsEnabled = enabled
     toolbar.setSocialActionsEnabled(enabled)
@@ -387,8 +402,12 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     toolbar.onComments = { [weak self] in self?.requestComments() }
     toolbar.onReactions = { [weak self] in self?.toggleReactionRail() }
 
-    reactionRail.onSelect = { [weak self] reaction in
-      self?.requestReaction(reaction)
+    reactionRail.onSend = { [weak self] reaction, count in
+      self?.requestReaction(reaction, count: count)
+    }
+    reactionRail.onEmitParticle = { [weak self] reaction, origin in
+      guard let self else { return }
+      reactionBurst.emit(reaction, from: reactionRail.convert(origin, to: reactionBurst))
     }
   }
 
@@ -448,10 +467,15 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     bottomScrim.frame = CGRect(x: 0, y: bounds.height - scrimSpan, width: width, height: scrimSpan)
 
     toolbar.layoutIfNeeded()
-    reactionRail.anchorXCenter = toolbar.reactionsItemCenterX(in: self)
-    let railFrame = reactionRail.preferredFrame(containerWidth: width, bottomY: toolbarY)
+    let reactionsItemFrame = toolbar.reactionsItemFrame(in: self)
+    reactionRail.anchorXCenter = reactionsItemFrame?.midX
+    let railFrame = reactionRail.preferredFrame(
+      containerWidth: width,
+      bottomY: reactionsItemFrame?.minY ?? toolbarY
+    )
     reactionRail.bounds = CGRect(origin: .zero, size: railFrame.size)
     reactionRail.center = CGPoint(x: railFrame.midX, y: railFrame.midY)
+    reactionBurst.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
   }
 
   private func applyVisibility(animated: Bool) {
@@ -807,8 +831,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     else { return true }
 
     // Buttons and controls hosted in the chrome must perform their own action
-    // instead of toggling immersive mode.
-    let chromeSubtrees: [UIView] = [navigationBar, toolbar, reactionRail]
+    // instead of toggling immersive mode. The inspector counts as chrome: its
+    // disclosure groups need the tap, and the recogniser cancels touches in view.
+    let chromeSubtrees: [UIView] = [navigationBar, toolbar, reactionRail, infoView]
     if chromeSubtrees.contains(where: touchView.isDescendant(of:)) {
       return false
     }
@@ -832,12 +857,18 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     if inspector.progress > 0.001 {
       inspector.settle(open: false, velocity: 0)
     }
+    // UIBarButtonItem exposes no touch-down, so this is the earliest hook for
+    // warming the generators — still ahead of the first scrub tick.
+    reactionRail.prepareHaptics()
     setReactionRailPresented(!reactionRailPresented, animated: true)
   }
 
   private func setReactionRailPresented(_ presented: Bool, animated: Bool) {
     reactionRailPresented = presented
     reactionRail.setPresented(presented, animated: animated)
+    if !presented {
+      reactionBurst.clear()
+    }
     updateToolbarState()
   }
 
@@ -855,11 +886,17 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     onCommentsRequest(["id": photo.id, "index": currentIndex])
   }
 
-  private func requestReaction(_ reaction: String) {
-    guard socialActionsEnabled, photos.indices.contains(currentIndex) else { return }
-    setReactionRailPresented(false, animated: true)
+  // The rail deliberately stays up: applause is repeatable, and dismissing after
+  // every send would make a second clap cost two taps.
+  private func requestReaction(_ reaction: String, count: Int) {
+    guard socialActionsEnabled, count > 0, photos.indices.contains(currentIndex) else { return }
     let photo = photos[currentIndex]
-    onReactionRequest(["id": photo.id, "index": currentIndex, "reaction": reaction])
+    onReactionRequest([
+      "count": count,
+      "id": photo.id,
+      "index": currentIndex,
+      "reaction": reaction,
+    ])
   }
 
   private func shareCurrentPhoto() {
