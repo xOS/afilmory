@@ -25,17 +25,16 @@ private final class PassthroughOverlayView: UIView {
 }
 
 final class PhotoMasonryView: ExpoView {
-  let onPhotoPress = EventDispatcher()
-  let onVisibleRangeChange = EventDispatcher()
-  let onScrollBeyondThreshold = EventDispatcher()
-  let onColumnCountChange = EventDispatcher()
-  let onRefresh = EventDispatcher()
-  let onDatePress = EventDispatcher()
-  let onProfilePress = EventDispatcher()
-  let onFilterPress = EventDispatcher()
-  let onPhotoContextMenuAction = EventDispatcher()
-  let onSelectionChange = EventDispatcher()
-  let onSelectionModeChange = EventDispatcher()
+  var onNativePhotoPress: ((Int) -> Void)?
+  var onNativeVisibleRangeChange: ((Int, Int) -> Void)?
+  var onNativeColumnCountChange: ((Int, CGFloat) -> Void)?
+  var onNativeRefresh: (() -> Void)?
+  var onNativeDatePress: ((UIView) -> Void)?
+  var onNativeProfilePress: ((UIView) -> Void)?
+  var onNativeFilterPress: ((UIView) -> Void)?
+  var onNativeContextMenuAction: ((String, String) -> Void)?
+  var onNativeSelectionChange: (([String]) -> Void)?
+  var onNativeSelectionModeChange: ((Bool) -> Void)?
 
   var contextMenuInfoTitle = ""
   var contextMenuShareTitle = ""
@@ -66,8 +65,6 @@ final class PhotoMasonryView: ExpoView {
   var extraBottomInset: CGFloat = 0 {
     didSet { updateInsets() }
   }
-
-  var scrollThreshold: CGFloat = 400
 
   var chromeVisible = false {
     didSet { updateChromeVisibility() }
@@ -142,6 +139,11 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private var photos: [MasonryPhoto] = []
+  private var boundFeedKey: PhotoFeedKey?
+  private var boundFeed: PhotoFeed?
+  private var feedObservation: PhotoFeedObservationToken?
+  private var filterObservation: PhotoFeedObservationToken?
+  private var appliesFilters = false
   private var layout = MasonryLayout()
   private var collectionView: UICollectionView!
   private let refreshControl = UIRefreshControl()
@@ -166,10 +168,8 @@ final class PhotoMasonryView: ExpoView {
   private var lastPinchDetent = 2
   private var settleGeneration = 0
   private var dateAvailableWidth: CGFloat = 0
-  private var beyondThreshold = false
   private var lastReportedRange = (start: -1, end: -1)
   private var lastVisibleRangeEmit: CFTimeInterval = 0
-  private var isOpeningPhoto = false
   private var selectionMode = false
   private var selectedPhotoIds = Set<String>()
   private var showsDateAnchor = false
@@ -268,6 +268,43 @@ final class PhotoMasonryView: ExpoView {
     }
   }
 
+  func setFeedKey(_ rawValue: String) {
+    guard let key = PhotoFeedKey(rawValue: rawValue), key != boundFeedKey else { return }
+    boundFeedKey = key
+    let feed = PhotoFeedStore.shared.feed(for: key)
+    boundFeed = feed
+    feedObservation?.cancel()
+    feedObservation = feed.observe { [weak self] in
+      self?.renderBoundFeed()
+    }
+    configureFilterObservation()
+    PhotoFeedStore.shared.load(key)
+    renderBoundFeed()
+  }
+
+  func setAppliesFilters(_ applies: Bool) {
+    guard appliesFilters != applies else { return }
+    appliesFilters = applies
+    configureFilterObservation()
+    renderBoundFeed()
+  }
+
+  private func configureFilterObservation() {
+    filterObservation?.cancel()
+    filterObservation = appliesFilters
+      ? PhotoFilterStore.shared.observe { [weak self] in self?.renderBoundFeed() }
+      : nil
+  }
+
+  private func renderBoundFeed() {
+    guard let boundFeed else { return }
+    let galleryPhotos = appliesFilters
+      ? PhotoFilterEngine.apply(PhotoFilterStore.shared.filters, to: boundFeed.photos)
+      : boundFeed.photos
+    setPhotos(galleryPhotos.map { MasonryPhoto(photo: $0, localization: .shared) })
+    setRefreshing(boundFeed.loadState == .loading && !boundFeed.photos.isEmpty)
+  }
+
   func setSelectionMode(_ active: Bool) {
     guard !active || selectionEnabled else { return }
     guard selectionMode != active else { return }
@@ -303,6 +340,12 @@ final class PhotoMasonryView: ExpoView {
     collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: false)
     collectionView.layoutIfNeeded()
     return (collectionView.cellForItem(at: indexPath) as? PhotoCell)?.transitionSourceView
+  }
+
+  func visibleTransitionSourceView(for photoId: String) -> UIView? {
+    guard let index = photos.firstIndex(where: { $0.id == photoId }) else { return nil }
+    return (collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? PhotoCell)?
+      .transitionSourceView
   }
 
   private func configureChrome() {
@@ -710,32 +753,24 @@ final class PhotoMasonryView: ExpoView {
   }
 
   @objc private func handleRefresh() {
-    onRefresh([:])
+    if let onNativeRefresh {
+      onNativeRefresh()
+    } else if let boundFeedKey {
+      PhotoFeedStore.shared.load(boundFeedKey, force: true)
+    }
   }
 
   @objc private func handleDatePress() {
     guard chromeDateInteractive else { return }
-    onDatePress(presentationAnchorPayload(for: dateButton))
+    onNativeDatePress?(dateButton)
   }
 
   @objc private func handleProfilePress() {
-    onProfilePress(presentationAnchorPayload(for: profileButton))
+    onNativeProfilePress?(profileButton)
   }
 
   @objc private func handleFilterPress() {
-    onFilterPress(presentationAnchorPayload(for: filterButton))
-  }
-
-  private func presentationAnchorPayload(for view: UIView) -> [String: Any] {
-    let frame = view.window.map { view.convert(view.bounds, to: $0) } ?? view.convert(view.bounds, to: nil)
-    return [
-      "frame": [
-        "x": frame.minX,
-        "y": frame.minY,
-        "width": frame.width,
-        "height": frame.height,
-      ],
-    ]
+    onNativeFilterPress?(filterButton)
   }
 
   private func toggleSelectionFromContextMenu(at indexPath: IndexPath) {
@@ -743,7 +778,7 @@ final class PhotoMasonryView: ExpoView {
     let enteredSelectionMode = !selectionMode
     if !selectionMode {
       selectionMode = true
-      onSelectionModeChange(["active": true])
+      onNativeSelectionModeChange?(true)
     }
     toggleSelection(at: indexPath)
     if enteredSelectionMode {
@@ -768,7 +803,7 @@ final class PhotoMasonryView: ExpoView {
 
   private func emitSelection() {
     let ids = photos.map(\.id).filter { selectedPhotoIds.contains($0) }
-    onSelectionChange(["ids": ids])
+    onNativeSelectionChange?(ids)
   }
 
   private func updateVisibleSelectionState() {
@@ -827,12 +862,7 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func emitContextMenuAction(_ action: String, photoId: String) {
-    guard let indexPath = indexPath(forPhotoId: photoId) else { return }
-    onPhotoContextMenuAction([
-      "action": action,
-      "id": photoId,
-      "index": indexPath.item,
-    ])
+    onNativeContextMenuAction?(action, photoId)
   }
 
   private func indexPath(forPhotoId photoId: String) -> IndexPath? {
@@ -935,10 +965,7 @@ final class PhotoMasonryView: ExpoView {
         }
         let settledItemWidth = self.layout.itemWidth
         self.preferredItemWidth = settledItemWidth
-        self.onColumnCountChange([
-          "columnCount": settled,
-          "preferredItemWidth": settledItemWidth,
-        ])
+        self.onNativeColumnCountChange?(settled, settledItemWidth)
         self.emitVisibleRange()
       }
     )
@@ -956,7 +983,7 @@ final class PhotoMasonryView: ExpoView {
     }
     guard start != lastReportedRange.start || end != lastReportedRange.end else { return }
     lastReportedRange = (start, end)
-    onVisibleRangeChange(["startIndex": start, "endIndex": end])
+    onNativeVisibleRangeChange?(start, end)
   }
 }
 
@@ -989,29 +1016,8 @@ extension PhotoMasonryView: UICollectionViewDelegate {
   }
 
   private func emitPhotoPress(at indexPath: IndexPath) {
-    guard !isOpeningPhoto, photos.indices.contains(indexPath.item) else { return }
-    isOpeningPhoto = true
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-      self?.isOpeningPhoto = false
-    }
-
-    let photo = photos[indexPath.item]
-    var frame = CGRect.zero
-    if let attributes = collectionView.layoutAttributesForItem(at: indexPath) {
-      frame = collectionView.convert(attributes.frame, to: nil)
-    }
-    let transitionId = PhotoTransitionRegistry.shared.register(source: self, photoId: photo.id)
-    onPhotoPress([
-      "id": photo.id,
-      "index": indexPath.item,
-      "transitionId": transitionId,
-      "frame": [
-        "x": frame.origin.x,
-        "y": frame.origin.y,
-        "width": frame.width,
-        "height": frame.height,
-      ],
-    ])
+    guard photos.indices.contains(indexPath.item) else { return }
+    onNativePhotoPress?(indexPath.item)
   }
 
   func collectionView(
@@ -1078,11 +1084,6 @@ extension PhotoMasonryView: UICollectionViewDelegate {
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-    let beyond = offset > scrollThreshold
-    if beyond != beyondThreshold {
-      beyondThreshold = beyond
-      onScrollBeyondThreshold(["beyond": beyond])
-    }
 
     let now = CACurrentMediaTime()
     if now - lastVisibleRangeEmit > 0.12 {

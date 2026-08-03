@@ -360,9 +360,6 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   }
 
   func setOpeningPlaceholderImage(_ image: UIImage) {
-    // The masonry thumbnail is already decoded and visually identical at the
-    // source rect. Reusing it avoids exposing ThumbHash while the shared photo
-    // is expanding and the viewer's regular image request resolves from cache.
     previewImageView.image = image
   }
 

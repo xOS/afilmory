@@ -1,3 +1,5 @@
-import { PhotoMapScreen } from '@/modules/map/PhotoMapScreen'
+import { NativePageView } from '@/native/NativePageView'
 
-export default PhotoMapScreen
+export default function MapPage() {
+  return <NativePageView page="map" />
+}

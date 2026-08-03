@@ -25,7 +25,7 @@ export default function StudioLayout() {
           title: t('tabs.studio'),
         }}
       />
-      <Stack.Screen name="library" options={{ title: t('studio.library.title') }} />
+      <Stack.Screen name="library" options={{ headerShown: false, title: t('studio.library.title') }} />
       <Stack.Screen name="comments" options={{ title: t('studio.comments.title') }} />
       <Stack.Screen name="analytics" options={{ title: t('studio.analytics.title') }} />
       <Stack.Screen name="site" options={{ title: t('studio.site.title') }} />

@@ -1,3 +1,5 @@
-import { photosPage } from '@/modules/photos/photosPage'
+import { NativePageView } from '@/native/NativePageView'
 
-export default photosPage.Route
+export default function PhotosPage() {
+  return <NativePageView page="photos" />
+}

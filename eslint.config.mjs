@@ -16,6 +16,7 @@ const rootIgnores = globalIgnores([
   'apps/mobile/android/**',
   'apps/mobile/.expo/**',
   'apps/mobile/expo-env.d.ts',
+  'apps/mobile/modules/photo-masonry/ios/Tests/Fixtures/**',
 ])
 
 const hyobanConfig = await defineConfig(

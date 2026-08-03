@@ -1,5 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 
+import { setNativeApiEnvironment } from '@/native/afilmorySession'
+
 export interface ApiEnvironment {
   id: string
   label: string
@@ -87,6 +89,7 @@ export function getActiveEnvironment(): ApiEnvironment {
 
 export async function persistEnvironment(next: ApiEnvironment): Promise<void> {
   await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(next))
+  setNativeApiEnvironment(next)
 }
 
 export function buildPlatformOrigin(environment: ApiEnvironment): string {

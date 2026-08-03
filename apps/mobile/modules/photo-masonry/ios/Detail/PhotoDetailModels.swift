@@ -1,13 +1,13 @@
 import Foundation
 
-struct PhotoDetailMetadata: Decodable {
+struct PhotoDetailMetadata: Sendable {
   let id: String
   let title: String
   let subtitle: String
   let infoJSON: String
 }
 
-struct PhotoDetailStrings: Decodable {
+struct PhotoDetailStrings {
   var close = ""
   var comments = ""
   var info = ""
@@ -17,25 +17,67 @@ struct PhotoDetailStrings: Decodable {
   var share = ""
 }
 
-struct PhotoDetailReactionItem: Decodable {
+struct PhotoDetailReactionItem {
   let accessibilityLabel: String
   let count: Int
   let reaction: String
 }
 
-enum PhotoDetailJSON {
-  static func decodeMetadata(_ json: String) -> [PhotoDetailMetadata] {
-    guard let data = json.data(using: .utf8) else { return [] }
-    return (try? JSONDecoder().decode([PhotoDetailMetadata].self, from: data)) ?? []
-  }
+struct PhotoInfoLocalizationPayload: Encodable {
+  let done: String
+  let histogram: String
+  let histogramAccessibilityLabel: String
+  let histogramFailure: String
+  let mapAccessibilityLabel: String
+  let ratingLabel: String
+  let tags: String
+  let title: String
+}
 
-  static func decodeReactionItems(_ json: String) -> [PhotoDetailReactionItem] {
-    guard let data = json.data(using: .utf8) else { return [] }
-    return (try? JSONDecoder().decode([PhotoDetailReactionItem].self, from: data)) ?? []
-  }
+struct PhotoInfoSheetPayload: Encodable {
+  let gear: PhotoInfoGear
+  let description: String?
+  let histogramUrl: String?
+  let sections: [PhotoInfoSection]
+  let tags: [String]
+  let place: String?
+  let mapLocation: PhotoInfoMapLocation?
+  let emptyMessage: String?
+  let localization: PhotoInfoLocalizationPayload
+}
 
-  static func decodeStrings(_ json: String) -> PhotoDetailStrings {
-    guard let data = json.data(using: .utf8) else { return .init() }
-    return (try? JSONDecoder().decode(PhotoDetailStrings.self, from: data)) ?? .init()
+extension PhotoInfoSheetModel {
+  func detailJSON(localization: Localization) -> String {
+    let mapAccessibilityLabel = mapLocation.map {
+      localization.value(
+        "sheet.map.accessibility",
+        arguments: [
+          "latitude": String($0.latitude),
+          "longitude": String($0.longitude),
+        ]
+      )
+    } ?? ""
+    let payload = PhotoInfoSheetPayload(
+      gear: gear,
+      description: description,
+      histogramUrl: histogramUrl,
+      sections: sections,
+      tags: tags,
+      place: place,
+      mapLocation: mapLocation,
+      emptyMessage: emptyMessage,
+      localization: PhotoInfoLocalizationPayload(
+        done: localization.value("common.done"),
+        histogram: localization.value("exif.histogram"),
+        histogramAccessibilityLabel: localization.value("sheet.histogram.accessibility"),
+        histogramFailure: localization.value("sheet.histogram.failed"),
+        mapAccessibilityLabel: mapAccessibilityLabel,
+        ratingLabel: localization.value("exif.rating"),
+        tags: localization.value("exif.tags"),
+        title: localization.value("sheet.info")
+      )
+    )
+    guard let data = try? JSONEncoder().encode(payload) else { return "{}" }
+    return String(decoding: data, as: UTF8.self)
   }
 }

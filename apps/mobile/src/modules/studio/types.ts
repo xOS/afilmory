@@ -1,5 +1,3 @@
-import type { GalleryPhoto } from '@/modules/galleries/types'
-
 export type PhotoSyncStatus = 'pending' | 'synced' | 'conflict'
 
 export interface DashboardStats {
@@ -55,30 +53,6 @@ export interface DashboardAnalyticsResponse {
   }
   popularTags: Array<{ tag: string, count: number }>
   topDevices: Array<{ device: string, count: number }>
-}
-
-export interface PhotoAssetListItem {
-  id: string
-  photoId: string
-  storageKey: string
-  storageProvider: string
-  manifest: {
-    version: string
-    data: Partial<GalleryPhoto> & { id?: string }
-  }
-  syncedAt: string
-  updatedAt: string
-  createdAt: string
-  publicUrl: string | null
-  size: number | null
-  syncStatus: PhotoSyncStatus
-}
-
-export interface PhotoAssetSummary {
-  total: number
-  synced: number
-  conflicts: number
-  pending: number
 }
 
 export type CommentStatus = 'approved' | 'pending' | 'hidden' | 'rejected'

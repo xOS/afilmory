@@ -1,7 +1,4 @@
-import type { GalleryPhoto } from '@/modules/galleries/types'
-import { normalizeGalleryVideoSource } from '@/modules/galleries/videoSource'
-
-import type { PhotoAssetListItem, UiFieldNode, UiNode } from './types'
+import type { UiFieldNode, UiNode } from './types'
 
 export function formatBytes(value: number | null | undefined, locale: string): string {
   if (!value || value < 0) {
@@ -44,43 +41,6 @@ export function formatTrendMonth(value: string, locale: string): string {
   )
 }
 
-export function photoAssetToGalleryPhoto(asset: PhotoAssetListItem): GalleryPhoto | null {
-  const source = asset.manifest?.data
-  const originalUrl = source?.originalUrl ?? asset.publicUrl
-  const thumbnailUrl = source?.thumbnailUrl ?? originalUrl
-  if (!originalUrl || !thumbnailUrl) {
-    return null
-  }
-
-  const width = source.width && source.width > 0 ? source.width : 1
-  const height = source.height && source.height > 0 ? source.height : 1
-  const aspectRatio = source.aspectRatio && source.aspectRatio > 0 ? source.aspectRatio : width / height
-
-  return {
-    aspectRatio,
-    camera: source.camera ?? null,
-    city: source.city ?? source.location?.city ?? null,
-    dateTaken: source.dateTaken ?? null,
-    description: source.description ?? '',
-    exif: source.exif ?? null,
-    format: source.format ?? null,
-    height,
-    id: asset.id,
-    lens: source.lens ?? null,
-    location: source.location ?? null,
-    originalUrl,
-    rating: source.rating ?? null,
-    size: asset.size ?? source.size ?? null,
-    tags: source.tags ?? [],
-    thumbnailUrl,
-    thumbHash: source.thumbHash ?? null,
-    title: source.title ?? source.id ?? asset.photoId,
-    toneAnalysis: source.toneAnalysis ?? null,
-    video: normalizeGalleryVideoSource(source.video, originalUrl),
-    width,
-  }
-}
-
 export function collectSettingFields(nodes: readonly UiNode[]): UiFieldNode[] {
   const fields: UiFieldNode[] = []
   for (const node of nodes) {
@@ -93,15 +53,4 @@ export function collectSettingFields(nodes: readonly UiNode[]): UiFieldNode[] {
     fields.push(...collectSettingFields(node.children))
   }
   return fields
-}
-
-export function parseTags(value: string): string[] {
-  return Array.from(
-    new Set(
-      value
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 32)
 }

@@ -6,7 +6,7 @@ import UIKit
 private let photoAnnotationReuseIdentifier = "photo-map-annotation"
 private let clusterAnnotationReuseIdentifier = "photo-map-cluster"
 
-private enum PhotoMapScreenState: String {
+enum PhotoMapScreenState: String {
   case empty
   case error
   case filteredEmpty
@@ -16,7 +16,7 @@ private enum PhotoMapScreenState: String {
   case signedOut
 }
 
-private struct PhotoMapStrings: Decodable {
+struct PhotoMapStrings {
   let clearFilters: String
   let clearSelection: String
   let clusterAccessibilityLabel: String
@@ -187,10 +187,10 @@ private final class PhotoMapClusterView: MKMarkerAnnotationView {
 }
 
 final class PhotoMapView: ExpoView, MKMapViewDelegate {
-  let onClearFilters = EventDispatcher()
-  let onPhotoPress = EventDispatcher()
-  let onRetry = EventDispatcher()
-  let onSignIn = EventDispatcher()
+  var onNativeClearFilters: (() -> Void)?
+  var onNativePhotoPress: ((String, Int) -> Void)?
+  var onNativeRetry: (() -> Void)?
+  var onNativeSignIn: (() -> Void)?
 
   private let mapView = MKMapView()
 
@@ -329,20 +329,25 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
     setNeedsLayout()
   }
 
-  func setState(_ rawState: String) {
-    guard let next = PhotoMapScreenState(rawValue: rawState), next != screenState else { return }
-    screenState = next
+  func setState(_ state: PhotoMapScreenState) {
+    guard state != screenState else { return }
+    screenState = state
     updatePresentation(animated: window != nil)
   }
 
-  func setStringsJSON(_ json: String) {
-    guard let data = json.data(using: .utf8),
-          let decoded = try? JSONDecoder().decode(PhotoMapStrings.self, from: data)
-    else { return }
-    strings = decoded
+  func setStrings(_ strings: PhotoMapStrings) {
+    self.strings = strings
     updateLabels()
     updatePresentation(animated: false)
     setNeedsLayout()
+  }
+
+  func transitionSourceView(for photoId: String) -> UIView? {
+    guard selectedPhotoId == photoId,
+          !previewSurface.isHidden,
+          previewImage.image != nil
+    else { return nil }
+    return previewImage
   }
 
   private func configureMap() {
@@ -729,17 +734,17 @@ final class PhotoMapView: ExpoView, MKMapViewDelegate {
 
   @objc private func handlePhotoOpen() {
     guard let annotation = photoAnnotations.first(where: { $0.id == selectedPhotoId }) else { return }
-    onPhotoPress(["id": annotation.id, "index": annotation.index])
+    onNativePhotoPress?(annotation.id, annotation.index)
   }
 
   @objc private func handleStateAction() {
     switch screenState {
     case .error:
-      onRetry([:])
+      onNativeRetry?()
     case .filteredEmpty:
-      onClearFilters([:])
+      onNativeClearFilters?()
     case .signedOut:
-      onSignIn([:])
+      onNativeSignIn?()
     case .empty, .loading, .pending, .ready:
       break
     }

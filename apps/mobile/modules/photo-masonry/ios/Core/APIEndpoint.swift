@@ -7,7 +7,9 @@ enum APIBaseURL {
 }
 
 enum APIMethod: String {
+  case delete = "DELETE"
   case get = "GET"
+  case patch = "PATCH"
   case post = "POST"
 }
 

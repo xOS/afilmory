@@ -15,7 +15,7 @@ extension LivePhotoPlaybackMode {
   }
 }
 
-struct LivePhotoBadgeStrings: Decodable {
+struct LivePhotoBadgeStrings {
   var badgeLive = "LIVE"
   var badgeLoop = "LOOP"
   var badgeBounce = "BOUNCE"
@@ -26,15 +26,6 @@ struct LivePhotoBadgeStrings: Decodable {
   var menuOff = "Live Off"
   var accessibilityLabel = "Live Photo"
   var accessibilityHint = ""
-
-  static func decoded(from json: String) -> LivePhotoBadgeStrings {
-    guard let data = json.data(using: .utf8),
-      let decoded = try? JSONDecoder().decode(LivePhotoBadgeStrings.self, from: data)
-    else {
-      return LivePhotoBadgeStrings()
-    }
-    return decoded
-  }
 
   func caption(for mode: LivePhotoPlaybackMode) -> String {
     switch mode {

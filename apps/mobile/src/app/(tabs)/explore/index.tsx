@@ -1,3 +1,5 @@
-import { galleriesPage } from '@/modules/galleries/galleriesPage'
+import { NativePageView } from '@/native/NativePageView'
 
-export default galleriesPage.Route
+export default function ExplorePage() {
+  return <NativePageView page="explore" />
+}

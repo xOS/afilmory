@@ -52,10 +52,6 @@ export default function RootLayout() {
                 <Stack.Screen name="index" />
                 <Stack.Screen name="(tabs)" />
                 {__DEV__ ? <Stack.Screen name="dev" /> : null}
-                <Stack.Screen
-                  name="photo/[photoId]"
-                  options={{ contentStyle: styles.photoScreen, gestureEnabled: false }}
-                />
               </Stack>
             ) : null}
             <PresentationHost />
@@ -68,5 +64,4 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  photoScreen: { backgroundColor: 'transparent' },
 })

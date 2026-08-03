@@ -5,6 +5,7 @@ struct AfilmorySessionSnapshot {
   let cookie: String?
   let platformBaseURL: String?
   let tenantBaseURL: String?
+  let state: AfilmorySessionState
 }
 
 final class AfilmorySessionStore: @unchecked Sendable {
@@ -16,8 +17,18 @@ final class AfilmorySessionStore: @unchecked Sendable {
   private let lock = NSLock()
   private var platformBaseURL: String?
   private var tenantBaseURL: String?
+  private var state: AfilmorySessionState
+  private var observers: [UUID: @Sendable (AfilmorySessionState) -> Void] = [:]
+  private var refreshTask: Task<Void, Never>?
+  private var refreshGeneration: UInt64 = 0
+  private var bootstrapped = false
 
-  private init() {}
+  private init() {
+    let environment = ApiEnvironmentStore.storedOrProduction()
+    platformBaseURL = environment.platformAPIBaseURL().absoluteString
+    tenantBaseURL = nil
+    state = Self.readCookie() == nil ? .signedOut : .loading
+  }
 
   func register(cookie: String) {
     let normalized = cookie.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,6 +48,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
     if status != errSecSuccess {
       NSLog("[AfilmorySessionStore] Unable to persist the session cookie: %d", status)
     }
+    refreshSession()
   }
 
   func registerEnvironment(platformBaseURL: String, tenantBaseURL: String?) {
@@ -47,14 +59,17 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   func clearSession() {
-    let status = SecItemDelete(Self.cookieQuery as CFDictionary)
-    if status != errSecSuccess, status != errSecItemNotFound {
-      NSLog("[AfilmorySessionStore] Unable to clear the session cookie: %d", status)
-    }
-    lock.withLock {
-      platformBaseURL = nil
+    deleteCookie()
+    let observers = lock.withLock { () -> [@Sendable (AfilmorySessionState) -> Void] in
+      refreshGeneration &+= 1
+      refreshTask?.cancel()
+      refreshTask = nil
       tenantBaseURL = nil
+      state = .signedOut
+      return Array(self.observers.values)
     }
+    ApiEnvironmentStore.shared.activateTenant(slug: nil)
+    notify(observers, state: .signedOut)
   }
 
   func current() -> AfilmorySessionSnapshot {
@@ -62,8 +77,82 @@ final class AfilmorySessionStore: @unchecked Sendable {
     return AfilmorySessionSnapshot(
       cookie: loadCookie(),
       platformBaseURL: environment.0,
-      tenantBaseURL: environment.1
+      tenantBaseURL: environment.1,
+      state: lock.withLock { state }
     )
+  }
+
+  func bootstrap() {
+    let shouldRefresh = lock.withLock { () -> Bool in
+      guard !bootstrapped else { return false }
+      bootstrapped = true
+      return true
+    }
+    guard shouldRefresh else { return }
+    refreshSession()
+  }
+
+  func refreshSession() {
+    guard loadCookie() != nil else {
+      publish(.signedOut)
+      return
+    }
+
+    let generation = lock.withLock { () -> UInt64 in
+      refreshGeneration &+= 1
+      refreshTask?.cancel()
+      state = .loading
+      return refreshGeneration
+    }
+    publishCurrent()
+
+    let task = Task { [weak self] in
+      guard let self else { return }
+      do {
+        let endpoint = APIEndpoint(baseURL: .platform, path: "auth/session")
+        let response: AfilmorySessionResponse? = try await AfilmoryAPI.shared.request(endpoint)
+        guard !Task.isCancelled else { return }
+        if let session = response?.resolved() {
+          ApiEnvironmentStore.shared.activateTenant(slug: session.activeWorkspace?.slug)
+          completeRefresh(generation: generation, state: .signedIn(session))
+        } else {
+          deleteCookie()
+          ApiEnvironmentStore.shared.activateTenant(slug: nil)
+          completeRefresh(generation: generation, state: .signedOut)
+        }
+      } catch APIError.unauthorized {
+        deleteCookie()
+        ApiEnvironmentStore.shared.activateTenant(slug: nil)
+        completeRefresh(generation: generation, state: .signedOut)
+      } catch APIError.cancelled {
+        return
+      } catch {
+        completeRefresh(generation: generation, state: .failed(error.localizedDescription))
+      }
+    }
+    lock.withLock {
+      if generation == refreshGeneration {
+        refreshTask = task
+      } else {
+        task.cancel()
+      }
+    }
+  }
+
+  func observe(
+    _ observer: @escaping @Sendable (AfilmorySessionState) -> Void
+  ) -> AfilmorySessionObservationToken {
+    let id = UUID()
+    let currentState = lock.withLock { () -> AfilmorySessionState in
+      observers[id] = observer
+      return state
+    }
+    observer(currentState)
+    return AfilmorySessionObservationToken { [weak self] in
+      self?.lock.withLock {
+        self?.observers.removeValue(forKey: id)
+      }
+    }
   }
 
   func hasStoredCookie() -> Bool {
@@ -71,6 +160,10 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   private func loadCookie() -> String? {
+    Self.readCookie()
+  }
+
+  private static func readCookie() -> String? {
     var query = Self.cookieQuery
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -80,6 +173,45 @@ final class AfilmorySessionStore: @unchecked Sendable {
           let data = result as? Data
     else { return nil }
     return String(data: data, encoding: .utf8)
+  }
+
+  private func deleteCookie() {
+    let status = SecItemDelete(Self.cookieQuery as CFDictionary)
+    if status != errSecSuccess, status != errSecItemNotFound {
+      NSLog("[AfilmorySessionStore] Unable to clear the session cookie: %d", status)
+    }
+  }
+
+  private func completeRefresh(generation: UInt64, state: AfilmorySessionState) {
+    let observers = lock.withLock { () -> [@Sendable (AfilmorySessionState) -> Void] in
+      guard generation == refreshGeneration else { return [] }
+      refreshTask = nil
+      self.state = state
+      return Array(self.observers.values)
+    }
+    notify(observers, state: state)
+  }
+
+  private func publish(_ state: AfilmorySessionState) {
+    let observers = lock.withLock { () -> [@Sendable (AfilmorySessionState) -> Void] in
+      self.state = state
+      return Array(self.observers.values)
+    }
+    notify(observers, state: state)
+  }
+
+  private func publishCurrent() {
+    let snapshot = lock.withLock { (state, Array(observers.values)) }
+    notify(snapshot.1, state: snapshot.0)
+  }
+
+  private func notify(
+    _ observers: [@Sendable (AfilmorySessionState) -> Void],
+    state: AfilmorySessionState
+  ) {
+    for observer in observers {
+      observer(state)
+    }
   }
 
   private static var cookieQuery: [String: Any] {

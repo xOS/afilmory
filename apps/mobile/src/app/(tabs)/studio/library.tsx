@@ -1,3 +1,5 @@
-import { StudioLibraryScreen } from '@/modules/studio/library/StudioLibraryScreen'
+import { NativePageView } from '@/native/NativePageView'
 
-export default StudioLibraryScreen
+export default function StudioLibraryPage() {
+  return <NativePageView page="studio-library" />
+}

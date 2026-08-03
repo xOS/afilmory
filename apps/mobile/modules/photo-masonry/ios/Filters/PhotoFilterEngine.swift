@@ -1,0 +1,209 @@
+import Foundation
+
+enum DatePreset: String, Codable, CaseIterable, Sendable {
+  case last7
+  case last30
+  case last90
+  case thisMonth
+  case thisYear
+  case lastYear
+}
+
+enum TagMode: String, Codable, Sendable {
+  case any
+  case all
+}
+
+struct PhotoFilters: Codable, Equatable, Sendable {
+  var tags: [String] = []
+  var tagMode: TagMode = .any
+  var datePreset: DatePreset?
+  var dateFrom: String?
+  var dateTo: String?
+  var cameras: [String] = []
+  var lenses: [String] = []
+  var minRating: Int?
+
+  static let empty = PhotoFilters()
+}
+
+struct PhotoFilterOption: Codable, Equatable, Identifiable, Sendable {
+  let value: String
+  let count: Int
+  var id: String { value }
+}
+
+struct PhotoFilterOptions: Codable, Equatable, Sendable {
+  let tags: [PhotoFilterOption]
+  let cameras: [PhotoFilterOption]
+  let lenses: [PhotoFilterOption]
+  let ratedCount: Int
+}
+
+enum PhotoFilterEngine {
+  static func apply(_ filters: PhotoFilters, to photos: [GalleryPhoto]) -> [GalleryPhoto] {
+    let tags = Set(filters.tags)
+    let cameras = Set(filters.cameras)
+    let lenses = Set(filters.lenses)
+    return photos.filter { photo in
+      if !filters.tags.isEmpty {
+        let matches = filters.tagMode == .all
+          ? filters.tags.allSatisfy(photo.tags.contains)
+          : photo.tags.contains { tags.contains($0) }
+        if !matches { return false }
+      }
+      if filters.dateFrom != nil || filters.dateTo != nil {
+        guard let date = photo.dateTaken.map({ String($0.prefix(10)) }) else { return false }
+        if let from = filters.dateFrom, date < from { return false }
+        if let to = filters.dateTo, date > to { return false }
+      }
+      if !filters.cameras.isEmpty {
+        guard let camera = photo.camera, cameras.contains(camera) else { return false }
+      }
+      if !filters.lenses.isEmpty {
+        guard let lens = photo.lens, lenses.contains(lens) else { return false }
+      }
+      if let minRating = filters.minRating {
+        guard let rating = photo.rating, rating >= minRating else { return false }
+      }
+      return true
+    }
+  }
+
+  static func buildOptions(_ photos: [GalleryPhoto]) -> PhotoFilterOptions {
+    var tags: [String: Int] = [:]
+    var cameras: [String: Int] = [:]
+    var lenses: [String: Int] = [:]
+    var ratedCount = 0
+    for photo in photos {
+      for tag in photo.tags {
+        tags[tag, default: 0] += 1
+      }
+      if let camera = photo.camera {
+        cameras[camera, default: 0] += 1
+      }
+      if let lens = photo.lens {
+        lenses[lens, default: 0] += 1
+      }
+      if photo.rating != nil {
+        ratedCount += 1
+      }
+    }
+    return PhotoFilterOptions(
+      tags: sortedOptions(tags),
+      cameras: sortedOptions(cameras),
+      lenses: sortedOptions(lenses),
+      ratedCount: ratedCount
+    )
+  }
+
+  static func countActiveDimensions(_ filters: PhotoFilters) -> Int {
+    var count = 0
+    if !filters.tags.isEmpty { count += 1 }
+    if filters.dateFrom != nil || filters.dateTo != nil { count += 1 }
+    if !filters.cameras.isEmpty { count += 1 }
+    if !filters.lenses.isEmpty { count += 1 }
+    if filters.minRating != nil { count += 1 }
+    return count
+  }
+
+  static func hasActiveFilters(_ filters: PhotoFilters) -> Bool {
+    countActiveDimensions(filters) > 0
+  }
+
+  static func presetRange(
+    _ preset: DatePreset,
+    now: Date,
+    calendar sourceCalendar: Calendar = .current
+  ) -> (from: String, to: String) {
+    var calendar = sourceCalendar
+    let today = dateString(now, calendar: calendar)
+    switch preset {
+    case .last7:
+      return (dateString(calendar.date(byAdding: .day, value: -6, to: now)!, calendar: calendar), today)
+    case .last30:
+      return (dateString(calendar.date(byAdding: .day, value: -29, to: now)!, calendar: calendar), today)
+    case .last90:
+      return (dateString(calendar.date(byAdding: .day, value: -89, to: now)!, calendar: calendar), today)
+    case .thisMonth:
+      let components = calendar.dateComponents([.year, .month], from: now)
+      return (dateString(calendar.date(from: components)!, calendar: calendar), today)
+    case .thisYear:
+      let year = calendar.component(.year, from: now)
+      return (String(format: "%04d-01-01", year), today)
+    case .lastYear:
+      let year = calendar.component(.year, from: now) - 1
+      return (String(format: "%04d-01-01", year), String(format: "%04d-12-31", year))
+    }
+  }
+
+  static func cityForRange(_ photos: [GalleryPhoto], startIndex: Int, endIndex: Int) -> String? {
+    guard !photos.isEmpty else { return nil }
+    let start = max(0, min(startIndex, photos.count - 1))
+    let end = max(start, min(endIndex, photos.count - 1))
+    for index in start...end {
+      if let city = photos[index].city {
+        return city
+      }
+    }
+    let markers = ["省", "市", "区", "县", "镇", "村", "街道", "路", "北京", "上海", "广州", "深圳", "杭州", "南京", "成都"]
+    for index in start...end {
+      if let tag = photos[index].tags.first(where: { tag in markers.contains(where: tag.contains) }) {
+        return tag
+      }
+    }
+    return nil
+  }
+
+  static func summarize(_ filters: PhotoFilters, localization: Localization) -> String {
+    var parts: [String] = []
+    if filters.tags.count == 1 {
+      parts.append(filters.tags[0])
+    } else if filters.tags.count > 1 {
+      parts.append(localization.value("filter.summary.tags", count: filters.tags.count))
+    }
+    if filters.cameras.count == 1 {
+      parts.append(filters.cameras[0])
+    } else if filters.cameras.count > 1 {
+      parts.append(localization.value("filter.summary.cameras", count: filters.cameras.count))
+    }
+    if filters.lenses.count == 1 {
+      parts.append(filters.lenses[0])
+    } else if filters.lenses.count > 1 {
+      parts.append(localization.value("filter.summary.lenses", count: filters.lenses.count))
+    }
+    if let minRating = filters.minRating {
+      parts.append("≥\(minRating)★")
+    }
+    if filters.dateFrom != nil || filters.dateTo != nil {
+      let key = filters.datePreset.map(datePresetKey) ?? "filter.dates"
+      parts.append(localization.value(key))
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  private static func sortedOptions(_ values: [String: Int]) -> [PhotoFilterOption] {
+    values.map { PhotoFilterOption(value: $0.key, count: $0.value) }
+      .sorted { lhs, rhs in
+        lhs.count == rhs.count
+          ? lhs.value.compare(rhs.value, options: [], range: nil, locale: Locale(identifier: "en_US")) == .orderedAscending
+          : lhs.count > rhs.count
+      }
+  }
+
+  private static func dateString(_ date: Date, calendar: Calendar) -> String {
+    let components = calendar.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+  }
+
+  private static func datePresetKey(_ preset: DatePreset) -> String {
+    switch preset {
+    case .last7: "action.date.preset.last7"
+    case .last30: "action.date.preset.last30"
+    case .last90: "action.date.preset.last90"
+    case .thisMonth: "action.date.preset.thisMonth"
+    case .thisYear: "action.date.preset.thisYear"
+    case .lastYear: "action.date.preset.lastYear"
+    }
+  }
+}

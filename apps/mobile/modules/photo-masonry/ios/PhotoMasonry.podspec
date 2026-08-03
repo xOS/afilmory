@@ -11,7 +11,6 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.dependency 'RNScreens'
   s.dependency 'SDWebImage', '~> 5.0'
   s.frameworks = 'ActivityKit', 'AVFoundation', 'MapKit', 'StoreKit', 'Photos', 'PhotosUI', 'UniformTypeIdentifiers'
 
@@ -20,9 +19,11 @@ Pod::Spec.new do |s|
   }
 
   s.source_files = '**/*.{h,m,mm,swift}'
+  s.resource_bundles = { 'AfilmoryLocales' => ['Resources/Locales/*.json'] }
   s.exclude_files = 'Tests/**/*'
 
   s.test_spec 'Tests' do |test_spec|
     test_spec.source_files = 'Tests/**/*.swift'
+    test_spec.resources = 'Tests/Fixtures/*.json'
   end
 end

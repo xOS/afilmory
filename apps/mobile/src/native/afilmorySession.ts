@@ -4,8 +4,15 @@ import { Platform } from 'react-native'
 interface AfilmorySessionNativeModule {
   clearSession: () => void
   hasStoredCookie: () => boolean
-  registerEnvironment: (platformBaseURL: string, tenantBaseURL: string | null) => void
   registerSession: (cookie: string) => void
+  setApiEnvironment: (
+    id: string,
+    label: string,
+    scheme: 'http' | 'https',
+    platformHost: string,
+    baseDomain: string,
+    port: number | null,
+  ) => void
 }
 
 const nativeSession
@@ -19,10 +26,24 @@ export function clearNativeSession(): void {
   nativeSession?.clearSession()
 }
 
-export function registerNativeEnvironment(platformBaseURL: string, tenantBaseURL: string | null): void {
-  nativeSession?.registerEnvironment(platformBaseURL, tenantBaseURL)
-}
-
 export function hasStoredNativeCookie(): boolean {
   return nativeSession?.hasStoredCookie() ?? false
+}
+
+export function setNativeApiEnvironment(environment: {
+  id: string
+  label: string
+  scheme: 'http' | 'https'
+  platformHost: string
+  baseDomain: string
+  port: number | null
+}): void {
+  nativeSession?.setApiEnvironment(
+    environment.id,
+    environment.label,
+    environment.scheme,
+    environment.platformHost,
+    environment.baseDomain,
+    environment.port,
+  )
 }

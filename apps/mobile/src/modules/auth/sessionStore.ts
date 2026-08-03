@@ -1,8 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { setAuthCookie } from '@/api/auth'
-import { getApiBaseUrl, getGalleryApiBaseUrl, setActiveTenantSlug } from '@/api/client'
-import { registerNativeEnvironment } from '@/native/afilmorySession'
+import { setActiveTenantSlug } from '@/api/client'
 
 import { fetchSession, switchActiveWorkspace } from './api'
 import { getAuthClient } from './authClient'
@@ -42,7 +41,6 @@ export function useAuth(): AuthState {
 
 function setActiveWorkspace(slug: string | null | undefined): void {
   setActiveTenantSlug(slug)
-  registerNativeEnvironment(getApiBaseUrl(), slug ? getGalleryApiBaseUrl(slug) : null)
 }
 
 function resetToSignedOut() {

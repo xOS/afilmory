@@ -7,6 +7,12 @@
     "android": "expo run:android",
     "bundle": "expo export --platform ios --output-dir .expo/export-check",
     "ios": "expo run:ios",
+    "native:locales": "node scripts/copy-native-locales.mjs",
+    "native:test": "pnpm native:test:prepare && xcodebuild test -workspace ios/Afilmory.xcworkspace -scheme AfilmoryNativeTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro'",
+    "native:test:prepare": "GEM_HOME=\"$(brew --prefix cocoapods)/libexec\" \"$(brew --prefix ruby)/bin/ruby\" scripts/configure-native-tests.rb",
+    "prebundle": "pnpm native:locales",
+    "preios": "pnpm native:locales",
+    "prestart": "pnpm native:locales",
     "start": "expo start",
     "type-check": "tsc --noEmit"
   },

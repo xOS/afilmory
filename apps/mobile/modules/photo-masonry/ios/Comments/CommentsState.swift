@@ -21,10 +21,6 @@ enum CommentsState {
         comments.append(incoming)
       }
     }
-    comments.sort {
-      $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt
-    }
-
     return CommentCollection(
       comments: comments,
       relations: replacing ? page.relations : current.relations.merging(page.relations) { _, next in next },

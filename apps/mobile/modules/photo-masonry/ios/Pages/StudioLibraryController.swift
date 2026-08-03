@@ -1,0 +1,607 @@
+import ExpoModulesCore
+import SwiftUI
+import UIKit
+
+private struct StudioPickedPhoto: Equatable {
+  let id: String
+  let isLivePhoto: Bool
+  let name: String
+}
+
+private struct StudioTagsBody: Encodable {
+  let tags: [String]
+}
+
+private struct StudioDeleteBody: Encodable {
+  let deleteFromStorage: Bool
+  let ids: [String]
+}
+
+private struct StudioDeleteResponse: Decodable {
+  let deleted: Bool
+}
+
+final class StudioLibraryController: UIViewController {
+  private let appContext: AppContext?
+  private let localization = Localization.shared
+  private let onRequestSignIn: () -> Void
+  private let masonryView: PhotoMasonryView
+  private let uploadFab: UploadFabView
+  private var sessionObservation: AfilmorySessionObservationToken?
+  private var feedObservation: PhotoFeedObservationToken?
+  private var uploadObservation: UUID?
+  private var feed: PhotoFeed?
+  private var gallerySlug: String?
+  private var selectedIds: [String] = []
+  private var selectionMode = false
+  private var mutating = false
+  private var uploadJobs: [UploadJobState] = []
+  private var uploadsWereRunning = false
+
+  init(appContext: AppContext?, onRequestSignIn: @escaping () -> Void) {
+    self.appContext = appContext
+    self.onRequestSignIn = onRequestSignIn
+    masonryView = PhotoMasonryView(appContext: appContext)
+    uploadFab = UploadFabView(appContext: appContext)
+    super.init(nibName: nil, bundle: nil)
+    configureMasonry()
+    uploadFab.setLocalization(uploadQueueLocalization())
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is not supported")
+  }
+
+  deinit {
+    if let uploadObservation {
+      UploadCenter.shared.unobserve(uploadObservation)
+    }
+  }
+
+  override func loadView() {
+    let root = UIView()
+    root.backgroundColor = .systemBackground
+    masonryView.frame = root.bounds
+    masonryView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    root.addSubview(masonryView)
+    root.addSubview(uploadFab)
+    view = root
+  }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    sessionObservation = AfilmorySessionStore.shared.observe { [weak self] state in
+      DispatchQueue.main.async {
+        self?.handleSession(state)
+      }
+    }
+    uploadObservation = UploadCenter.shared.observe { [weak self] jobs in
+      self?.handleUploadJobs(jobs)
+    }
+    AfilmorySessionStore.shared.bootstrap()
+    updateNavigation()
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let size: CGFloat = 52
+    uploadFab.frame = CGRect(
+      x: view.bounds.width - view.safeAreaInsets.right - size - 18,
+      y: view.bounds.height - max(view.safeAreaInsets.bottom, 92) - size - 16,
+      width: size,
+      height: size
+    )
+  }
+
+  private func configureMasonry() {
+    masonryView.contextMenuInfoTitle = localization.value("photo.info")
+    masonryView.contextMenuSelectTitle = localization.value("common.select")
+    masonryView.contextMenuShareTitle = localization.value("photo.share")
+    masonryView.extraBottomInset = 20
+    masonryView.gap = 3
+    masonryView.livePhotoAccessibilityLabel = localization.value("photo.livePhoto")
+    masonryView.selectionEnabled = true
+    masonryView.onNativePhotoPress = { [weak self] index in
+      self?.presentPhoto(at: index)
+    }
+    masonryView.onNativeRefresh = { [weak self] in
+      self?.reload()
+    }
+    masonryView.onNativeSelectionChange = { [weak self] ids in
+      self?.selectedIds = ids
+      self?.updateNavigation()
+    }
+    masonryView.onNativeSelectionModeChange = { [weak self] active in
+      self?.selectionMode = active
+      self?.updateNavigation()
+    }
+    masonryView.onNativeContextMenuAction = { [weak self] action, photoId in
+      self?.performContextAction(action, photoId: photoId)
+    }
+  }
+
+  private func handleSession(_ state: AfilmorySessionState) {
+    switch state {
+    case .loading:
+      contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
+    case .signedOut, .failed:
+      gallerySlug = nil
+      feedObservation?.cancel()
+      feedObservation = nil
+      feed = nil
+      masonryView.setPhotos([])
+      showAccess(
+        title: localization.value("studio.access.signedOut.title"),
+        description: localization.value("studio.access.signedOut.description"),
+        image: "lock",
+        action: localization.value("common.signIn"),
+        handler: onRequestSignIn
+      )
+    case .signedIn(let session):
+      let canManage = session.activeMembership.map {
+        $0.status == "active" && ($0.role == "admin" || $0.role == "owner")
+      } ?? false
+      guard canManage,
+            let workspace = session.activeWorkspace,
+            workspace.status == "active"
+      else {
+        gallerySlug = nil
+        feedObservation?.cancel()
+        feedObservation = nil
+        feed = nil
+        masonryView.setPhotos([])
+        showAccess(
+          title: localization.value("studio.access.admin.title"),
+          description: localization.value("studio.access.admin.description"),
+          image: "person.badge.shield.checkmark",
+          action: nil,
+          handler: nil
+        )
+        return
+      }
+      gallerySlug = workspace.slug
+      ApiEnvironmentStore.shared.activateTenant(slug: workspace.slug)
+      if feed == nil {
+        let feed = PhotoFeedStore.shared.feed(for: .studioLibrary)
+        self.feed = feed
+        feedObservation = feed.observe { [weak self] in self?.render() }
+      }
+      PhotoFeedStore.shared.load(.studioLibrary)
+      render()
+    }
+  }
+
+  private func render() {
+    guard let feed else { return }
+    masonryView.setRefreshing(feed.loadState == .loading && !feed.photos.isEmpty)
+    if feed.loadState == .loading, feed.photos.isEmpty {
+      contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
+      return
+    }
+    if feed.loadState == .failed, feed.photos.isEmpty {
+      var configuration = UIContentUnavailableConfiguration.empty()
+      configuration.image = UIImage(systemName: "exclamationmark.triangle")
+      configuration.text = localization.value("studio.error.title")
+      configuration.secondaryText = feed.lastError ?? localization.value("studio.error.description")
+      configuration.button = .filled()
+      configuration.button.title = localization.value("common.retry")
+      configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.reload() }
+      contentUnavailableConfiguration = configuration
+      return
+    }
+    masonryView.setPhotos(feed.photos.map { MasonryPhoto(photo: $0, localization: localization) })
+    masonryView.setRefreshing(false)
+    if feed.photos.isEmpty {
+      var configuration = UIContentUnavailableConfiguration.empty()
+      configuration.image = UIImage(systemName: "photo.on.rectangle.angled")
+      configuration.text = localization.value("studio.library.empty.title")
+      configuration.secondaryText = localization.value("studio.library.empty.description")
+      configuration.button = .filled()
+      configuration.button.title = localization.value("studio.upload.action")
+      configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.beginUpload() }
+      contentUnavailableConfiguration = configuration
+    } else {
+      contentUnavailableConfiguration = nil
+    }
+    updateNavigation()
+  }
+
+  private func reload() {
+    PhotoFeedStore.shared.load(.studioLibrary, force: true)
+  }
+
+  private func presentPhoto(at index: Int) {
+    guard !selectionMode, let feed, feed.photos.indices.contains(index) else { return }
+    let controller = PhotoDetailViewController(
+      photos: feed.photos,
+      initialIndex: index,
+      gallerySlug: gallerySlug,
+      appContext: appContext,
+      localization: localization,
+      onRequestSignIn: onRequestSignIn,
+      sourceProvider: { [weak masonryView] photoId in
+        masonryView?.visibleTransitionSourceView(for: photoId)
+      }
+    )
+    present(controller, animated: true)
+  }
+
+  private func enterSelection() {
+    selectionMode = true
+    selectedIds = []
+    masonryView.setSelectionMode(true)
+    masonryView.setSelectedPhotoIds([])
+    updateNavigation()
+  }
+
+  private func leaveSelection() {
+    selectionMode = false
+    selectedIds = []
+    masonryView.setSelectionMode(false)
+    masonryView.setSelectedPhotoIds([])
+    updateNavigation()
+  }
+
+  private func updateNavigation() {
+    let summary = UploadQueueSummary(jobs: uploadJobs)
+    if selectionMode {
+      title = localization.value("studio.library.selected", arguments: ["count": String(selectedIds.count)])
+      let done = UIBarButtonItem(
+        title: localization.value("common.done"),
+        primaryAction: UIAction { [weak self] _ in self?.leaveSelection() }
+      )
+      done.style = .prominent
+      let tags = UIBarButtonItem(
+        image: UIImage(systemName: "tag"),
+        primaryAction: UIAction { [weak self] _ in self?.editTags() }
+      )
+      tags.accessibilityLabel = localization.value("studio.library.tags.action")
+      tags.isEnabled = !selectedIds.isEmpty && !mutating
+      let delete = UIBarButtonItem(
+        image: UIImage(systemName: "trash"),
+        primaryAction: UIAction { [weak self] _ in self?.confirmDelete() }
+      )
+      delete.tintColor = .systemRed
+      delete.accessibilityLabel = localization.value("common.delete")
+      delete.isEnabled = !selectedIds.isEmpty && !mutating
+      navigationItem.rightBarButtonItems = [done, delete, tags]
+    } else {
+      title = summary.running
+        ? localization.value(
+          "studio.upload.queue.headline",
+          arguments: ["done": String(summary.done), "total": String(summary.total)]
+        )
+        : summary.failed > 0
+          ? localization.value("studio.upload.queue.failedCount", count: summary.failed)
+          : localization.value("studio.library.title")
+      let select = UIBarButtonItem(
+        title: localization.value("common.select"),
+        primaryAction: UIAction { [weak self] _ in self?.enterSelection() }
+      )
+      select.isEnabled = !mutating && !(feed?.photos.isEmpty ?? true)
+      let upload = UIBarButtonItem(
+        image: UIImage(systemName: "plus"),
+        primaryAction: UIAction { [weak self] _ in self?.beginUpload() }
+      )
+      upload.accessibilityLabel = localization.value("studio.upload.action")
+      upload.isEnabled = !mutating
+      navigationItem.rightBarButtonItems = [select, upload]
+    }
+    uploadFab.isHidden = selectionMode || uploadJobs.isEmpty
+  }
+
+  private func editTags() {
+    guard !mutating, let feed else { return }
+    let selected = feed.studioPhotos.filter { selectedIds.contains($0.asset.id) }
+    guard !selected.isEmpty else { return }
+    let common = commonTags(selected.map(\.asset)).joined(separator: ", ")
+    let alert = UIAlertController(
+      title: localization.value("studio.library.tags.title"),
+      message: localization.value("studio.library.tags.description"),
+      preferredStyle: .alert
+    )
+    alert.addTextField { $0.text = common }
+    alert.addAction(UIAlertAction(title: localization.value("common.cancel"), style: .cancel))
+    alert.addAction(UIAlertAction(title: localization.value("common.save"), style: .default) { [weak self, weak alert] _ in
+      self?.applyTags(Self.parseTags(alert?.textFields?.first?.text ?? ""), to: selected.map(\.asset.id))
+    })
+    present(alert, animated: true)
+  }
+
+  private func applyTags(_ tags: [String], to ids: [String]) {
+    mutating = true
+    updateNavigation()
+    Task { [weak self] in
+      do {
+        for id in ids {
+          let endpoint = APIEndpoint(
+            baseURL: .tenant,
+            path: "photos/assets/\(id)/tags",
+            method: .patch,
+            body: try APIEndpoint.jsonBody(StudioTagsBody(tags: tags))
+          )
+          let _: StudioAsset = try await AfilmoryAPI.shared.request(endpoint)
+        }
+        self?.leaveSelection()
+        self?.reload()
+      } catch {
+        self?.showError(
+          title: self?.localization.value("studio.library.tags.failed") ?? "",
+          message: error.localizedDescription
+        )
+      }
+      self?.mutating = false
+      self?.updateNavigation()
+    }
+  }
+
+  private func confirmDelete() {
+    guard !selectedIds.isEmpty, !mutating else { return }
+    let alert = UIAlertController(
+      title: localization.value("studio.library.delete.title"),
+      message: localization.value(
+        "studio.library.delete.description",
+        arguments: ["count": String(selectedIds.count)]
+      ),
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: localization.value("common.cancel"), style: .cancel))
+    alert.addAction(UIAlertAction(
+      title: localization.value("studio.library.delete.databaseOnly"),
+      style: .destructive
+    ) { [weak self] _ in self?.deleteSelected(fromStorage: false) })
+    alert.addAction(UIAlertAction(
+      title: localization.value("studio.library.delete.everywhere"),
+      style: .destructive
+    ) { [weak self] _ in self?.deleteSelected(fromStorage: true) })
+    present(alert, animated: true)
+  }
+
+  private func deleteSelected(fromStorage: Bool) {
+    let ids = selectedIds
+    guard !ids.isEmpty else { return }
+    mutating = true
+    updateNavigation()
+    Task { [weak self] in
+      do {
+        let endpoint = APIEndpoint(
+          baseURL: .tenant,
+          path: "photos/assets",
+          method: .delete,
+          body: try APIEndpoint.jsonBody(
+            StudioDeleteBody(deleteFromStorage: fromStorage, ids: ids)
+          )
+        )
+        let _: StudioDeleteResponse = try await AfilmoryAPI.shared.request(endpoint)
+        self?.leaveSelection()
+        self?.reload()
+      } catch {
+        self?.showError(
+          title: self?.localization.value("studio.library.delete.failed") ?? "",
+          message: error.localizedDescription
+        )
+      }
+      self?.mutating = false
+      self?.updateNavigation()
+    }
+  }
+
+  private func beginUpload() {
+    guard !mutating else { return }
+    UploadPickerSession.present(from: self) { [weak self] result in
+      switch result {
+      case .success(let values):
+        let items = values.compactMap(Self.pickedPhoto)
+        guard !items.isEmpty else { return }
+        self?.presentUploadReview(items: items, tags: [])
+      case .failure(let error):
+        self?.showError(
+          title: self?.localization.value("studio.upload.failed") ?? "",
+          message: error.localizedDescription
+        )
+      }
+    }
+  }
+
+  private func presentUploadReview(items: [StudioPickedPhoto], tags: [String]) {
+    let suggestedTags = availableTags()
+    let root = UploadReviewSheetView(
+      items: items.map { UploadReviewItem(id: $0.id, isLivePhoto: $0.isLivePhoto) },
+      initialTags: tags,
+      suggestedTags: suggestedTags,
+      localization: uploadReviewLocalization()
+    ) { [weak self] outcome in
+      self?.dismiss(animated: true) {
+        self?.handleUploadReview(outcome, items: items)
+      }
+    }
+    let host = UIHostingController(rootView: root)
+    host.navigationItem.title = localization.value("studio.upload.review.title")
+    let navigation = UINavigationController(rootViewController: host)
+    navigation.modalPresentationStyle = .pageSheet
+    navigation.sheetPresentationController?.detents = [.large()]
+    navigation.sheetPresentationController?.prefersGrabberVisible = true
+    present(navigation, animated: true)
+  }
+
+  private func handleUploadReview(_ outcome: UploadReviewOutcome, items: [StudioPickedPhoto]) {
+    switch outcome {
+    case .cancel:
+      break
+    case .start(let itemIds, let tags):
+      let kept = items.filter { itemIds.contains($0.id) }
+      enqueue(kept, tags: tags)
+    case .addMore(let itemIds, let tags):
+      let kept = items.filter { itemIds.contains($0.id) }
+      UploadPickerSession.present(from: self) { [weak self] result in
+        switch result {
+        case .success(let values):
+          let existing = Set(kept.map(\.id))
+          let more = values.compactMap(Self.pickedPhoto).filter { !existing.contains($0.id) }
+          self?.presentUploadReview(items: kept + more, tags: tags)
+        case .failure(let error):
+          self?.showError(
+            title: self?.localization.value("studio.upload.failed") ?? "",
+            message: error.localizedDescription
+          )
+        }
+      }
+    }
+  }
+
+  private func enqueue(_ items: [StudioPickedPhoto], tags: [String]) {
+    guard !items.isEmpty,
+          let tenantBaseURL = AfilmorySessionStore.shared.current().tenantBaseURL
+    else { return }
+    UploadActivityController.shared.setTitle(localization.value("studio.upload.activity.title"))
+    _ = UploadCenter.shared.enqueue(
+      endpoint: "\(tenantBaseURL)/photos/assets/upload",
+      directory: Self.directory(from: tags),
+      items: items.map { ($0.id, $0.name) }
+    )
+  }
+
+  private func handleUploadJobs(_ jobs: [UploadJobState]) {
+    uploadJobs = jobs
+    let running = UploadQueueSummary(jobs: jobs).running
+    if uploadsWereRunning, !running {
+      reload()
+    }
+    uploadsWereRunning = running
+    updateNavigation()
+    view.setNeedsLayout()
+  }
+
+  private func availableTags() -> [String] {
+    guard let feed else { return [] }
+    var seen = Set<String>()
+    var values: [String] = []
+    for item in feed.studioPhotos {
+      guard case .array(let tags) = item.asset.manifest.data["tags"] else { continue }
+      for tag in tags.compactMap(\.string) {
+        let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !normalized.isEmpty, seen.insert(normalized).inserted {
+          values.append(normalized)
+        }
+      }
+    }
+    return values
+  }
+
+  private func performContextAction(_ action: String, photoId: String) {
+    guard let photo = feed?.photos.first(where: { $0.id == photoId }) else { return }
+    if action == "share", let url = URL(string: photo.originalUrl) {
+      let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+      controller.popoverPresentationController?.sourceView = masonryView
+      controller.popoverPresentationController?.sourceRect = masonryView.bounds
+      present(controller, animated: true)
+    }
+  }
+
+  private func showAccess(
+    title: String,
+    description: String,
+    image: String,
+    action: String?,
+    handler: (() -> Void)?
+  ) {
+    var configuration = UIContentUnavailableConfiguration.empty()
+    configuration.image = UIImage(systemName: image)
+    configuration.text = title
+    configuration.secondaryText = description
+    if let action, let handler {
+      configuration.button = .filled()
+      configuration.button.title = action
+      configuration.buttonProperties.primaryAction = UIAction { _ in handler() }
+    }
+    contentUnavailableConfiguration = configuration
+  }
+
+  private func showError(title: String, message: String) {
+    let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: localization.value("common.done"), style: .default))
+    present(alert, animated: true)
+  }
+
+  private func commonTags(_ assets: [StudioAsset]) -> [String] {
+    guard let first = assets.first,
+          case .array(let firstTags) = first.manifest.data["tags"]
+    else { return [] }
+    let initial = firstTags.compactMap(\.string)
+    return initial.filter { tag in
+      assets.dropFirst().allSatisfy { asset in
+        guard case .array(let values) = asset.manifest.data["tags"] else { return false }
+        return values.compactMap(\.string).contains(tag)
+      }
+    }
+  }
+
+  private func uploadReviewLocalization() -> UploadReviewLocalizationRecord {
+    let copy = UploadReviewLocalizationRecord()
+    copy.addMore = localization.value("studio.upload.review.addMore")
+    copy.cancel = localization.value("common.cancel")
+    copy.remove = localization.value("studio.upload.review.remove")
+    copy.startOne = localization.value("studio.upload.review.startTemplate_one")
+    copy.startOther = localization.value("studio.upload.review.startTemplate_other")
+    copy.summaryOne = localization.value("studio.upload.review.summaryTemplate_one")
+    copy.summaryOther = localization.value("studio.upload.review.summaryTemplate_other")
+    copy.tagsLabel = localization.value("studio.upload.review.tagsLabel")
+    copy.tagsPlaceholder = localization.value("studio.upload.review.tagsPlaceholder")
+    copy.title = localization.value("studio.upload.review.title")
+    return copy
+  }
+
+  private func uploadQueueLocalization() -> [String: String] {
+    [
+      "attemptTemplate": localization.value("studio.upload.queue.attempt"),
+      "cancel": localization.value("common.cancel"),
+      "cancelAll": localization.value("studio.upload.queue.cancelAll"),
+      "clear": localization.value("studio.upload.queue.clear"),
+      "done": localization.value("common.done"),
+      "failedTemplateOne": localization.value("studio.upload.queue.failedTemplate_one"),
+      "failedTemplateOther": localization.value("studio.upload.queue.failedTemplate_other"),
+      "headlineTemplate": localization.value("studio.upload.queue.headlineTemplate"),
+      "retry": localization.value("studio.upload.queue.retry"),
+      "retryAll": localization.value("studio.upload.queue.retryAll"),
+      "statusCancelled": localization.value("studio.upload.status.cancelled"),
+      "statusDone": localization.value("studio.upload.status.done"),
+      "statusFailed": localization.value("studio.upload.status.failed"),
+      "statusProcessing": localization.value("studio.upload.status.processing"),
+      "statusQueued": localization.value("studio.upload.status.queued"),
+      "statusUploading": localization.value("studio.upload.status.uploading"),
+      "title": localization.value("studio.upload.queue.title"),
+    ]
+  }
+
+  private static func pickedPhoto(_ value: [String: Any]) -> StudioPickedPhoto? {
+    guard let id = value["id"] as? String,
+          let isLivePhoto = value["isLivePhoto"] as? Bool,
+          let name = value["name"] as? String
+    else { return nil }
+    return StudioPickedPhoto(id: id, isLivePhoto: isLivePhoto, name: name)
+  }
+
+  private static func parseTags(_ value: String) -> [String] {
+    var seen = Set<String>()
+    return value.split(separator: ",").compactMap { part in
+      let tag = part.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !tag.isEmpty, seen.insert(tag).inserted else { return nil }
+      return tag
+    }.prefix(32).map { $0 }
+  }
+
+  private static func directory(from tags: [String]) -> String? {
+    let segments = tags.compactMap { tag -> String? in
+      var value = tag.precomposedStringWithCompatibilityMapping
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      value = value.replacingOccurrences(of: "[\\\\/]+", with: "-", options: .regularExpression)
+      value = value.replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
+      value = value.replacingOccurrences(of: "[^\\p{L}\\p{N}_.-]", with: "-", options: .regularExpression)
+      value = value.replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+      value = value.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+      return value.isEmpty ? nil : value
+    }
+    return segments.isEmpty ? nil : segments.joined(separator: "/")
+  }
+}
