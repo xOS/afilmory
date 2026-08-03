@@ -191,6 +191,7 @@ final class StudioLibraryController: UIViewController {
       return
     }
     masonryView.setPhotos(feed.photos.map { MasonryPhoto(photo: $0, localization: localization) })
+    ShareUploadContextStore.updateSuggestedTags(availableTags())
     masonryView.setRefreshing(false)
     if feed.photos.isEmpty {
       var configuration = UIContentUnavailableConfiguration.empty()
@@ -457,7 +458,7 @@ final class StudioLibraryController: UIViewController {
     UploadActivityController.shared.setTitle(localization.value("studio.upload.activity.title"))
     _ = UploadCenter.shared.enqueue(
       endpoint: "\(tenantBaseURL)/photos/assets/upload",
-      directory: Self.directory(from: tags),
+      directory: UploadTagPath.directory(from: tags),
       items: items.map { ($0.id, $0.name) }
     )
   }
@@ -591,17 +592,4 @@ final class StudioLibraryController: UIViewController {
     }.prefix(32).map { $0 }
   }
 
-  private static func directory(from tags: [String]) -> String? {
-    let segments = tags.compactMap { tag -> String? in
-      var value = tag.precomposedStringWithCompatibilityMapping
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-      value = value.replacingOccurrences(of: "[\\\\/]+", with: "-", options: .regularExpression)
-      value = value.replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
-      value = value.replacingOccurrences(of: "[^\\p{L}\\p{N}_.-]", with: "-", options: .regularExpression)
-      value = value.replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-      value = value.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-      return value.isEmpty ? nil : value
-    }
-    return segments.isEmpty ? nil : segments.joined(separator: "/")
-  }
 }

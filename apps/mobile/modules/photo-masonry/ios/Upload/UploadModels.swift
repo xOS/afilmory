@@ -19,6 +19,13 @@ struct UploadServerLogLine: Codable, Hashable {
   var level: String
 }
 
+struct UploadStagedFile {
+  let id: String
+  let url: URL
+  let name: String
+  let mimeType: String
+}
+
 struct UploadJobState: Codable {
   let id: String
   let assetId: String

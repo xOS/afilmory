@@ -2,6 +2,8 @@ import ExpoModulesCore
 import UIKit
 
 final class PageControllerHostView: ExpoView {
+  let onAuthChange = EventDispatcher()
+  let onNavigate = EventDispatcher()
   let onRequestSignIn = EventDispatcher()
 
   private var page = ""
@@ -66,6 +68,18 @@ final class PageControllerHostView: ExpoView {
       guard let self else { return }
       onRequestSignIn([:])
     }
+    let navigate: (StudioHomeRoute) -> Void = { [weak self] route in
+      guard let self else { return }
+      onNavigate(["path": route.rawValue])
+    }
+    let requestSignOut: () -> Void = { [weak self] in
+      guard let self else { return }
+      onAuthChange(["type": "signOut"])
+    }
+    let workspaceChanged: (String) -> Void = { [weak self] slug in
+      guard let self else { return }
+      onAuthChange(["type": "workspaceChanged", "workspaceSlug": slug])
+    }
     switch page {
     case "photos":
       return PhotosHomeController(appContext: appContext, onRequestSignIn: requestSignIn)
@@ -77,6 +91,13 @@ final class PageControllerHostView: ExpoView {
     case "studio-library":
       let root = StudioLibraryController(appContext: appContext, onRequestSignIn: requestSignIn)
       return UINavigationController(rootViewController: root)
+    case "studio-home":
+      return StudioHomeController(
+        onRequestSignIn: requestSignIn,
+        onRequestSignOut: requestSignOut,
+        onNavigate: navigate,
+        onWorkspaceChanged: workspaceChanged
+      )
     default:
       return nil
     }

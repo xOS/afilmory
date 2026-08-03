@@ -199,10 +199,3 @@ export type DataSyncProgressEvent
     | { type: 'complete', payload: { summary: DataSyncSummary } }
     | { type: 'error', payload: { message: string } }
     | { type: 'log', payload: { message: string } }
-
-export interface StudioHomeData {
-  overview: DashboardOverviewResponse
-  pendingComments: number
-  pendingCommentsHasMore: boolean
-  syncStatus: DataSyncStatus
-}

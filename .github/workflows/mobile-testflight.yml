@@ -35,6 +35,9 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
+      - name: Generate native localization resources
+        run: pnpm native:locales
+
       - name: Prebuild iOS project
         run: pnpm exec expo prebuild -p ios --no-install
 
@@ -87,6 +90,15 @@ jobs:
             DEVELOPMENT_TEAM=KAMM5N88X3 \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             | xcbeautify --renderer github-actions
+
+      - name: Verify native localization resources
+        run: |
+          LOCALES_BUNDLE="$RUNNER_TEMP/Afilmory.xcarchive/Products/Applications/Afilmory.app/AfilmoryLocales.bundle"
+          for namespace in app mobile; do
+            for language in en jp ko zh-CN zh-HK zh-TW; do
+              test -s "$LOCALES_BUNDLE/$namespace-$language.json"
+            done
+          done
 
       - name: Upload to App Store Connect
         env:

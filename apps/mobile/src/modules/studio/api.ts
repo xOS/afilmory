@@ -10,23 +10,7 @@ import type {
   DataSyncStatus,
   SiteSettingKey,
   SiteSettingUiSchemaResponse,
-  StudioHomeData,
 } from './types'
-
-export async function fetchStudioHome(): Promise<StudioHomeData> {
-  const [overview, comments, syncStatus] = await Promise.all([
-    fetchDashboardOverview(),
-    listComments({ limit: 20, status: 'pending' }),
-    getDataSyncStatus(),
-  ])
-
-  return {
-    overview,
-    pendingComments: comments.comments.length,
-    pendingCommentsHasMore: comments.nextCursor !== null,
-    syncStatus,
-  }
-}
 
 export async function fetchDashboardOverview(): Promise<DashboardOverviewResponse> {
   return camelCaseKeys(await tenantApiClient('/dashboard/overview'))

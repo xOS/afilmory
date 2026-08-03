@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Photos
 import UIKit
 import UniformTypeIdentifiers
@@ -49,6 +50,19 @@ enum UploadJobPreparer {
     try? data.write(to: url, options: .atomic)
   }
 
+  static func writePreview(forFileAt sourceURL: URL, to destinationURL: URL) {
+    guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else { return }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: 384,
+    ]
+    guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+          let data = UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.75)
+    else { return }
+    try? data.write(to: destinationURL, options: .atomic)
+  }
+
   static func buildBody(
     for asset: PHAsset,
     directory: String?,
@@ -94,6 +108,49 @@ enum UploadJobPreparer {
     write(handle, "--\(boundary)--\r\n")
     let bytes = (try? handle.offset()).map(Int64.init(clamping:)) ?? 0
     return UploadPreparedBody(name: photoName, bytes: bytes)
+  }
+
+  static func buildBody(
+    forFileAt sourceURL: URL,
+    filename: String,
+    mimeType: String,
+    directory: String?,
+    boundary: String,
+    to destinationURL: URL
+  ) throws -> UploadPreparedBody {
+    FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
+    let destination = try FileHandle(forWritingTo: destinationURL)
+    defer { try? destination.close() }
+
+    if let directory, !directory.isEmpty {
+      write(
+        destination,
+        "--\(boundary)\r\nContent-Disposition: form-data; name=\"directory\"\r\n\r\n\(directory)\r\n"
+      )
+    }
+
+    let safeFilename = filename
+      .replacingOccurrences(of: "\r", with: "_")
+      .replacingOccurrences(of: "\n", with: "_")
+      .replacingOccurrences(of: "\"", with: "_")
+      .replacingOccurrences(of: "\\", with: "_")
+    let safeMimeType = mimeType.range(
+      of: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-/]*$",
+      options: .regularExpression
+    ) == nil ? "application/octet-stream" : mimeType
+    write(
+      destination,
+      "--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(safeFilename)\"\r\nContent-Type: \(safeMimeType)\r\n\r\n"
+    )
+
+    let source = try FileHandle(forReadingFrom: sourceURL)
+    defer { try? source.close() }
+    while let chunk = try source.read(upToCount: 1_048_576), !chunk.isEmpty {
+      destination.write(chunk)
+    }
+    write(destination, "\r\n--\(boundary)--\r\n")
+    let bytes = (try? destination.offset()).map(Int64.init(clamping:)) ?? 0
+    return UploadPreparedBody(name: safeFilename, bytes: bytes)
   }
 
   private static func partFilename(base: String, resource: PHAssetResource) -> String {

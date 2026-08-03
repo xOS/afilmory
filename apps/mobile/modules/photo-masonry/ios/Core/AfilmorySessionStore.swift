@@ -60,6 +60,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
 
   func clearSession() {
     deleteCookie()
+    ShareUploadContextStore.clear()
     let observers = lock.withLock { () -> [@Sendable (AfilmorySessionState) -> Void] in
       refreshGeneration &+= 1
       refreshTask?.cancel()
@@ -149,7 +150,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
     }
     observer(currentState)
     return AfilmorySessionObservationToken { [weak self] in
-      self?.lock.withLock {
+      _ = self?.lock.withLock {
         self?.observers.removeValue(forKey: id)
       }
     }
@@ -188,6 +189,11 @@ final class AfilmorySessionStore: @unchecked Sendable {
       refreshTask = nil
       self.state = state
       return Array(self.observers.values)
+    }
+    if let session = state.session {
+      ShareUploadContextStore.update(session: session)
+    } else if state == .signedOut {
+      ShareUploadContextStore.clear()
     }
     notify(observers, state: state)
   }

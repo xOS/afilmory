@@ -1,3 +1,5 @@
-import { StudioHomeScreen } from '@/modules/studio/StudioHomeScreen'
+import { NativePageView } from '@/native/NativePageView'
 
-export default StudioHomeScreen
+export default function StudioScreen() {
+  return <NativePageView page="studio-home" />
+}

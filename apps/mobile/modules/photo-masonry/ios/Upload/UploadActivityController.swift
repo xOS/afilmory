@@ -11,8 +11,9 @@ final class UploadActivityController {
   private init() {
     // Activities orphaned by a previous process (crash, force quit mid-queue)
     // otherwise linger on the lock screen until their system timeout.
+    let orphanedActivities = Activity<UploadActivityAttributes>.activities
     Task {
-      for orphan in Activity<UploadActivityAttributes>.activities {
+      for orphan in orphanedActivities {
         await orphan.end(nil, dismissalPolicy: .immediate)
       }
     }

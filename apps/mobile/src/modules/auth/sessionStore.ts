@@ -124,3 +124,22 @@ export async function switchWorkspace(tenantId: string): Promise<void> {
   }
   setSignedIn(session, cookie)
 }
+
+export async function synchronizeWorkspaceFromNative(slug: string): Promise<void> {
+  setActiveWorkspace(slug)
+  const cookie = getAuthClient().getCookie()
+  if (!cookie) {
+    return
+  }
+
+  try {
+    const session = await fetchSession(cookie)
+    if (session) {
+      setSignedIn(session, cookie)
+    }
+  }
+  catch {
+    // The native session has already switched. Keep the tenant routing correct
+    // and allow the next auth hydration to refresh the JS session snapshot.
+  }
+}

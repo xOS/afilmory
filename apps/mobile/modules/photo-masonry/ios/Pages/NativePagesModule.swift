@@ -5,7 +5,7 @@ public final class NativePagesModule: Module {
     Name("NativePages")
 
     View(PageControllerHostView.self) {
-      Events("onRequestSignIn")
+      Events("onAuthChange", "onNavigate", "onRequestSignIn")
 
       Prop("page") { (view: PageControllerHostView, page: String) in
         view.setPage(page)
