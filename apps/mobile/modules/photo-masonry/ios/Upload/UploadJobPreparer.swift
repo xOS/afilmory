@@ -2,18 +2,26 @@ import Foundation
 import ImageIO
 import Photos
 import UIKit
-import UniformTypeIdentifiers
 
 enum UploadPrepareError: LocalizedError {
   case assetUnavailable
+  case mismatchedLivePhotoResources
   case resourceUnreadable(String)
+  case stagedAssetEmpty
+  case unsupportedLivePhotoResources
 
   var errorDescription: String? {
     switch self {
     case .assetUnavailable:
       return "The photo is no longer available in the photo library."
+    case .mismatchedLivePhotoResources:
+      return "The Live Photo image and video must have the same base filename."
     case .resourceUnreadable(let message):
       return message
+    case .stagedAssetEmpty:
+      return "The staged upload does not contain a photo."
+    case .unsupportedLivePhotoResources:
+      return "The Live Photo does not contain a HEIC still and MOV paired video."
     }
   }
 }
@@ -70,15 +78,38 @@ enum UploadJobPreparer {
     to url: URL
   ) throws -> UploadPreparedBody {
     let resources = PHAssetResource.assetResources(for: asset)
-    guard let photo = resources.first(where: { $0.type == .fullSizePhoto })
-      ?? resources.first(where: { $0.type == .photo })
-    else {
-      throw UploadPrepareError.assetUnavailable
+    let isLivePhoto = asset.mediaSubtypes.contains(.photoLive)
+    let photo: PHAssetResource
+    let video: PHAssetResource?
+    if isLivePhoto {
+      let originalPhoto = resources.first(where: {
+        $0.type == .photo && resourceExtension($0) == "heic"
+      })
+      let renderedPhoto = resources.first(where: {
+        $0.type == .fullSizePhoto && resourceExtension($0) == "heic"
+      })
+      let originalVideo = resources.first(where: {
+        $0.type == .pairedVideo && resourceExtension($0) == "mov"
+      })
+      let renderedVideo = resources.first(where: {
+        $0.type == .fullSizePairedVideo && resourceExtension($0) == "mov"
+      })
+      guard let livePhoto = originalPhoto ?? renderedPhoto,
+            let pairedVideo = originalVideo ?? renderedVideo
+      else {
+        throw UploadPrepareError.unsupportedLivePhotoResources
+      }
+      photo = livePhoto
+      video = pairedVideo
+    } else {
+      guard let still = resources.first(where: { $0.type == .fullSizePhoto })
+        ?? resources.first(where: { $0.type == .photo })
+      else {
+        throw UploadPrepareError.assetUnavailable
+      }
+      photo = still
+      video = nil
     }
-    let video = asset.mediaSubtypes.contains(.photoLive)
-      ? resources.first(where: { $0.type == .fullSizePairedVideo })
-        ?? resources.first(where: { $0.type == .pairedVideo })
-      : nil
 
     // The server pairs a Live Photo's video to its still by shared base name
     // within one request, and every edited asset exposes "FullSizeRender.*",
@@ -111,13 +142,14 @@ enum UploadJobPreparer {
   }
 
   static func buildBody(
-    forFileAt sourceURL: URL,
-    filename: String,
-    mimeType: String,
+    forFiles files: [UploadStagedFile],
     directory: String?,
     boundary: String,
     to destinationURL: URL
   ) throws -> UploadPreparedBody {
+    guard let firstFile = files.first else {
+      throw UploadPrepareError.stagedAssetEmpty
+    }
     FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
     let destination = try FileHandle(forWritingTo: destinationURL)
     defer { try? destination.close() }
@@ -129,41 +161,28 @@ enum UploadJobPreparer {
       )
     }
 
-    let safeFilename = filename
-      .replacingOccurrences(of: "\r", with: "_")
-      .replacingOccurrences(of: "\n", with: "_")
-      .replacingOccurrences(of: "\"", with: "_")
-      .replacingOccurrences(of: "\\", with: "_")
-    let safeMimeType = mimeType.range(
-      of: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-/]*$",
-      options: .regularExpression
-    ) == nil ? "application/octet-stream" : mimeType
-    write(
-      destination,
-      "--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(safeFilename)\"\r\nContent-Type: \(safeMimeType)\r\n\r\n"
-    )
-
-    let source = try FileHandle(forReadingFrom: sourceURL)
-    defer { try? source.close() }
-    while let chunk = try source.read(upToCount: 1_048_576), !chunk.isEmpty {
-      destination.write(chunk)
+    for file in files {
+      try appendFilePart(destination, boundary: boundary, file: file)
     }
-    write(destination, "\r\n--\(boundary)--\r\n")
+    write(destination, "--\(boundary)--\r\n")
     let bytes = (try? destination.offset()).map(Int64.init(clamping:)) ?? 0
-    return UploadPreparedBody(name: safeFilename, bytes: bytes)
+    return UploadPreparedBody(name: safeFilename(firstFile.name), bytes: bytes)
   }
 
   private static func partFilename(base: String, resource: PHAssetResource) -> String {
-    let ext = (resource.originalFilename as NSString).pathExtension
-    if !ext.isEmpty {
-      return "\(base).\(ext.lowercased())"
+    "\(base).\(resourceExtension(resource))"
+  }
+
+  private static func resourceExtension(_ resource: PHAssetResource) -> String {
+    let originalExtension = (resource.originalFilename as NSString).pathExtension
+    if !originalExtension.isEmpty {
+      return originalExtension.lowercased()
     }
-    let fallback = UTType(resource.uniformTypeIdentifier)?.preferredFilenameExtension ?? "bin"
-    return "\(base).\(fallback)"
+    return resource.contentType.preferredFilenameExtension ?? "bin"
   }
 
   private static func mimeType(for resource: PHAssetResource) -> String {
-    UTType(resource.uniformTypeIdentifier)?.preferredMIMEType ?? "application/octet-stream"
+    resource.contentType.preferredMIMEType ?? "application/octet-stream"
   }
 
   private static func write(_ handle: FileHandle, _ text: String) {
@@ -195,5 +214,39 @@ enum UploadJobPreparer {
       throw UploadPrepareError.resourceUnreadable(failure.localizedDescription)
     }
     write(handle, "\r\n")
+  }
+
+  private static func appendFilePart(
+    _ handle: FileHandle,
+    boundary: String,
+    file: UploadStagedFile
+  ) throws {
+    let filename = safeFilename(file.name)
+    let mimeType = safeMimeType(file.mimeType)
+    write(
+      handle,
+      "--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(filename)\"\r\nContent-Type: \(mimeType)\r\n\r\n"
+    )
+    let source = try FileHandle(forReadingFrom: file.url)
+    defer { try? source.close() }
+    while let chunk = try source.read(upToCount: 1_048_576), !chunk.isEmpty {
+      handle.write(chunk)
+    }
+    write(handle, "\r\n")
+  }
+
+  private static func safeFilename(_ filename: String) -> String {
+    filename
+      .replacingOccurrences(of: "\r", with: "_")
+      .replacingOccurrences(of: "\n", with: "_")
+      .replacingOccurrences(of: "\"", with: "_")
+      .replacingOccurrences(of: "\\", with: "_")
+  }
+
+  private static func safeMimeType(_ mimeType: String) -> String {
+    mimeType.range(
+      of: "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-/]*$",
+      options: .regularExpression
+    ) == nil ? "application/octet-stream" : mimeType
   }
 }

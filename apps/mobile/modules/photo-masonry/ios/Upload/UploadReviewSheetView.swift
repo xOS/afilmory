@@ -72,7 +72,7 @@ struct UploadReviewSheetView: View {
 
       HStack(spacing: 12) {
         Button(localization.cancel) { onFinish(.cancel) }
-          .buttonStyle(.bordered)
+          .buttonStyle(.glass)
           .controlSize(.large)
 
         Button {
@@ -80,7 +80,7 @@ struct UploadReviewSheetView: View {
         } label: {
           Text(localization.start(count: items.count)).frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.glassProminent)
         .controlSize(.large)
         .disabled(items.isEmpty)
       }

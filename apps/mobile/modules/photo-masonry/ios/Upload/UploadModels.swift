@@ -20,10 +20,43 @@ struct UploadServerLogLine: Codable, Hashable {
 }
 
 struct UploadStagedFile {
-  let id: String
   let url: URL
   let name: String
   let mimeType: String
+}
+
+struct UploadStagedAsset {
+  let id: String
+  let photo: UploadStagedFile
+  let pairedVideo: UploadStagedFile?
+
+  init(id: String, photo: UploadStagedFile, pairedVideo: UploadStagedFile? = nil) throws {
+    if let pairedVideo {
+      let photoBase = Self.normalizedBaseName(photo.name)
+      let videoBase = Self.normalizedBaseName(pairedVideo.name)
+      guard !photoBase.isEmpty, photoBase == videoBase else {
+        throw UploadPrepareError.mismatchedLivePhotoResources
+      }
+    }
+    self.id = id
+    self.photo = photo
+    self.pairedVideo = pairedVideo
+  }
+
+  var files: [UploadStagedFile] {
+    if let pairedVideo {
+      return [photo, pairedVideo]
+    }
+    return [photo]
+  }
+
+  private static func normalizedBaseName(_ filename: String) -> String {
+    let leaf = (filename as NSString).lastPathComponent
+    return (leaf as NSString)
+      .deletingPathExtension
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+  }
 }
 
 struct UploadJobState: Codable {

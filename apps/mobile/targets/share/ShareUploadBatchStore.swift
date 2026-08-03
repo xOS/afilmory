@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import Photos
 import UniformTypeIdentifiers
 
 actor ShareUploadBatchStore {
@@ -71,6 +73,15 @@ actor ShareUploadBatchStore {
   }
 
   func stage(_ provider: NSItemProvider) async throws -> ShareUploadBatchItem {
+    if provider.canLoadObject(ofClass: PHLivePhoto.self)
+      || provider.hasItemConformingToTypeIdentifier(UTType.livePhoto.identifier) {
+      return try await stageLivePhoto(provider)
+    }
+
+    return try await stagePhoto(provider)
+  }
+
+  private func stagePhoto(_ provider: NSItemProvider) async throws -> ShareUploadBatchItem {
     guard let type = preferredImageType(for: provider) else {
       throw ShareUploadError.unreadableImage
     }
@@ -81,7 +92,7 @@ actor ShareUploadBatchStore {
       fallback: "Photo-\(items.count + 1)",
       extensionName: extensionName
     )
-    let relativePath = "files/\(itemID).\(extensionName)"
+    let relativePath = "files/\(itemID)-photo.\(extensionName)"
     let destinationURL = batchURL.appendingPathComponent(relativePath)
 
     try await copyRepresentation(
@@ -94,15 +105,74 @@ actor ShareUploadBatchStore {
     let previewURL = batchURL.appendingPathComponent(previewRelativePath)
     ShareThumbnailGenerator.write(sourceURL: destinationURL, destinationURL: previewURL)
     let bytes = ((try? destinationURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-    let item = ShareUploadBatchItem(
-      id: itemID,
+    let resource = ShareUploadBatchResource(
+      role: .photo,
       relativePath: relativePath,
-      previewRelativePath: FileManager.default.fileExists(atPath: previewURL.path)
-        ? previewRelativePath
-        : nil,
       name: sourceName,
       mimeType: type.preferredMIMEType ?? "application/octet-stream",
       bytes: Int64(bytes)
+    )
+    let item = ShareUploadBatchItem(
+      id: itemID,
+      previewRelativePath: FileManager.default.fileExists(atPath: previewURL.path) ? previewRelativePath : nil,
+      resources: [resource]
+    )
+    items.append(item)
+    try writeManifest()
+    return item
+  }
+
+  private func stageLivePhoto(_ provider: NSItemProvider) async throws -> ShareUploadBatchItem {
+    let resources: [PHAssetResource]
+    if provider.canLoadObject(ofClass: PHLivePhoto.self) {
+      let livePhoto = try await loadLivePhoto(from: provider)
+      resources = PHAssetResource.assetResources(for: livePhoto)
+    } else {
+      resources = try await resolveLivePhotoResources(from: provider)
+    }
+    return try await stageLivePhoto(resources: resources)
+  }
+
+  private func stageLivePhoto(resources: [PHAssetResource]) async throws -> ShareUploadBatchItem {
+    guard let photo = resources.first(where: {
+      $0.type == .photo && resourceExtension($0) == "heic"
+    }) ?? resources.first(where: {
+      $0.type == .fullSizePhoto && resourceExtension($0) == "heic"
+    }),
+    let pairedVideo = resources.first(where: {
+      $0.type == .pairedVideo && resourceExtension($0) == "mov"
+    }) ?? resources.first(where: {
+      $0.type == .fullSizePairedVideo && resourceExtension($0) == "mov"
+    })
+    else {
+      throw ShareUploadError.unsupportedLivePhotoResources
+    }
+
+    let original = resources.first(where: { $0.type == .photo }) ?? photo
+    let fallback = "Photo-\(items.count + 1)"
+    let baseName = normalizedBaseName(original.originalFilename, fallback: fallback)
+    let itemID = UUID().uuidString
+    let photoResource = try await stage(
+      resource: photo,
+      role: .photo,
+      baseName: baseName,
+      itemID: itemID
+    )
+    let videoResource = try await stage(
+      resource: pairedVideo,
+      role: .pairedVideo,
+      baseName: baseName,
+      itemID: itemID
+    )
+
+    let previewRelativePath = "previews/\(itemID).jpg"
+    let photoURL = batchURL.appendingPathComponent(photoResource.relativePath)
+    let previewURL = batchURL.appendingPathComponent(previewRelativePath)
+    ShareThumbnailGenerator.write(sourceURL: photoURL, destinationURL: previewURL)
+    let item = ShareUploadBatchItem(
+      id: itemID,
+      previewRelativePath: FileManager.default.fileExists(atPath: previewURL.path) ? previewRelativePath : nil,
+      resources: [photoResource, videoResource]
     )
     items.append(item)
     try writeManifest()
@@ -112,7 +182,9 @@ actor ShareUploadBatchStore {
   func remove(itemID: String) throws {
     guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
     let item = items.remove(at: index)
-    try? FileManager.default.removeItem(at: batchURL.appendingPathComponent(item.relativePath))
+    for resource in item.resources {
+      try? FileManager.default.removeItem(at: batchURL.appendingPathComponent(resource.relativePath))
+    }
     if let previewRelativePath = item.previewRelativePath {
       try? FileManager.default.removeItem(at: batchURL.appendingPathComponent(previewRelativePath))
     }
@@ -146,8 +218,20 @@ actor ShareUploadBatchStore {
 
   private func preferredImageType(for provider: NSItemProvider) -> UTType? {
     let types = provider.registeredTypeIdentifiers.compactMap(UTType.init)
-    return types.first { $0.conforms(to: .image) && $0 != .image }
+    return types.first { $0 == .heic }
+      ?? types.first {
+      $0.conforms(to: .image) && $0 != .image && $0 != .livePhoto && $0.preferredFilenameExtension != nil
+    }
       ?? types.first { $0.conforms(to: .image) }
+  }
+
+  private func normalizedBaseName(_ sourceName: String?, fallback: String) -> String {
+    let raw = sourceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let filename = (raw?.isEmpty == false ? raw : nil) ?? fallback
+    let base = (filename as NSString).deletingPathExtension
+      .replacingOccurrences(of: "/", with: "-")
+      .replacingOccurrences(of: "\\", with: "-")
+    return base.isEmpty ? fallback : base
   }
 
   private func normalizedFilename(
@@ -176,6 +260,160 @@ actor ShareUploadBatchStore {
           continuation.resume()
         } catch {
           continuation.resume(throwing: error)
+        }
+      }
+    }
+  }
+
+  private func loadLivePhoto(from provider: NSItemProvider) async throws -> PHLivePhoto {
+    try await withCheckedThrowingContinuation { continuation in
+      provider.loadObject(ofClass: PHLivePhoto.self) { object, error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else if let livePhoto = object as? PHLivePhoto {
+          continuation.resume(returning: livePhoto)
+        } else {
+          continuation.resume(throwing: ShareUploadError.incompleteLivePhoto)
+        }
+      }
+    }
+  }
+
+  private func resolveLivePhotoResources(from provider: NSItemProvider) async throws -> [PHAssetResource] {
+    guard let type = preferredLivePhotoLookupType(for: provider) else {
+      throw ShareUploadError.unreadableImage
+    }
+    let lookupURL = batchURL.appendingPathComponent(
+      ".live-photo-lookup-\(UUID().uuidString).\(type.preferredFilenameExtension ?? "img")"
+    )
+    defer { try? FileManager.default.removeItem(at: lookupURL) }
+    try await copyRepresentation(
+      provider: provider,
+      typeIdentifier: type.identifier,
+      destinationURL: lookupURL
+    )
+    guard let signature = livePhotoSignature(at: lookupURL) else {
+      throw ShareUploadError.livePhotoNotFound
+    }
+
+    let authorization = await photoLibraryAuthorizationStatus()
+    guard authorization == .authorized || authorization == .limited else {
+      throw ShareUploadError.photoLibraryAccessDenied
+    }
+
+    let fetchResult = PHAsset.fetchAssets(with: .image, options: nil)
+    var preferredAssets: [PHAsset] = []
+    var remainingAssets: [PHAsset] = []
+    for index in 0..<fetchResult.count {
+      let asset = fetchResult.object(at: index)
+      guard asset.mediaSubtypes.contains(.photoLive) else { continue }
+      let exactDimensions = asset.pixelWidth == signature.width && asset.pixelHeight == signature.height
+      let rotatedDimensions = asset.pixelWidth == signature.height && asset.pixelHeight == signature.width
+      if exactDimensions || rotatedDimensions {
+        preferredAssets.append(asset)
+      } else {
+        remainingAssets.append(asset)
+      }
+    }
+
+    for asset in preferredAssets + remainingAssets {
+      let resources = PHAssetResource.assetResources(for: asset)
+      let stills = resources.filter { $0.type == .photo || $0.type == .fullSizePhoto }
+      for still in stills {
+        guard let identifier = try await contentIdentifier(for: still) else { continue }
+        if identifier.caseInsensitiveCompare(signature.contentIdentifier) == .orderedSame {
+          return resources
+        }
+      }
+    }
+
+    if authorization == .limited {
+      throw ShareUploadError.photoLibraryAccessDenied
+    }
+    throw ShareUploadError.livePhotoNotFound
+  }
+
+  private func preferredLivePhotoLookupType(for provider: NSItemProvider) -> UTType? {
+    let types = provider.registeredTypeIdentifiers.compactMap(UTType.init)
+    return types.first { $0 == .heic }
+      ?? types.first {
+        $0.conforms(to: .image) && $0 != .image && $0 != .livePhoto
+      }
+  }
+
+  private func photoLibraryAuthorizationStatus() async -> PHAuthorizationStatus {
+    let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    guard current == .notDetermined else { return current }
+    return await withCheckedContinuation { continuation in
+      PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+        continuation.resume(returning: status)
+      }
+    }
+  }
+
+  private func livePhotoSignature(at url: URL) -> (contentIdentifier: String, width: Int, height: Int)? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let makerApple = properties[kCGImagePropertyMakerAppleDictionary] as? [String: Any],
+          let identifier = makerApple["17"] as? String,
+          !identifier.isEmpty,
+          let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+          let height = properties[kCGImagePropertyPixelHeight] as? NSNumber
+    else { return nil }
+    return (identifier, width.intValue, height.intValue)
+  }
+
+  private func contentIdentifier(for resource: PHAssetResource) async throws -> String? {
+    let url = batchURL.appendingPathComponent(
+      ".live-photo-candidate-\(UUID().uuidString).\(resourceExtension(resource))"
+    )
+    defer { try? FileManager.default.removeItem(at: url) }
+    try await write(resource: resource, to: url)
+    return livePhotoSignature(at: url)?.contentIdentifier
+  }
+
+  private func stage(
+    resource: PHAssetResource,
+    role: ShareUploadResourceRole,
+    baseName: String,
+    itemID: String
+  ) async throws -> ShareUploadBatchResource {
+    let extensionName = resourceExtension(resource)
+    let suffix = role == .photo ? "photo" : "video"
+    let relativePath = "files/\(itemID)-\(suffix).\(extensionName)"
+    let destinationURL = batchURL.appendingPathComponent(relativePath)
+    try await write(resource: resource, to: destinationURL)
+    let bytes = (try? destinationURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+    return ShareUploadBatchResource(
+      role: role,
+      relativePath: relativePath,
+      name: "\(baseName).\(extensionName)",
+      mimeType: resource.contentType.preferredMIMEType ?? "application/octet-stream",
+      bytes: Int64(bytes)
+    )
+  }
+
+  private func resourceExtension(_ resource: PHAssetResource) -> String {
+    let originalExtension = (resource.originalFilename as NSString).pathExtension
+    if !originalExtension.isEmpty {
+      return originalExtension.lowercased()
+    }
+    return resource.contentType.preferredFilenameExtension ?? "bin"
+  }
+
+  private func write(resource: PHAssetResource, to destinationURL: URL) async throws {
+    let options = PHAssetResourceRequestOptions()
+    options.isNetworkAccessAllowed = true
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      PHAssetResourceManager.default().writeData(
+        for: resource,
+        toFile: destinationURL,
+        options: options
+      ) { error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else {
+          continuation.resume()
         }
       }
     }

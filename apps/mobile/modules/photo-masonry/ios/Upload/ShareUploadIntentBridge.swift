@@ -8,6 +8,16 @@ private struct ShareUploadBatchManifest: Decodable {
 
 private struct ShareUploadBatchItem: Decodable {
   let id: String
+  let resources: [ShareUploadBatchResource]
+}
+
+private enum ShareUploadResourceRole: String, Decodable {
+  case photo
+  case pairedVideo
+}
+
+private struct ShareUploadBatchResource: Decodable {
+  let role: ShareUploadResourceRole
   let relativePath: String
   let name: String
   let mimeType: String
@@ -86,18 +96,19 @@ public enum ShareUploadIntentBridge {
       throw ShareUploadBridgeError.workspaceChanged
     }
 
-    let stagedFiles = try manifest.items.map { item -> UploadStagedFile in
-      let fileURL = batchURL.appendingPathComponent(item.relativePath).standardizedFileURL
-      let batchPath = batchURL.standardizedFileURL.path + "/"
-      guard fileURL.path.hasPrefix(batchPath),
-            FileManager.default.fileExists(atPath: fileURL.path)
-      else { throw ShareUploadBridgeError.invalidBatch }
-      return UploadStagedFile(
-        id: item.id,
-        url: fileURL,
-        name: item.name,
-        mimeType: item.mimeType
-      )
+    let stagedAssets = try manifest.items.map { item -> UploadStagedAsset in
+      let photos = item.resources.filter { $0.role == .photo }
+      let videos = item.resources.filter { $0.role == .pairedVideo }
+      guard photos.count == 1, videos.count <= 1 else {
+        throw ShareUploadBridgeError.invalidBatch
+      }
+      let photo = try stagedFile(for: photos[0], batchURL: batchURL)
+      let pairedVideo = try videos.first.map { try stagedFile(for: $0, batchURL: batchURL) }
+      do {
+        return try UploadStagedAsset(id: item.id, photo: photo, pairedVideo: pairedVideo)
+      } catch {
+        throw ShareUploadBridgeError.invalidBatch
+      }
     }
 
     let normalizedTags = UploadTagPath.parse(tags)
@@ -105,16 +116,32 @@ public enum ShareUploadIntentBridge {
     await MainActor.run {
       UploadActivityController.shared.setTitle(activityTitle)
     }
-    let count = try UploadCenter.shared.enqueuePreparedFiles(
+    let count = try UploadCenter.shared.enqueuePreparedAssets(
       endpoint: "\(context.tenantBaseURL)/photos/assets/upload",
       directory: UploadTagPath.directory(from: normalizedTags),
-      items: stagedFiles
+      items: stagedAssets
     )
     try? FileManager.default.removeItem(at: batchURL)
     await MainActor.run {
       UploadActivityController.shared.sync(jobs: UploadCenter.shared.currentJobs())
     }
     return count
+  }
+
+  private static func stagedFile(
+    for resource: ShareUploadBatchResource,
+    batchURL: URL
+  ) throws -> UploadStagedFile {
+    let fileURL = batchURL.appendingPathComponent(resource.relativePath).standardizedFileURL
+    let batchPath = batchURL.standardizedFileURL.path + "/"
+    guard fileURL.path.hasPrefix(batchPath),
+          FileManager.default.fileExists(atPath: fileURL.path)
+    else { throw ShareUploadBridgeError.invalidBatch }
+    return UploadStagedFile(
+      url: fileURL,
+      name: resource.name,
+      mimeType: resource.mimeType
+    )
   }
 
   private static func writeReceipt(

@@ -63,7 +63,8 @@
             "deploymentTarget": "26.0"
           }
         }
-      ]
+      ],
+      "./plugins/with-share-upload-handoff"
     ],
     "experiments": {
       "typedRoutes": true,

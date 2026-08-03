@@ -88,10 +88,10 @@ final class UploadCenter: NSObject {
     }
   }
 
-  func enqueuePreparedFiles(
+  func enqueuePreparedAssets(
     endpoint: String,
     directory: String?,
-    items: [UploadStagedFile]
+    items: [UploadStagedAsset]
   ) throws -> Int {
     var preparedJobs: [UploadJobState] = []
     var createdJobIDs: [String] = []
@@ -101,11 +101,9 @@ final class UploadCenter: NSObject {
         createdJobIDs.append(jobID)
         let boundary = "afilmory-\(UUID().uuidString)"
         let previewURL = Self.previewURL(jobID)
-        UploadJobPreparer.writePreview(forFileAt: item.url, to: previewURL)
+        UploadJobPreparer.writePreview(forFileAt: item.photo.url, to: previewURL)
         let prepared = try UploadJobPreparer.buildBody(
-          forFileAt: item.url,
-          filename: item.name.isEmpty ? "Photo" : item.name,
-          mimeType: item.mimeType,
+          forFiles: item.files,
           directory: directory,
           boundary: boundary,
           to: Self.bodyURL(jobID)

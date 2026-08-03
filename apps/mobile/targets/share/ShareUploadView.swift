@@ -1,4 +1,3 @@
-import AppIntents
 import SwiftUI
 
 struct ShareUploadView: View {
@@ -131,12 +130,7 @@ struct ShareUploadView: View {
   }
 
   private var uploadAction: some View {
-    Button(
-      intent: StartShareUploadIntent(
-        batchID: model.batchID,
-        tags: model.serializedTags
-      )
-    ) {
+    Link(destination: model.handoffURL) {
       Group {
         if model.isSubmitting {
           Label(model.localization.preparing, systemImage: "arrow.up.circle")
@@ -147,7 +141,7 @@ struct ShareUploadView: View {
       .lineLimit(1)
       .frame(maxWidth: .infinity)
     }
-    .buttonStyle(.borderedProminent)
+    .buttonStyle(.glassProminent)
     .controlSize(.large)
     .disabled(model.items.isEmpty || model.isSubmitting)
     .simultaneousGesture(

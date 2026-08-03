@@ -55,6 +55,20 @@ final class ShareUploadModel: ObservableObject {
     submissionTags.joined(separator: ",")
   }
 
+  var handoffURL: URL {
+    var components = URLComponents()
+    components.scheme = "afilmory"
+    components.path = "/share-upload"
+    components.queryItems = [
+      URLQueryItem(name: "batchID", value: batchID),
+      URLQueryItem(name: "tags", value: serializedTags),
+    ]
+    guard let url = components.url else {
+      preconditionFailure("The Share Upload handoff URL must be valid.")
+    }
+    return url
+  }
+
   func load(inputItems: [NSExtensionItem]) {
     guard phase == .idle else { return }
     guard let context = ShareUploadBatchStore.loadContext() else {

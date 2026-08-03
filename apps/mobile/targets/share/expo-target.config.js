@@ -8,5 +8,5 @@ module.exports = {
   entitlements: {
     'com.apple.security.application-groups': ['group.app.afilmory'],
   },
-  frameworks: ['AppIntents', 'ImageIO', 'SwiftUI', 'UniformTypeIdentifiers'],
+  frameworks: ['AppIntents', 'ImageIO', 'Photos', 'SwiftUI', 'UniformTypeIdentifiers'],
 }
