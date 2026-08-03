@@ -36,6 +36,7 @@ export const tenantStatusEnum = pgEnum('tenant_status', ['pending', 'active', 'i
 export const tenantDomainStatusEnum = pgEnum('tenant_domain_status', ['pending', 'verified', 'disabled'])
 export const photoSyncStatusEnum = pgEnum('photo_sync_status', ['pending', 'synced', 'conflict'])
 export const commentStatusEnum = pgEnum('comment_status', ['pending', 'approved', 'rejected', 'hidden'])
+export const apnsEnvironmentEnum = pgEnum('apns_environment', ['development', 'production'])
 export const CURRENT_PHOTO_MANIFEST_VERSION: ManifestVersion = CURRENT_MANIFEST_VERSION
 
 export type PhotoAssetConflictType = 'missing-in-storage' | 'metadata-mismatch' | 'photo-id-conflict'
@@ -156,6 +157,47 @@ export const tenantMemberships = pgTable(
       .where(sql`${t.role} = 'owner' and ${t.status} = 'active'`),
     index('idx_tenant_membership_user_status').on(t.userId, t.status),
     index('idx_tenant_membership_tenant_role_status').on(t.tenantId, t.role, t.status),
+  ],
+)
+
+export const gallerySubscriptions = pgTable(
+  'gallery_subscription',
+  {
+    id: snowflakeId,
+    subscriberUserId: text('subscriber_user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    targetTenantId: text('target_tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('uq_gallery_subscription_subscriber_target').on(t.subscriberUserId, t.targetTenantId),
+    index('idx_gallery_subscription_target').on(t.targetTenantId),
+    index('idx_gallery_subscription_subscriber_created').on(t.subscriberUserId, t.createdAt),
+  ],
+)
+
+export const apnsDevices = pgTable(
+  'apns_device',
+  {
+    id: snowflakeId,
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    deviceToken: text('device_token').notNull(),
+    environment: apnsEnvironmentEnum('environment').notNull(),
+    locale: text('locale'),
+    appVersion: text('app_version'),
+    enabled: boolean('enabled').notNull().default(true),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'string' }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('uq_apns_device_token_environment').on(t.deviceToken, t.environment),
+    index('idx_apns_device_user_enabled').on(t.userId, t.enabled),
   ],
 )
 
@@ -504,6 +546,8 @@ export const dbSchema = {
   tenantDomains,
   authUsers,
   tenantMemberships,
+  gallerySubscriptions,
+  apnsDevices,
   authSessions,
   authAccounts,
   authVerifications,

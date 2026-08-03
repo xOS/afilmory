@@ -12,7 +12,9 @@ final class GalleryCardCell: UICollectionViewCell {
   private let nameLabel = UILabel()
   private let descriptionLabel = UILabel()
   private let photoCountLabel = UILabel()
+  private let subscriptionButton = UIButton(type: .system)
   private var tagLabels: [InsetLabel] = []
+  private var onSubscriptionToggle: (() -> Void)?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -50,6 +52,14 @@ final class GalleryCardCell: UICollectionViewCell {
     photoCountLabel.textColor = .tertiaryLabel
     photoCountLabel.numberOfLines = 1
     contentView.addSubview(photoCountLabel)
+
+    subscriptionButton.addAction(
+      UIAction { [weak self] _ in self?.onSubscriptionToggle?() },
+      for: .touchUpInside
+    )
+    subscriptionButton.titleLabel?.numberOfLines = 1
+    subscriptionButton.titleLabel?.lineBreakMode = .byTruncatingTail
+    contentView.addSubview(subscriptionButton)
 
     addInteraction(UIPointerInteraction(delegate: self))
   }
@@ -90,8 +100,28 @@ final class GalleryCardCell: UICollectionViewCell {
     avatarFallback.layer.cornerRadius = avatarSize / 2
     avatarFallback.clipsToBounds = true
 
+    let buttonWidth: CGFloat
+    if subscriptionButton.isHidden {
+      buttonWidth = 0
+    } else {
+      let fittingWidth = subscriptionButton.sizeThatFits(
+        CGSize(width: 240, height: avatarSize)
+      ).width
+      let maximumButtonWidth = min(160, width * 0.44)
+      buttonWidth = min(maximumButtonWidth, max(76, ceil(fittingWidth)))
+      subscriptionButton.frame = CGRect(
+        x: width - contentX - buttonWidth,
+        y: identityY + 2,
+        width: buttonWidth,
+        height: 32
+      )
+    }
+
     let textX = contentX + avatarSize + 10
-    let textWidth = max(0, width - textX - contentX)
+    let textRight = subscriptionButton.isHidden
+      ? width - contentX
+      : subscriptionButton.frame.minX - 10
+    let textWidth = max(0, textRight - textX)
     nameLabel.frame = CGRect(x: textX, y: identityY, width: textWidth, height: 20)
     descriptionLabel.frame = CGRect(x: textX, y: identityY + 21, width: textWidth, height: 17)
 
@@ -143,6 +173,11 @@ final class GalleryCardCell: UICollectionViewCell {
     nameLabel.text = nil
     descriptionLabel.text = nil
     photoCountLabel.text = nil
+    subscriptionButton.configuration = nil
+    subscriptionButton.isHidden = true
+    subscriptionButton.isEnabled = true
+    onSubscriptionToggle = nil
+    contentView.accessibilityCustomActions = nil
     tagLabels.forEach { $0.removeFromSuperview() }
     tagLabels.removeAll()
     contentView.transform = .identity
@@ -153,7 +188,12 @@ final class GalleryCardCell: UICollectionViewCell {
     gallery: FeaturedGallery,
     covers: [GalleryCoverPhoto]?,
     photoCount: String,
-    accessibilityLabel: String
+    subscriptionState: GallerySubscriptionButtonState,
+    subscribeTitle: String,
+    subscribedTitle: String,
+    unsubscribeTitle: String,
+    accessibilityLabel: String,
+    onSubscriptionToggle: @escaping () -> Void
   ) {
     contentView.isAccessibilityElement = true
     contentView.accessibilityLabel = accessibilityLabel
@@ -162,6 +202,13 @@ final class GalleryCardCell: UICollectionViewCell {
     descriptionLabel.text = gallery.description
     descriptionLabel.isHidden = gallery.description?.trimmingToNil == nil
     photoCountLabel.text = photoCount
+    self.onSubscriptionToggle = onSubscriptionToggle
+    configureSubscriptionButton(
+      state: subscriptionState,
+      subscribeTitle: subscribeTitle,
+      subscribedTitle: subscribedTitle,
+      unsubscribeTitle: unsubscribeTitle
+    )
 
     let avatarName = gallery.author?.name ?? gallery.name
     avatarFallback.text = avatarName.first.map { String($0).uppercased() }
@@ -203,6 +250,64 @@ final class GalleryCardCell: UICollectionViewCell {
       return label
     }
     setNeedsLayout()
+  }
+
+  private func configureSubscriptionButton(
+    state: GallerySubscriptionButtonState,
+    subscribeTitle: String,
+    subscribedTitle: String,
+    unsubscribeTitle: String
+  ) {
+    guard state != .hidden else {
+      subscriptionButton.isHidden = true
+      contentView.accessibilityCustomActions = nil
+      return
+    }
+
+    let isSubscribed: Bool
+    let isUpdating: Bool
+    switch state {
+    case .hidden:
+      return
+    case .subscribe:
+      isSubscribed = false
+      isUpdating = false
+    case .subscribed:
+      isSubscribed = true
+      isUpdating = false
+    case .updating(let target):
+      isSubscribed = target
+      isUpdating = true
+    }
+
+    var configuration: UIButton.Configuration = isSubscribed ? .gray() : .filled()
+    configuration.buttonSize = .small
+    configuration.cornerStyle = .capsule
+
+    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 16.0, weight: .regular, scale: .medium)
+
+    configuration.image = UIImage(systemName: isSubscribed ? "checkmark" : "plus", withConfiguration: symbolConfig)
+
+    configuration.imagePadding = 5
+    configuration.showsActivityIndicator = isUpdating
+    configuration.title = isSubscribed ? subscribedTitle : subscribeTitle
+    configuration.titleLineBreakMode = .byTruncatingTail
+    subscriptionButton.configuration = configuration
+    subscriptionButton.isEnabled = !isUpdating
+    subscriptionButton.isHidden = false
+    subscriptionButton.accessibilityLabel = isSubscribed ? unsubscribeTitle : subscribeTitle
+
+    guard !isUpdating else {
+      contentView.accessibilityCustomActions = nil
+      return
+    }
+    let actionTitle = isSubscribed ? unsubscribeTitle : subscribeTitle
+    contentView.accessibilityCustomActions = [
+      UIAccessibilityCustomAction(name: actionTitle) { [weak self] _ in
+        self?.onSubscriptionToggle?()
+        return self != nil
+      },
+    ]
   }
 
   static func preferredHeight(for width: CGFloat) -> CGFloat {

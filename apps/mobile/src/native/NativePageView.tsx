@@ -22,6 +22,7 @@ type NativeAuthChangeEvent
     | { nativeEvent: { type: 'workspaceChanged', workspaceSlug: string } }
 
 interface NativePageViewProps extends ViewProps {
+  galleryRoute?: string
   page: NativePage
   onAuthChange?: (event: NativeAuthChangeEvent) => void
   onNavigate?: (event: NativeNavigationEvent) => void
@@ -30,7 +31,7 @@ interface NativePageViewProps extends ViewProps {
 
 const NativePageHost = requireNativeView<NativePageViewProps>('NativePages')
 
-export function NativePageView({ page }: { page: NativePage }) {
+export function NativePageView({ galleryRoute, page }: { galleryRoute?: string, page: NativePage }) {
   const router = useRouter()
   const navigate = useCallback((event: NativeNavigationEvent) => router.push(event.nativeEvent.path), [router])
   const handleAuthChange = useCallback((event: NativeAuthChangeEvent) => {
@@ -43,6 +44,7 @@ export function NativePageView({ page }: { page: NativePage }) {
 
   return (
     <NativePageHost
+      galleryRoute={galleryRoute}
       page={page}
       style={styles.root}
       onAuthChange={handleAuthChange}

@@ -41,6 +41,20 @@ final class AfilmoryAPI: @unchecked Sendable {
   }
 
   func request<Response: Decodable>(_ endpoint: APIEndpoint) async throws -> Response {
+    try await request(endpoint, sessionSnapshot: nil)
+  }
+
+  func request<Response: Decodable>(
+    _ endpoint: APIEndpoint,
+    using sessionSnapshot: AfilmorySessionSnapshot
+  ) async throws -> Response {
+    try await request(endpoint, sessionSnapshot: sessionSnapshot)
+  }
+
+  private func request<Response: Decodable>(
+    _ endpoint: APIEndpoint,
+    sessionSnapshot: AfilmorySessionSnapshot?
+  ) async throws -> Response {
     let attempts: Int
     let retryDelay: TimeInterval
     switch endpoint.retryPolicy {
@@ -55,7 +69,7 @@ final class AfilmoryAPI: @unchecked Sendable {
     var latestError: APIError = .cancelled
     for attempt in 1...attempts {
       do {
-        return try await perform(endpoint)
+        return try await perform(endpoint, sessionSnapshot: sessionSnapshot)
       } catch {
         let apiError = APIError.request(error)
         latestError = apiError
@@ -72,9 +86,12 @@ final class AfilmoryAPI: @unchecked Sendable {
     throw latestError
   }
 
-  private func perform<Response: Decodable>(_ endpoint: APIEndpoint) async throws -> Response {
+  private func perform<Response: Decodable>(
+    _ endpoint: APIEndpoint,
+    sessionSnapshot: AfilmorySessionSnapshot?
+  ) async throws -> Response {
     try Task.checkCancellation()
-    let sessionSnapshot = sessionStore.current()
+    let sessionSnapshot = sessionSnapshot ?? sessionStore.current()
     let baseURL = switch endpoint.baseURL {
     case .platform:
       sessionSnapshot.platformBaseURL

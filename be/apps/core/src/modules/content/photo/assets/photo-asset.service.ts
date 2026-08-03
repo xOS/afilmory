@@ -26,7 +26,9 @@ import { BillingPlanService } from '@core/modules/platform/billing/billing-plan.
 import { BillingUsageService } from '@core/modules/platform/billing/billing-usage.service'
 import { StoragePlanService } from '@core/modules/platform/billing/storage-plan.service'
 import { ManagedStorageService } from '@core/modules/platform/managed-storage/managed-storage.service'
+import { GalleryPushQueue } from '@core/modules/platform/push-notifications/gallery-push.queue'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
+import { createLogger } from '@tsuki-hono/common'
 import { EventEmitterService } from '@tsuki-hono/event-emitter'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
@@ -73,6 +75,8 @@ declare module '@tsuki-hono/event-emitter' {
 
 @injectable()
 export class PhotoAssetService {
+  private readonly logger = createLogger('PhotoAssetService')
+
   constructor(
     private readonly eventEmitter: EventEmitterService,
     private readonly dbAccessor: DbAccessor,
@@ -83,6 +87,7 @@ export class PhotoAssetService {
     private readonly billingUsageService: BillingUsageService,
     private readonly storagePlanService: StoragePlanService,
     private readonly managedStorageService: ManagedStorageService,
+    private readonly galleryPushQueue: GalleryPushQueue,
   ) {}
 
   private async emitManifestChanged(tenantId: string): Promise<void> {
@@ -593,6 +598,9 @@ export class PhotoAssetService {
             count: processedItems.length,
             uploadSource: 'manual-upload',
           },
+        })
+        await this.galleryPushQueue.enqueueGalleryPublished(tenant.tenant.id, processedItems.length).catch((error) => {
+          this.logger.error('Failed to queue gallery update notifications', error)
         })
       }
 

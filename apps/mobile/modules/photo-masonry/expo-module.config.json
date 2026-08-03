@@ -1,11 +1,7 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": [
-      "AfilmorySessionModule",
-      "PhotoMasonryModule",
-      "NativePagesModule"
-    ],
-    "appDelegateSubscribers": ["UploadAppDelegateSubscriber"]
+    "modules": ["AfilmorySessionModule", "PhotoMasonryModule", "NativePagesModule"],
+    "appDelegateSubscribers": ["PushAppDelegateSubscriber", "UploadAppDelegateSubscriber"]
   }
 }

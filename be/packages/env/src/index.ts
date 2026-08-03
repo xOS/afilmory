@@ -32,6 +32,12 @@ export const env = createEnv({
     RESEND_API_KEY: z.string().min(1).optional(),
     RESEND_FROM: z.string().min(1).default('AFILMORY <notification@afilmory.art>'),
 
+    // Apple Push Notification service
+    APNS_TEAM_ID: z.string().min(1).optional(),
+    APNS_KEY_ID: z.string().min(1).optional(),
+    APNS_PRIVATE_KEY: z.string().min(1).optional(),
+    APNS_BUNDLE_ID: z.string().min(1).default('app.afilmory'),
+
     DEFAULT_SUPERADMIN_EMAIL: z.email().default('root@local.host'),
     DEFAULT_SUPERADMIN_USERNAME: z
       .string()

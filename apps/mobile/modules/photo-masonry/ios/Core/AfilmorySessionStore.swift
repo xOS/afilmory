@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-struct AfilmorySessionSnapshot {
+struct AfilmorySessionSnapshot: Sendable {
   let cookie: String?
   let platformBaseURL: String?
   let tenantBaseURL: String?
@@ -59,6 +59,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   func clearSession() {
+    APNsRegistrationCoordinator.unregisterCurrentDevice(using: current())
     deleteCookie()
     ShareUploadContextStore.clear()
     let observers = lock.withLock { () -> [@Sendable (AfilmorySessionState) -> Void] in
@@ -117,11 +118,13 @@ final class AfilmorySessionStore: @unchecked Sendable {
           ApiEnvironmentStore.shared.activateTenant(slug: session.activeWorkspace?.slug)
           completeRefresh(generation: generation, state: .signedIn(session))
         } else {
+          APNsRegistrationCoordinator.unregisterCurrentDevice(using: current())
           deleteCookie()
           ApiEnvironmentStore.shared.activateTenant(slug: nil)
           completeRefresh(generation: generation, state: .signedOut)
         }
       } catch APIError.unauthorized {
+        APNsRegistrationCoordinator.unregisterCurrentDevice(using: current())
         deleteCookie()
         ApiEnvironmentStore.shared.activateTenant(slug: nil)
         completeRefresh(generation: generation, state: .signedOut)

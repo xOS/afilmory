@@ -11,6 +11,8 @@ export interface FeaturedGallery {
   description: string | null
   author: GalleryAuthor | null
   photoCount: number
+  isSubscribed: boolean
+  isOwnGallery: boolean
   tags: string[]
   createdAt: string
   lastUpload: string | null

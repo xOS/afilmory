@@ -15,6 +15,7 @@
       "buildNumber": "1",
       "appleTeamId": "KAMM5N88X3",
       "entitlements": {
+        "aps-environment": "development",
         "com.apple.security.application-groups": ["group.app.afilmory"]
       },
       "config": {

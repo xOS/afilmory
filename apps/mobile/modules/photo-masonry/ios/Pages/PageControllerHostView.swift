@@ -1,12 +1,19 @@
 import ExpoModulesCore
 import UIKit
 
+struct GalleryRouteRequest: Decodable, Equatable {
+  let requestId: String
+  let slug: String
+  let title: String
+}
+
 final class PageControllerHostView: ExpoView {
   let onAuthChange = EventDispatcher()
   let onNavigate = EventDispatcher()
   let onRequestSignIn = EventDispatcher()
 
   private var page = ""
+  private var galleryRoute: GalleryRouteRequest?
   private var controller: UIViewController?
   private weak var parentController: UIViewController?
 
@@ -19,6 +26,15 @@ final class PageControllerHostView: ExpoView {
     detachController()
     self.page = page
     installControllerIfPossible()
+  }
+
+  func setGalleryRoute(_ value: String?) {
+    let route = value
+      .flatMap { $0.data(using: .utf8) }
+      .flatMap { try? JSONDecoder().decode(GalleryRouteRequest.self, from: $0) }
+    guard route != galleryRoute else { return }
+    galleryRoute = route
+    applyGalleryRouteIfPossible()
   }
 
   override func layoutSubviews() {
@@ -51,6 +67,7 @@ final class PageControllerHostView: ExpoView {
     child.didMove(toParent: parent)
     controller = child
     parentController = parent
+    applyGalleryRouteIfPossible()
     updateTabletLayout()
   }
 
@@ -85,7 +102,11 @@ final class PageControllerHostView: ExpoView {
       return PhotosHomeController(appContext: appContext, onRequestSignIn: requestSignIn)
     case "explore":
       let root = GalleriesController(appContext: appContext, onRequestSignIn: requestSignIn)
-      return UINavigationController(rootViewController: root)
+      let navigationController = UINavigationController(rootViewController: root)
+      if let galleryRoute {
+        root.openGallery(galleryRoute)
+      }
+      return navigationController
     case "map":
       return PhotoMapController(appContext: appContext, onRequestSignIn: requestSignIn)
     case "studio-library":
@@ -101,6 +122,15 @@ final class PageControllerHostView: ExpoView {
     default:
       return nil
     }
+  }
+
+  private func applyGalleryRouteIfPossible() {
+    guard page == "explore",
+          let galleryRoute,
+          let navigationController = controller as? UINavigationController,
+          let galleriesController = navigationController.viewControllers.first as? GalleriesController
+    else { return }
+    galleriesController.openGallery(galleryRoute)
   }
 
   private func enclosingViewController() -> UIViewController? {

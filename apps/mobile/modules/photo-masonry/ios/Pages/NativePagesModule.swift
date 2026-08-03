@@ -10,6 +10,10 @@ public final class NativePagesModule: Module {
       Prop("page") { (view: PageControllerHostView, page: String) in
         view.setPage(page)
       }
+
+      Prop("galleryRoute") { (view: PageControllerHostView, galleryRoute: String?) in
+        view.setGalleryRoute(galleryRoute)
+      }
     }
   }
 }

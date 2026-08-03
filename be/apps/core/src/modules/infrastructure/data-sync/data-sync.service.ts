@@ -11,6 +11,7 @@ import { PhotoStorageService } from '@core/modules/content/photo/storage/photo-s
 import { BILLING_USAGE_EVENT } from '@core/modules/platform/billing/billing.constants'
 import { BillingPlanService } from '@core/modules/platform/billing/billing-plan.service'
 import { BillingUsageService } from '@core/modules/platform/billing/billing-usage.service'
+import { GalleryPushQueue } from '@core/modules/platform/push-notifications/gallery-push.queue'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
 import { createLogger } from '@tsuki-hono/common'
 import { EventEmitterService } from '@tsuki-hono/event-emitter'
@@ -83,6 +84,7 @@ export class DataSyncService {
     private readonly photoStorageService: PhotoStorageService,
     private readonly billingPlanService: BillingPlanService,
     private readonly billingUsageService: BillingUsageService,
+    private readonly galleryPushQueue: GalleryPushQueue,
   ) {}
 
   private async emitManifestChanged(tenantId: string): Promise<void> {
@@ -199,6 +201,12 @@ export class DataSyncService {
       const mutated = actions.some((action) => action.applied)
       if (mutated) {
         await this.emitManifestChanged(tenant.tenant.id)
+      }
+      const insertedCount = actions.filter(action => action.type === 'insert' && action.applied).length
+      if (insertedCount > 0) {
+        await this.galleryPushQueue.enqueueGalleryPublished(tenant.tenant.id, insertedCount).catch(error => {
+          this.logger.error('Failed to queue gallery update notifications', error)
+        })
       }
     }
 

@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   s.dependency 'SDWebImage', '~> 5.0'
-  s.frameworks = 'ActivityKit', 'AVFoundation', 'MapKit', 'StoreKit', 'Photos', 'PhotosUI', 'UniformTypeIdentifiers'
+  s.frameworks = 'ActivityKit', 'AVFoundation', 'MapKit', 'StoreKit', 'Photos', 'PhotosUI', 'Security', 'UniformTypeIdentifiers', 'UserNotifications'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES'

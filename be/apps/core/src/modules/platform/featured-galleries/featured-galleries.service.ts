@@ -1,4 +1,12 @@
-import { authUsers, photoAssets, settings, tenantDomains, tenantMemberships, tenants } from '@afilmory/db'
+import {
+  authUsers,
+  gallerySubscriptions,
+  photoAssets,
+  settings,
+  tenantDomains,
+  tenantMemberships,
+  tenants,
+} from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { normalizeDate } from '@core/helpers/normalize.helper'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
@@ -8,7 +16,7 @@ import { injectable } from 'tsyringe'
 export class FeaturedGalleriesService {
   constructor(private readonly dbAccessor: DbAccessor) {}
 
-  async listFeaturedGalleries() {
+  async listFeaturedGalleries(userId?: string) {
     const db = this.dbAccessor.get()
 
     // Step 1: Calculate quality scores for all valid tenants with photos
@@ -108,7 +116,7 @@ export class FeaturedGalleriesService {
     const finalTenantIds = validTenants.map((t) => t.id)
 
     // Step 3: Fetch all related data in parallel
-    const [siteSettings, authors, domains, lastUpdatedRows] = await Promise.all([
+    const [siteSettings, authors, domains, lastUpdatedRows, subscriptions, ownMemberships] = await Promise.all([
       // Site settings
       db
         .select()
@@ -149,6 +157,29 @@ export class FeaturedGalleriesService {
           and(inArray(photoAssets.tenantId, finalTenantIds), inArray(photoAssets.syncStatus, ['synced', 'conflict'])),
         )
         .groupBy(photoAssets.tenantId),
+      userId
+        ? db
+            .select({ tenantId: gallerySubscriptions.targetTenantId })
+            .from(gallerySubscriptions)
+            .where(
+              and(
+                eq(gallerySubscriptions.subscriberUserId, userId),
+                inArray(gallerySubscriptions.targetTenantId, finalTenantIds),
+              ),
+            )
+        : Promise.resolve([]),
+      userId
+        ? db
+            .select({ tenantId: tenantMemberships.tenantId })
+            .from(tenantMemberships)
+            .where(
+              and(
+                eq(tenantMemberships.userId, userId),
+                eq(tenantMemberships.status, 'active'),
+                inArray(tenantMemberships.tenantId, finalTenantIds),
+              ),
+            )
+        : Promise.resolve([]),
     ])
 
     // Step 4: Fetch popular tags for top tenants (batch query)
@@ -201,6 +232,8 @@ export class FeaturedGalleriesService {
 
     const domainMap = new Map<string, string>()
     const lastUpdatedMap = new Map<string, Date | null>()
+    const subscriptionTenantIds = new Set(subscriptions.map(({ tenantId }) => tenantId))
+    const ownTenantIds = new Set(ownMemberships.map(({ tenantId }) => tenantId))
     for (const domain of domains) {
       if (!domainMap.has(domain.tenantId)) {
         domainMap.set(domain.tenantId, domain.domain)
@@ -233,6 +266,8 @@ export class FeaturedGalleriesService {
               }
             : null,
           photoCount: score?.photoCount ?? 0,
+          isSubscribed: subscriptionTenantIds.has(tenant.id),
+          isOwnGallery: ownTenantIds.has(tenant.id),
           tags,
           createdAt: normalizeDate(tenant.createdAt),
           lastUpload:

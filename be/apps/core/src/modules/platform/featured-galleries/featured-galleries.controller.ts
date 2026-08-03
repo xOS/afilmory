@@ -1,7 +1,8 @@
+import type { HttpContextAuth } from '@core/context/http-context.values'
 import { AllowPlaceholderTenant } from '@core/decorators/allow-placeholder.decorator'
 import { SkipTenantGuard } from '@core/decorators/skip-tenant.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
-import { Controller, Get } from '@tsuki-hono/common'
+import { Controller, Get, HttpContext } from '@tsuki-hono/common'
 
 import { FeaturedGalleriesService } from './featured-galleries.service'
 
@@ -14,6 +15,7 @@ export class FeaturedGalleriesController {
   @AllowPlaceholderTenant()
   @Get('/')
   async listFeaturedGalleries() {
-    return await this.featuredGalleriesService.listFeaturedGalleries()
+    const auth = HttpContext.getValue('auth') as HttpContextAuth | undefined
+    return await this.featuredGalleriesService.listFeaturedGalleries(auth?.user?.id)
   }
 }
