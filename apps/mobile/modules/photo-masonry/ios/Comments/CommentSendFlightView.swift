@@ -1,10 +1,18 @@
 import SwiftUI
 
 enum CommentFlightMath {
-  static let duration: TimeInterval = 0.36
-  static let lift: CGFloat = 8
+  static let duration: TimeInterval = 0.4
+  static let wideBubbleDuration: TimeInterval = 0.35
   static let fallbackTimeout: TimeInterval = 0.9
   static let targetSettleDelay: TimeInterval = 0.05
+
+  private static let channelSpeed: CGFloat = 2
+  private static let wideBubbleThreshold: CGFloat = 1.66
+  private static let squeezeKeyTime: CGFloat = 0.35
+  private static let squeezeScale: CGFloat = 0.88
+  private static let bubbleFadeFraction: CGFloat = 1 / 3
+  private static let textMaskFadeFraction: CGFloat = 0.3 / 0.4
+  private static let sendButtonScaleFraction: CGFloat = 0.25 / 0.4
 
   static func clampedProgress(_ progress: CGFloat) -> CGFloat {
     min(1, max(0, progress))
@@ -15,30 +23,155 @@ enum CommentFlightMath {
     return start + (end - start) * progress
   }
 
-  static func interpolatedRect(
-    from source: CGRect,
-    to target: CGRect,
-    progress: CGFloat,
-    lift: CGFloat = lift
-  ) -> CGRect {
-    let progress = clampedProgress(progress)
-    return CGRect(
-      x: interpolate(from: source.minX, to: target.minX, progress: progress),
-      y: interpolate(from: source.minY, to: target.minY, progress: progress)
-        + arcOffset(progress, lift: lift),
-      width: interpolate(from: source.width, to: target.width, progress: progress),
-      height: interpolate(from: source.height, to: target.height, progress: progress)
+  static func animationDuration(from source: CGRect, to target: CGRect) -> TimeInterval {
+    guard source.width > 0, target.width > source.width * wideBubbleThreshold else {
+      return duration
+    }
+    return wideBubbleDuration
+  }
+
+  static func horizontalPositionProgress(_ progress: CGFloat) -> CGFloat {
+    cubicBezier(
+      x1: 0.54195,
+      y1: 0,
+      x2: 0.58,
+      y2: 1,
+      progress: spedProgress(progress)
     )
   }
 
-  static func arcOffset(_ progress: CGFloat, lift: CGFloat = lift) -> CGFloat {
-    let progress = clampedProgress(progress)
-    return -4 * lift * progress * (1 - progress)
+  static func verticalPositionProgress(_ progress: CGFloat) -> CGFloat {
+    cubicBezier(
+      x1: 0.49,
+      y1: 0.0884,
+      x2: 0.4055,
+      y2: 0.9055,
+      progress: spedProgress(progress)
+    )
   }
 
-  static func shadowProgress(_ progress: CGFloat) -> CGFloat {
+  static func boundsProgress(_ progress: CGFloat) -> CGFloat {
+    cubicBezier(
+      x1: 0.542,
+      y1: 0,
+      x2: 0.58,
+      y2: 1,
+      progress: spedProgress(progress)
+    )
+  }
+
+  static func interpolatedRect(from source: CGRect, to target: CGRect, progress: CGFloat) -> CGRect {
     let progress = clampedProgress(progress)
-    return 4 * progress * (1 - progress)
+    let horizontalProgress = horizontalPositionProgress(progress)
+    let verticalProgress = verticalPositionProgress(progress)
+    let sizeProgress = boundsProgress(progress)
+    let width = interpolate(from: source.width, to: target.width, progress: sizeProgress)
+    let height = interpolate(from: source.height, to: target.height, progress: sizeProgress)
+    let trailingEdge = interpolate(from: source.maxX, to: target.maxX, progress: horizontalProgress)
+    let centerY = interpolate(from: source.midY, to: target.midY, progress: verticalProgress)
+
+    return CGRect(
+      x: trailingEdge - width,
+      y: centerY - height / 2,
+      width: width,
+      height: height
+    )
+  }
+
+  static func bubbleScale(_ progress: CGFloat) -> CGFloat {
+    let progress = clampedProgress(progress)
+    if progress <= squeezeKeyTime {
+      let segmentProgress = progress / squeezeKeyTime
+      let eased = cubicBezier(
+        x1: 0.66,
+        y1: 0,
+        x2: 1,
+        y2: 1,
+        progress: segmentProgress
+      )
+      return interpolate(from: 1, to: squeezeScale, progress: eased)
+    }
+
+    let segmentProgress = (progress - squeezeKeyTime) / (1 - squeezeKeyTime)
+    let eased = cubicBezier(
+      x1: 0,
+      y1: 0,
+      x2: 0.6227,
+      y2: 0.9299,
+      progress: segmentProgress
+    )
+    return interpolate(from: squeezeScale, to: 1, progress: eased)
+  }
+
+  static func bubbleOpacity(_ progress: CGFloat) -> CGFloat {
+    clampedProgress(progress / bubbleFadeFraction)
+  }
+
+  static func whiteTextMaskOpacity(_ progress: CGFloat) -> CGFloat {
+    let fadeProgress = clampedProgress(progress / textMaskFadeFraction)
+    return 1 - cubicBezier(
+      x1: 0.5,
+      y1: 0,
+      x2: 0.5,
+      y2: 1,
+      progress: fadeProgress
+    )
+  }
+
+  static func sendButtonScale(_ progress: CGFloat) -> CGFloat {
+    let scaleProgress = clampedProgress(progress / sendButtonScaleFraction)
+    return 1 - cubicBezier(
+      x1: 0.42,
+      y1: 0,
+      x2: 0.58,
+      y2: 1,
+      progress: scaleProgress
+    )
+  }
+
+  private static func spedProgress(_ progress: CGFloat) -> CGFloat {
+    clampedProgress(progress * channelSpeed)
+  }
+
+  private static func cubicBezier(
+    x1: CGFloat,
+    y1: CGFloat,
+    x2: CGFloat,
+    y2: CGFloat,
+    progress: CGFloat
+  ) -> CGFloat {
+    let progress = clampedProgress(progress)
+    guard progress > 0, progress < 1 else { return progress }
+
+    var lower: CGFloat = 0
+    var upper: CGFloat = 1
+    var parameter = progress
+
+    for _ in 0..<20 {
+      let estimatedX = cubicCoordinate(parameter, control1: x1, control2: x2)
+      if abs(estimatedX - progress) < 0.000_001 {
+        break
+      }
+      if estimatedX < progress {
+        lower = parameter
+      } else {
+        upper = parameter
+      }
+      parameter = (lower + upper) / 2
+    }
+
+    return cubicCoordinate(parameter, control1: y1, control2: y2)
+  }
+
+  private static func cubicCoordinate(
+    _ parameter: CGFloat,
+    control1: CGFloat,
+    control2: CGFloat
+  ) -> CGFloat {
+    let inverse = 1 - parameter
+    return 3 * inverse * inverse * parameter * control1
+      + 3 * inverse * parameter * parameter * control2
+      + parameter * parameter * parameter
   }
 
   static func isValidLandingTarget(from source: CGRect, to target: CGRect) -> Bool {
@@ -123,52 +256,67 @@ private struct CommentFlightSurface: View, Animatable {
       to: target,
       progress: progress
     )
-    let shape = CommentFlightBubbleShape(progress: progress)
+    let boundsProgress = CommentFlightMath.boundsProgress(progress)
+    let shape = CommentFlightBubbleShape(progress: boundsProgress)
     let leadingInset = CommentFlightMath.interpolate(
       from: CommentComposerMetrics.sourceLeadingInset,
       to: CommentBubbleMetrics.horizontalInset,
-      progress: progress
+      progress: boundsProgress
     )
     let trailingInset = CommentFlightMath.interpolate(
       from: CommentComposerMetrics.sourceTrailingInset,
       to: CommentBubbleMetrics.horizontalInset,
-      progress: progress
+      progress: boundsProgress
     )
     let verticalInset = CommentFlightMath.interpolate(
       from: CommentComposerMetrics.sourceVerticalInset,
       to: CommentBubbleMetrics.verticalInset,
-      progress: progress
+      progress: boundsProgress
     )
     let contentWidth = max(1, rect.width - leadingInset - trailingInset)
     let contentHeight = max(1, rect.height - verticalInset * 2)
-    let detachedProgress = min(1, progress * 4)
-    let shadowProgress = CommentFlightMath.shadowProgress(progress)
+    let bubbleOpacity = CommentFlightMath.bubbleOpacity(progress)
+    let sourceOpacity = 1 - bubbleOpacity
+    let whiteTextMaskOpacity = CommentFlightMath.whiteTextMaskOpacity(progress)
+    let sendButtonScale = CommentFlightMath.sendButtonScale(progress)
+    let bubbleScale = CommentFlightMath.bubbleScale(progress)
 
     ZStack(alignment: .topLeading) {
-      shape.fill(Color(.secondarySystemFill)).opacity(detachedProgress)
-      shape.fill(Color.accentColor).opacity(progress)
-      shape.strokeBorder(
-        Color(.separator).opacity(detachedProgress * (1 - progress)),
-        lineWidth: 1 / displayScale
-      )
-
       ZStack(alignment: .topLeading) {
+        shape.fill(Color(.secondarySystemFill)).opacity(sourceOpacity)
+        shape.fill(Color.accentColor).opacity(bubbleOpacity)
+        shape.strokeBorder(
+          Color(.separator).opacity(sourceOpacity),
+          lineWidth: 1 / displayScale
+        )
+
         Text(content)
           .font(.system(size: CommentComposerMetrics.textSize))
           .foregroundStyle(.primary)
           .lineLimit(5)
-          .opacity(1 - progress)
+          .opacity(whiteTextMaskOpacity)
+          .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
+          .position(
+            x: leadingInset + contentWidth / 2,
+            y: verticalInset + contentHeight / 2
+          )
+          .clipped()
 
+        // CommentBubbleSurface centers short content inside its minimum height.
+        // Match that layout here so the overlay-to-cell handoff is pixel-stable.
         CommentBubbleText(content, own: true)
           .lineLimit(5)
-          .opacity(progress)
+          .opacity(bubbleOpacity)
+          .frame(width: contentWidth, height: contentHeight, alignment: .leading)
+          .position(
+            x: leadingInset + contentWidth / 2,
+            y: verticalInset + contentHeight / 2
+          )
+          .clipped()
       }
-      .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
-      .position(
-        x: leadingInset + contentWidth / 2,
-        y: verticalInset + contentHeight / 2
-      )
-      .clipped()
+      .frame(width: rect.width, height: rect.height)
+      .clipShape(shape)
+      .scaleEffect(bubbleScale, anchor: .trailing)
 
       ZStack {
         Circle().fill(Color.accentColor)
@@ -186,16 +334,9 @@ private struct CommentFlightSurface: View, Animatable {
         y: rect.height - CommentComposerMetrics.chromeInset
           - CommentComposerMetrics.sendButtonSize / 2
       )
-      .opacity(max(0, 1 - progress * 4))
+      .scaleEffect(sendButtonScale)
     }
     .frame(width: rect.width, height: rect.height)
-    .clipShape(shape)
-    .shadow(
-      color: Color.accentColor.opacity(0.22 * shadowProgress),
-      radius: 16 * shadowProgress,
-      x: 0,
-      y: 7 * shadowProgress
-    )
     .position(x: rect.midX, y: rect.midY)
   }
 }
@@ -276,8 +417,9 @@ struct CommentSendFlightOverlay: View {
     lockedTarget = target
     started = true
     store.lockFlight(clientId)
+    let duration = CommentFlightMath.animationDuration(from: currentFlight.origin, to: target)
     withAnimation(
-      .timingCurve(0.2, 0.78, 0.2, 1, duration: CommentFlightMath.duration),
+      .linear(duration: duration),
       completionCriteria: .logicallyComplete
     ) {
       progress = 1
