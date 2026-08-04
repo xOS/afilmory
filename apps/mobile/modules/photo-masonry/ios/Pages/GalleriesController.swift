@@ -189,6 +189,10 @@ final class GalleriesController: UIViewController {
     refreshNotificationPermissionState()
   }
 
+  @objc private func requestSignIn() {
+    onRequestSignIn()
+  }
+
   private func loadGalleries(force: Bool = false) {
     if loadTask != nil, !force { return }
     loadTask?.cancel()
@@ -287,6 +291,7 @@ final class GalleriesController: UIViewController {
   }
 
   private func handleSession(_ state: AfilmorySessionState) {
+    updateSignInAction(for: state)
     switch state {
     case .loading, .failed:
       return
@@ -309,6 +314,21 @@ final class GalleriesController: UIViewController {
       }
       refreshNotificationPresentation()
     }
+  }
+
+  private func updateSignInAction(for state: AfilmorySessionState) {
+    guard case .signedOut = state else {
+      navigationItem.rightBarButtonItem = nil
+      return
+    }
+    let item = UIBarButtonItem(
+      title: localization.value("common.signIn"),
+      style: .plain,
+      target: self,
+      action: #selector(requestSignIn)
+    )
+    item.accessibilityIdentifier = "explore.signIn"
+    navigationItem.rightBarButtonItem = item
   }
 
   private func cancelSubscriptionMutations() {
