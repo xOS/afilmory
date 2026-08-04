@@ -5,6 +5,7 @@ final class PhotoFilterViewModel: ObservableObject {
   static let noDate = "none"
   static let customDate = "custom"
 
+  @Published var query: String
   @Published var tags: Set<String>
   @Published var tagMode: String
   @Published var dateSelection: String
@@ -19,6 +20,7 @@ final class PhotoFilterViewModel: ObservableObject {
 
   init(request: PhotoFilterSheetRequest) {
     let filters = request.filters
+    query = filters.query
     tags = Set(filters.tags)
     tagMode = filters.tagMode
     if let datePreset = filters.datePreset {
@@ -38,7 +40,8 @@ final class PhotoFilterViewModel: ObservableObject {
   }
 
   var hasActiveFilters: Bool {
-    !tags.isEmpty
+    !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !tags.isEmpty
       || dateSelection != Self.noDate
       || !cameras.isEmpty
       || !lenses.isEmpty
@@ -58,6 +61,7 @@ final class PhotoFilterViewModel: ObservableObject {
   }
 
   func reset() {
+    query = ""
     tags = []
     tagMode = "any"
     dateSelection = Self.noDate
@@ -70,6 +74,7 @@ final class PhotoFilterViewModel: ObservableObject {
 
   func makeRecord() -> PhotoFiltersRecord {
     var record = PhotoFiltersRecord()
+    record.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
     record.tags = tags.sorted()
     record.tagMode = tagMode
     record.cameras = cameras.sorted()

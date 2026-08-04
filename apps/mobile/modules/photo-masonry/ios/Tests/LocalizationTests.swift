@@ -29,4 +29,14 @@ final class LocalizationTests: XCTestCase {
     XCTAssertEqual(PluralRule.category(language: .korean, count: 1), .other)
     XCTAssertEqual(PluralRule.category(language: .english, count: 1), .one)
   }
+
+  func testSearchAndDirectoryCopyIsAvailableToNativeScreens() {
+    let english = Localization(language: .english)
+    let simplifiedChinese = Localization(language: .simplifiedChinese)
+
+    XCTAssertEqual(english.value("gallery.query.results", count: 2), "2 matching photos")
+    XCTAssertEqual(english.value("explore.search.placeholder"), "Search galleries")
+    XCTAssertEqual(simplifiedChinese.value("action.search.unified.title"), "搜索和筛选")
+    XCTAssertEqual(simplifiedChinese.value("gallery.query.clearAll"), "清除搜索和筛选")
+  }
 }

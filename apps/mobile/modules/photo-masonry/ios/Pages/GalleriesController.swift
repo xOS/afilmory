@@ -63,6 +63,7 @@ final class GalleriesController: UIViewController {
   private let layout = UICollectionViewFlowLayout()
   private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
   private let refreshControl = UIRefreshControl()
+  private let searchController = UISearchController(searchResultsController: nil)
   private var galleries: [FeaturedGallery] = []
   private var coverCache: [String: [GalleryCoverPhoto]] = [:]
   private var coverTasks: [String: Task<Void, Never>] = [:]
@@ -74,6 +75,8 @@ final class GalleriesController: UIViewController {
   private var sessionUserID: String?
   private var notificationPermissionTask: Task<Void, Never>?
   private var loadTask: Task<Void, Never>?
+  private var searchDebounceTask: Task<Void, Never>?
+  private var activeQuery = ""
   private var previousLayoutWidth: CGFloat = 0
   private var lastGalleryRouteRequestID: String?
 
@@ -106,6 +109,7 @@ final class GalleriesController: UIViewController {
   deinit {
     NotificationCenter.default.removeObserver(self)
     loadTask?.cancel()
+    searchDebounceTask?.cancel()
     notificationPermissionTask?.cancel()
     coverTasks.values.forEach { $0.cancel() }
     subscriptionTasks.values.forEach { $0.cancel() }
@@ -130,6 +134,19 @@ final class GalleriesController: UIViewController {
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
       withReuseIdentifier: GalleryNotificationBannerView.reuseIdentifier
     )
+    collectionView.register(
+      GallerySearchSummaryView.self,
+      forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+      withReuseIdentifier: GallerySearchSummaryView.reuseIdentifier
+    )
+    searchController.searchResultsUpdater = self
+    searchController.obscuresBackgroundDuringPresentation = false
+    searchController.searchBar.placeholder = localization.value("explore.search.placeholder")
+    searchController.searchBar.autocapitalizationType = .none
+    searchController.searchBar.autocorrectionType = .no
+    navigationItem.searchController = searchController
+    navigationItem.hidesSearchBarWhenScrolling = false
+    definesPresentationContext = true
     refreshControl.addTarget(self, action: #selector(refresh), for: .valueChanged)
     collectionView.refreshControl = refreshControl
     collectionView.frame = view.bounds
@@ -178,18 +195,24 @@ final class GalleriesController: UIViewController {
     if galleries.isEmpty {
       contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
     }
+    let requestedQuery = activeQuery
     loadTask = Task { @MainActor [weak self] in
       guard let self else { return }
       do {
         let endpoint = APIEndpoint(
           baseURL: .platform,
-          path: "featured-galleries",
+          path: "gallery-directory",
+          queryItems: [
+            requestedQuery.isEmpty ? nil : URLQueryItem(name: "q", value: requestedQuery),
+            URLQueryItem(name: "limit", value: "30"),
+          ].compactMap { $0 },
           retryPolicy: .transientGET(maxAttempts: 2, delay: 0.25)
         )
         let response: FeaturedGalleriesEnvelope = try await AfilmoryAPI.shared.request(endpoint)
         try Task.checkCancellation()
+        guard requestedQuery == activeQuery else { return }
         galleries = response.galleries.map { gallery in
-          guard let pendingTarget = pendingSubscriptionTargets[gallery.id] else {
+          guard let pendingTarget = self.pendingSubscriptionTargets[gallery.id] else {
             return gallery
           }
           var gallery = gallery
@@ -366,7 +389,8 @@ final class GalleriesController: UIViewController {
   }
 
   private var notificationBannerState: GalleryNotificationBannerState {
-    resolveGalleryNotificationBannerState(
+    guard activeQuery.isEmpty else { return .hidden }
+    return resolveGalleryNotificationBannerState(
       hasSubscriptions: hasSubscriptions,
       permission: notificationPermissionState
     )
@@ -452,9 +476,7 @@ final class GalleriesController: UIViewController {
 
   private func refreshNotificationPresentation() {
     guard isViewLoaded else { return }
-    let nextHeaderHeight = notificationBannerState == .hidden
-      ? 0
-      : GalleryNotificationBannerView.preferredHeight
+    let nextHeaderHeight = headerHeight
     let correctedTopOffsetY = resolvedGalleryTopOffsetAfterHeaderTransition(
       previousHeaderHeight: layout.headerReferenceSize.height,
       nextHeaderHeight: nextHeaderHeight,
@@ -480,15 +502,24 @@ final class GalleriesController: UIViewController {
     layout.minimumInteritemSpacing = gap
     layout.minimumLineSpacing = gap
     layout.sectionInset = UIEdgeInsets(top: 12, left: horizontalPadding, bottom: 120, right: horizontalPadding)
-    layout.headerReferenceSize = notificationBannerState == .hidden
+    layout.headerReferenceSize = headerHeight == 0
       ? .zero
-      : CGSize(width: width, height: GalleryNotificationBannerView.preferredHeight)
+      : CGSize(width: width, height: headerHeight)
     layout.itemSize = CGSize(width: itemWidth, height: GalleryCardCell.preferredHeight(for: itemWidth))
     layout.invalidateLayout()
   }
 
   private func horizontalPadding(for width: CGFloat) -> CGFloat {
     width >= 1000 ? 28 : width >= 600 ? 20 : 16
+  }
+
+  private var headerHeight: CGFloat {
+    if !activeQuery.isEmpty {
+      return GallerySearchSummaryView.preferredHeight
+    }
+    return notificationBannerState == .hidden
+      ? 0
+      : GalleryNotificationBannerView.preferredHeight
   }
 
   private func errorConfiguration() -> UIContentUnavailableConfiguration {
@@ -505,6 +536,12 @@ final class GalleriesController: UIViewController {
   }
 
   private func emptyConfiguration() -> UIContentUnavailableConfiguration {
+    if !activeQuery.isEmpty {
+      var configuration = UIContentUnavailableConfiguration.search()
+      configuration.text = localization.value("explore.search.emptyTitle")
+      configuration.secondaryText = localization.value("explore.search.emptyDescription")
+      return configuration
+    }
     var configuration = UIContentUnavailableConfiguration.empty()
     configuration.image = UIImage(systemName: "rectangle.stack")
     configuration.text = localization.value("gallery.empty.title")
@@ -557,7 +594,23 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
     viewForSupplementaryElementOfKind kind: String,
     at indexPath: IndexPath
   ) -> UICollectionReusableView {
-    guard kind == UICollectionView.elementKindSectionHeader,
+    guard kind == UICollectionView.elementKindSectionHeader else {
+      return UICollectionReusableView()
+    }
+    if !activeQuery.isEmpty {
+      guard let summary = collectionView.dequeueReusableSupplementaryView(
+        ofKind: kind,
+        withReuseIdentifier: GallerySearchSummaryView.reuseIdentifier,
+        for: indexPath
+      ) as? GallerySearchSummaryView else { return UICollectionReusableView() }
+      summary.configure(
+        text: localization.value("explore.search.results", count: galleries.count),
+        horizontalInset: horizontalPadding(for: collectionView.bounds.width)
+      )
+      return summary
+    }
+
+    guard
           let banner = collectionView.dequeueReusableSupplementaryView(
             ofKind: kind,
             withReuseIdentifier: GalleryNotificationBannerView.reuseIdentifier,
@@ -607,6 +660,34 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
       ),
       animated: true
     )
+  }
+}
+
+extension GalleriesController: UISearchResultsUpdating {
+  func updateSearchResults(for searchController: UISearchController) {
+    let query = searchController.searchBar.text?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard query != activeQuery else { return }
+
+    activeQuery = query
+    searchDebounceTask?.cancel()
+    loadTask?.cancel()
+    coverTasks.values.forEach { $0.cancel() }
+    coverTasks.removeAll()
+    refreshControl.endRefreshing()
+    galleries = []
+    refreshNotificationPresentation()
+    contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
+
+    searchDebounceTask = Task { @MainActor [weak self] in
+      do {
+        if !query.isEmpty {
+          try await Task.sleep(for: .milliseconds(250))
+        }
+        guard let self, !Task.isCancelled, self.activeQuery == query else { return }
+        self.loadGalleries(force: true)
+      } catch {}
+    }
   }
 }
 

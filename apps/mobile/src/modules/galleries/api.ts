@@ -5,7 +5,7 @@ import { apiClient, getGalleryOrigin } from '@/api/client'
 import type { FeaturedGallery, GalleryCoverPhoto } from './types'
 
 export async function fetchFeaturedGalleries(signal?: AbortSignal): Promise<FeaturedGallery[]> {
-  const response = await apiClient<{ galleries: FeaturedGallery[] }>('/featured-galleries', { signal })
+  const response = await apiClient<{ galleries: FeaturedGallery[] }>('/gallery-directory', { signal })
   return response.galleries
 }
 

@@ -28,7 +28,7 @@ AFILMORY_SITE_STRICT=1 PUBLIC_API_URL=https://api.afilmory.art pnpm site:build
 
 - Hero + 主张
 - Live Demo（sticky 三章：网格 → 灯箱+EXIF → 创建空间）
-- Discover（`GET /featured-galleries`）
+- Discover（`GET /gallery-directory`）
 - 创建空间弹层（`POST /tenant/check-slug`）
 
 设计文档：`docs/superpowers/specs/2026-07-29-landing-site-redesign-design.md`

@@ -15,6 +15,7 @@ enum TagMode: String, Codable, Sendable {
 }
 
 struct PhotoFilters: Codable, Equatable, Sendable {
+  var query: String = ""
   var tags: [String] = []
   var tagMode: TagMode = .any
   var datePreset: DatePreset?
@@ -25,6 +26,53 @@ struct PhotoFilters: Codable, Equatable, Sendable {
   var minRating: Int?
 
   static let empty = PhotoFilters()
+
+  private enum CodingKeys: String, CodingKey {
+    case query
+    case tags
+    case tagMode
+    case datePreset
+    case dateFrom
+    case dateTo
+    case cameras
+    case lenses
+    case minRating
+  }
+
+  init(
+    query: String = "",
+    tags: [String] = [],
+    tagMode: TagMode = .any,
+    datePreset: DatePreset? = nil,
+    dateFrom: String? = nil,
+    dateTo: String? = nil,
+    cameras: [String] = [],
+    lenses: [String] = [],
+    minRating: Int? = nil
+  ) {
+    self.query = query
+    self.tags = tags
+    self.tagMode = tagMode
+    self.datePreset = datePreset
+    self.dateFrom = dateFrom
+    self.dateTo = dateTo
+    self.cameras = cameras
+    self.lenses = lenses
+    self.minRating = minRating
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    query = try container.decodeIfPresent(String.self, forKey: .query) ?? ""
+    tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+    tagMode = try container.decodeIfPresent(TagMode.self, forKey: .tagMode) ?? .any
+    datePreset = try container.decodeIfPresent(DatePreset.self, forKey: .datePreset)
+    dateFrom = try container.decodeIfPresent(String.self, forKey: .dateFrom)
+    dateTo = try container.decodeIfPresent(String.self, forKey: .dateTo)
+    cameras = try container.decodeIfPresent([String].self, forKey: .cameras) ?? []
+    lenses = try container.decodeIfPresent([String].self, forKey: .lenses) ?? []
+    minRating = try container.decodeIfPresent(Int.self, forKey: .minRating)
+  }
 }
 
 struct PhotoFilterOption: Codable, Equatable, Identifiable, Sendable {
@@ -42,10 +90,17 @@ struct PhotoFilterOptions: Codable, Equatable, Sendable {
 
 enum PhotoFilterEngine {
   static func apply(_ filters: PhotoFilters, to photos: [GalleryPhoto]) -> [GalleryPhoto] {
+    let queryTerms = normalized(filters.query)
+      .split(whereSeparator: \.isWhitespace)
+      .map(String.init)
     let tags = Set(filters.tags)
     let cameras = Set(filters.cameras)
     let lenses = Set(filters.lenses)
     return photos.filter { photo in
+      if !queryTerms.isEmpty {
+        let corpus = searchCorpus(photo)
+        if !queryTerms.allSatisfy(corpus.contains) { return false }
+      }
       if !filters.tags.isEmpty {
         let matches = filters.tagMode == .all
           ? filters.tags.allSatisfy(photo.tags.contains)
@@ -99,6 +154,7 @@ enum PhotoFilterEngine {
 
   static func countActiveDimensions(_ filters: PhotoFilters) -> Int {
     var count = 0
+    if !filters.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { count += 1 }
     if !filters.tags.isEmpty { count += 1 }
     if filters.dateFrom != nil || filters.dateTo != nil { count += 1 }
     if !filters.cameras.isEmpty { count += 1 }
@@ -157,6 +213,11 @@ enum PhotoFilterEngine {
 
   static func summarize(_ filters: PhotoFilters, localization: Localization) -> String {
     var parts: [String] = []
+    let query = filters.query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !query.isEmpty {
+      let shortened = query.count > 32 ? "\(query.prefix(32))…" : query
+      parts.append("“\(shortened)”")
+    }
     if filters.tags.count == 1 {
       parts.append(filters.tags[0])
     } else if filters.tags.count > 1 {
@@ -189,6 +250,31 @@ enum PhotoFilterEngine {
           ? lhs.value.compare(rhs.value, options: [], range: nil, locale: Locale(identifier: "en_US")) == .orderedAscending
           : lhs.count > rhs.count
       }
+  }
+
+  private static func searchCorpus(_ photo: GalleryPhoto) -> String {
+    normalized(
+      [
+        photo.id,
+        photo.title,
+        photo.description,
+        photo.tags.joined(separator: " "),
+        photo.camera,
+        photo.lens,
+        photo.city,
+        photo.location?.city,
+        photo.location?.country,
+        photo.location?.locationName,
+      ]
+      .compactMap { $0 }
+      .joined(separator: " ")
+    )
+  }
+
+  private static func normalized(_ value: String) -> String {
+    value
+      .folding(options: [.diacriticInsensitive, .widthInsensitive], locale: .current)
+      .lowercased()
   }
 
   private static func dateString(_ date: Date, calendar: Calendar) -> String {

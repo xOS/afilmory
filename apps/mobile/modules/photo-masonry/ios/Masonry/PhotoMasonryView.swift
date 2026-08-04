@@ -35,6 +35,9 @@ final class PhotoMasonryView: ExpoView {
   var onNativeContextMenuAction: ((String, String) -> Void)?
   var onNativeSelectionChange: (([String]) -> Void)?
   var onNativeSelectionModeChange: ((Bool) -> Void)?
+  var onNativeQueryHeaderEdit: ((UIView) -> Void)?
+  var onNativeQueryHeaderClear: (() -> Void)?
+  var onNativeQueryHeaderRemoveConstraint: ((PhotoQueryConstraint) -> Void)?
 
   var contextMenuInfoTitle = ""
   var contextMenuShareTitle = ""
@@ -109,6 +112,8 @@ final class PhotoMasonryView: ExpoView {
       updateFilterButton()
       if filterActive {
         resetDateAnchor()
+      } else {
+        showsFilterSummary = false
       }
       updateDateButton()
     }
@@ -120,6 +125,10 @@ final class PhotoMasonryView: ExpoView {
 
   var filterCount = 0 {
     didSet { updateFilterButton() }
+  }
+
+  var queryHeaderModel: PhotoQueryHeaderModel? {
+    didSet { updateQueryHeader(oldValue: oldValue) }
   }
 
   var livePhotoAccessibilityLabel = "Live Photo" {
@@ -158,6 +167,7 @@ final class PhotoMasonryView: ExpoView {
   private let controlCluster = UIVisualEffectView()
   private let profileGlass = UIVisualEffectView()
   private let filterGlass = UIVisualEffectView()
+  private let queryHeaderView = PhotoQueryHeaderView()
 
   private var columnCount = 2
   private var hasAppliedInitialColumnCount = false
@@ -175,6 +185,8 @@ final class PhotoMasonryView: ExpoView {
   private var showsDateAnchor = false
   private var dateIdleTimer: Timer?
   private var lastUserScrollAt: CFTimeInterval = 0
+  private var queryHeaderHeight: CGFloat = 0
+  private var showsFilterSummary = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -197,6 +209,16 @@ final class PhotoMasonryView: ExpoView {
     interaction.edge = .top
     overlayView.addInteraction(interaction)
     collectionView.register(PhotoCell.self, forCellWithReuseIdentifier: PhotoCell.reuseIdentifier)
+    collectionView.addSubview(queryHeaderView)
+    queryHeaderView.isHidden = true
+    queryHeaderView.onEdit = { [weak self, weak queryHeaderView] in
+      guard let self, let queryHeaderView else { return }
+      self.onNativeQueryHeaderEdit?(queryHeaderView)
+    }
+    queryHeaderView.onClear = { [weak self] in self?.onNativeQueryHeaderClear?() }
+    queryHeaderView.onRemoveConstraint = { [weak self] constraint in
+      self?.onNativeQueryHeaderRemoveConstraint?(constraint)
+    }
 
     refreshControl.tintColor = .white
     refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
@@ -217,6 +239,7 @@ final class PhotoMasonryView: ExpoView {
     let anchor = widthChanged ? captureViewportAnchor() : nil
     collectionView.frame = bounds
     overlayView.frame = bounds
+    layoutQueryHeader()
     applyInitialColumnCountIfNeeded()
     if widthChanged {
       applyPreferredItemWidth(for: bounds.width)
@@ -446,7 +469,9 @@ final class PhotoMasonryView: ExpoView {
   }
 
   private func isShowingDatePill() -> Bool {
-    if filterActive { return true }
+    if filterActive {
+      return queryHeaderHeight == 0 || showsFilterSummary
+    }
     return showsDateAnchor && !chromeDateLabel.isEmpty
   }
 
@@ -591,7 +616,7 @@ final class PhotoMasonryView: ExpoView {
   private func updateFilterButton() {
     var configuration = makeControlConfiguration()
     configuration.contentInsets = .zero
-    configuration.image = UIImage(systemName: "line.3.horizontal.decrease")
+    configuration.image = UIImage(systemName: "magnifyingglass")
     configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
     if filterActive {
       configuration.baseForegroundColor = .systemBlue
@@ -603,6 +628,67 @@ final class PhotoMasonryView: ExpoView {
     filterBadge.isHidden = !chromeVisible || !filterActive || count == 0
     filterButton.accessibilityLabel = filterAccessibilityLabel
     filterButton.accessibilityTraits = filterActive ? [.button, .selected] : .button
+  }
+
+  private func updateQueryHeader(oldValue: PhotoQueryHeaderModel?) {
+    guard oldValue != queryHeaderModel else { return }
+    let previousHeight = queryHeaderHeight
+    if let queryHeaderModel {
+      queryHeaderView.configure(queryHeaderModel)
+      queryHeaderView.isHidden = false
+      queryHeaderHeight = PhotoQueryHeaderView.layoutMetrics(for: bounds.width).reservedHeight
+    } else {
+      queryHeaderView.isHidden = true
+      queryHeaderHeight = 0
+    }
+    showsFilterSummary = false
+    if previousHeight != queryHeaderHeight {
+      updateInsets()
+    }
+    layoutQueryHeader()
+    updateDateButton()
+  }
+
+  private func layoutQueryHeader() {
+    guard queryHeaderHeight > 0 else {
+      queryHeaderView.frame = .zero
+      return
+    }
+    let metrics = PhotoQueryHeaderView.layoutMetrics(for: bounds.width)
+    if queryHeaderHeight != metrics.reservedHeight {
+      queryHeaderHeight = metrics.reservedHeight
+      updateInsets()
+    }
+    queryHeaderView.frame = CGRect(
+      x: metrics.horizontalInset,
+      y: -queryHeaderHeight + metrics.topSpacing,
+      width: max(bounds.width - metrics.horizontalInset * 2, 0),
+      height: metrics.cardHeight
+    )
+  }
+
+  private func updateFilterSummaryVisibility(offset: CGFloat, animated: Bool) {
+    let revealThreshold = max(queryHeaderHeight - 72, 1)
+    let shouldShow = filterActive && queryHeaderHeight > 0 && offset >= revealThreshold
+    guard shouldShow != showsFilterSummary else { return }
+    showsFilterSummary = shouldShow
+
+    guard animated, window != nil, chromeVisible, chromeDateVisible else {
+      updateDateButton()
+      return
+    }
+    UIView.transition(
+      with: dateButton,
+      duration: 0.2,
+      options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction],
+      animations: { self.updateDateButton() }
+    )
+    UIView.animate(
+      withDuration: 0.2,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
+      animations: { self.layoutChrome() }
+    )
   }
 
   private func updateChromeVisibility() {
@@ -746,7 +832,12 @@ final class PhotoMasonryView: ExpoView {
     // and UIKit does not re-pin it, so a grown top inset would otherwise hide content
     // behind the chrome instead of reserving room for it.
     let wasPinnedToTop = collectionView.contentOffset.y <= -collectionView.adjustedContentInset.top + 1
-    collectionView.contentInset = UIEdgeInsets(top: extraTopInset, left: 0, bottom: extraBottomInset, right: 0)
+    collectionView.contentInset = UIEdgeInsets(
+      top: extraTopInset + queryHeaderHeight,
+      left: 0,
+      bottom: extraBottomInset,
+      right: 0
+    )
     if wasPinnedToTop {
       collectionView.setContentOffset(CGPoint(x: 0, y: -collectionView.adjustedContentInset.top), animated: false)
     }
@@ -1084,6 +1175,7 @@ extension PhotoMasonryView: UICollectionViewDelegate {
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+    updateFilterSummaryVisibility(offset: offset, animated: true)
 
     let now = CACurrentMediaTime()
     if now - lastVisibleRangeEmit > 0.12 {

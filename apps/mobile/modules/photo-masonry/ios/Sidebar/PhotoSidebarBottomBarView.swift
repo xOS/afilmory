@@ -10,7 +10,7 @@ struct PhotoSidebarBottomBarView: View {
     HStack(spacing: 8) {
       Button(action: onFiltersPress) {
         HStack(spacing: 8) {
-          Image(systemName: "line.3.horizontal.decrease")
+          Image(systemName: "magnifyingglass")
             .accessibilityHidden(true)
           Text(request.localization.filters)
             .lineLimit(1)

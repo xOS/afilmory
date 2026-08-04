@@ -68,6 +68,7 @@ final class PhotoMapController: UIViewController {
       feedObservation?.cancel()
       feedObservation = nil
       feed = nil
+      PhotoFilterStore.shared.deactivateGallery()
       apply(photos: [], state: .signedOut)
     case .signedIn(let session):
       guard let workspace = session.activeWorkspace, workspace.status == "active" else {
@@ -75,10 +76,12 @@ final class PhotoMapController: UIViewController {
         feedObservation?.cancel()
         feedObservation = nil
         feed = nil
+        PhotoFilterStore.shared.deactivateGallery()
         apply(photos: [], state: .pending)
         return
       }
       if gallerySlug != workspace.slug {
+        PhotoFilterStore.shared.activateGallery(workspace.slug)
         gallerySlug = workspace.slug
         ApiEnvironmentStore.shared.activateTenant(slug: workspace.slug)
         let feed = PhotoFeedStore.shared.feed(for: .manifest(workspace.slug))

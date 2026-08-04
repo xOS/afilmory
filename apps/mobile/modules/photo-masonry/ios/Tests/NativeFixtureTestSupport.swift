@@ -25,16 +25,21 @@ enum NativeFixtureTestSupport {
 
   static func photo(
     id: String = UUID().uuidString,
+    title: String? = nil,
+    description: String = "",
     dateTaken: String? = nil,
     camera: String? = nil,
     lens: String? = nil,
     rating: Int? = nil,
-    tags: [String] = []
+    tags: [String] = [],
+    city: String? = nil,
+    country: String? = nil,
+    locationName: String? = nil
   ) -> GalleryPhoto {
     GalleryPhoto(
       id: id,
-      title: id,
-      description: "",
+      title: title ?? id,
+      description: description,
       originalUrl: "",
       thumbnailUrl: "",
       thumbHash: nil,
@@ -48,11 +53,19 @@ enum NativeFixtureTestSupport {
       tags: tags,
       exif: nil,
       toneAnalysis: nil,
-      location: nil,
+      location: city == nil && country == nil && locationName == nil
+        ? nil
+        : GalleryLocation(
+          latitude: nil,
+          longitude: nil,
+          country: country,
+          city: city,
+          locationName: locationName
+        ),
       camera: camera,
       lens: lens,
       rating: rating,
-      city: nil
+      city: city
     )
   }
 

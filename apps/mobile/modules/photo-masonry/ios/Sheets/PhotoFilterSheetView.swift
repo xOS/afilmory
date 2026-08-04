@@ -5,6 +5,18 @@ struct PhotoFilterSheetView: View {
 
   var body: some View {
     Form {
+      Section(model.localization.search) {
+        HStack(spacing: 10) {
+          Image(systemName: "magnifyingglass")
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+          TextField(model.localization.searchPlaceholder, text: $model.query)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+        }
+      }
+
       Section(model.localization.date) {
         Picker(model.localization.range, selection: $model.dateSelection) {
           Text(model.localization.anyDate).tag(PhotoFilterViewModel.noDate)

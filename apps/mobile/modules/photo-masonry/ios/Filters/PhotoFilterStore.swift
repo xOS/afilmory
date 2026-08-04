@@ -6,6 +6,7 @@ final class PhotoFilterStore {
   static let shared = PhotoFilterStore()
 
   private(set) var filters = PhotoFilters.empty
+  @ObservationIgnored private var activeGallerySlug: String?
   @ObservationIgnored private var observers: [UUID: () -> Void] = [:]
 
   func replace(_ filters: PhotoFilters, now: Date = .now, calendar: Calendar = .current) {
@@ -23,6 +24,21 @@ final class PhotoFilterStore {
   }
 
   func clear() {
+    guard filters != .empty else { return }
+    filters = .empty
+    notifyObservers()
+  }
+
+  func activateGallery(_ slug: String) {
+    guard activeGallerySlug != slug else { return }
+    activeGallerySlug = slug
+    filters = .empty
+    notifyObservers()
+  }
+
+  func deactivateGallery() {
+    guard activeGallerySlug != nil || filters != .empty else { return }
+    activeGallerySlug = nil
     filters = .empty
     notifyObservers()
   }
