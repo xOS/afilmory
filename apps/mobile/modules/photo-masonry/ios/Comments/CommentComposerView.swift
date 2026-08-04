@@ -9,6 +9,7 @@ enum CommentComposerMetrics {
   static let sendButtonSize: CGFloat = 32
   static let textSize: CGFloat = 14
 
+  static var minimumHeight: CGFloat { sendButtonSize + chromeInset * 2 }
   static var sourceLeadingInset: CGFloat { chromeInset + fieldHorizontalInset }
   static var sourceTrailingInset: CGFloat {
     chromeInset + fieldHorizontalInset + contentSpacing + sendButtonSize

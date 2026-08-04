@@ -303,7 +303,7 @@ final class CommentsStore {
 
   private func beginFlight(clientId: String, content: String) {
     let origin = composerFrame
-    guard !UIAccessibility.isReduceMotionEnabled, origin.width > 0, origin.height > 0 else { return }
+    guard origin.width > 0, origin.height > 0 else { return }
     flightLocked = false
     flight = CommentFlight(clientId: clientId, content: content, origin: origin, target: nil)
   }

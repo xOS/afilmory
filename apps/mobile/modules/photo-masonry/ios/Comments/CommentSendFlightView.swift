@@ -1,15 +1,48 @@
 import SwiftUI
 
-enum CommentFlightMath {
-  static let duration: TimeInterval = 0.4
-  static let wideBubbleDuration: TimeInterval = 0.35
-  static let fallbackTimeout: TimeInterval = 0.9
+enum CommentFlightMotion {
+  static let visualDuration: TimeInterval = 0.4
+  static let targetFallbackTimeout: TimeInterval = 0.9
   static let targetSettleDelay: TimeInterval = 0.05
+  static let verticalPositionDelay: TimeInterval = 0.055
+  static let scaleUpDelay: TimeInterval = 0.185
 
+  static func positionSpring(reduceMotion: Bool) -> Spring {
+    Spring(
+      mass: 1,
+      stiffness: 141.75909,
+      damping: reduceMotion ? 23.8125 : 17.35028
+    )
+  }
+
+  static func scaleDownSpring(reduceMotion: Bool) -> Spring {
+    Spring(
+      mass: 2,
+      stiffness: 310,
+      damping: reduceMotion ? 49.7996 : 38
+    )
+  }
+
+  static func scaleUpSpring(reduceMotion: Bool) -> Spring {
+    Spring(
+      mass: 2,
+      stiffness: 320,
+      damping: reduceMotion ? 50.5964 : 38
+    )
+  }
+
+  static func animationFallbackTimeout(reduceMotion: Bool) -> TimeInterval {
+    let positionEnd = verticalPositionDelay + positionSpring(reduceMotion: reduceMotion).settlingDuration
+    let scaleEnd = scaleUpDelay + scaleUpSpring(reduceMotion: reduceMotion).settlingDuration
+    return max(visualDuration, positionEnd, scaleEnd) + 0.2
+  }
+}
+
+enum CommentFlightMath {
   private static let channelSpeed: CGFloat = 2
-  private static let wideBubbleThreshold: CGFloat = 1.66
-  private static let squeezeKeyTime: CGFloat = 0.35
-  private static let squeezeScale: CGFloat = 0.88
+  private static let minimumScale: CGFloat = 0.7
+  private static let maximumScale: CGFloat = 0.9
+  private static let maximumEntryHeightMultiple: CGFloat = 7
   private static let bubbleFadeFraction: CGFloat = 1 / 3
   private static let textMaskFadeFraction: CGFloat = 0.3 / 0.4
   private static let sendButtonScaleFraction: CGFloat = 0.25 / 0.4
@@ -23,31 +56,8 @@ enum CommentFlightMath {
     return start + (end - start) * progress
   }
 
-  static func animationDuration(from source: CGRect, to target: CGRect) -> TimeInterval {
-    guard source.width > 0, target.width > source.width * wideBubbleThreshold else {
-      return duration
-    }
-    return wideBubbleDuration
-  }
-
-  static func horizontalPositionProgress(_ progress: CGFloat) -> CGFloat {
-    cubicBezier(
-      x1: 0.54195,
-      y1: 0,
-      x2: 0.58,
-      y2: 1,
-      progress: spedProgress(progress)
-    )
-  }
-
-  static func verticalPositionProgress(_ progress: CGFloat) -> CGFloat {
-    cubicBezier(
-      x1: 0.49,
-      y1: 0.0884,
-      x2: 0.4055,
-      y2: 0.9055,
-      progress: spedProgress(progress)
-    )
+  static func interpolateUnclamped(from start: CGFloat, to end: CGFloat, progress: CGFloat) -> CGFloat {
+    start + (end - start) * progress
   }
 
   static func boundsProgress(_ progress: CGFloat) -> CGFloat {
@@ -60,15 +70,25 @@ enum CommentFlightMath {
     )
   }
 
-  static func interpolatedRect(from source: CGRect, to target: CGRect, progress: CGFloat) -> CGRect {
-    let progress = clampedProgress(progress)
-    let horizontalProgress = horizontalPositionProgress(progress)
-    let verticalProgress = verticalPositionProgress(progress)
-    let sizeProgress = boundsProgress(progress)
-    let width = interpolate(from: source.width, to: target.width, progress: sizeProgress)
-    let height = interpolate(from: source.height, to: target.height, progress: sizeProgress)
-    let trailingEdge = interpolate(from: source.maxX, to: target.maxX, progress: horizontalProgress)
-    let centerY = interpolate(from: source.midY, to: target.midY, progress: verticalProgress)
+  static func interpolatedRect(
+    from source: CGRect,
+    to target: CGRect,
+    horizontalProgress: CGFloat,
+    verticalProgress: CGFloat,
+    boundsProgress: CGFloat
+  ) -> CGRect {
+    let width = interpolate(from: source.width, to: target.width, progress: boundsProgress)
+    let height = interpolate(from: source.height, to: target.height, progress: boundsProgress)
+    let trailingEdge = interpolateUnclamped(
+      from: source.maxX,
+      to: target.maxX,
+      progress: horizontalProgress
+    )
+    let centerY = interpolateUnclamped(
+      from: source.midY,
+      to: target.midY,
+      progress: verticalProgress
+    )
 
     return CGRect(
       x: trailingEdge - width,
@@ -78,29 +98,27 @@ enum CommentFlightMath {
     )
   }
 
-  static func bubbleScale(_ progress: CGFloat) -> CGFloat {
-    let progress = clampedProgress(progress)
-    if progress <= squeezeKeyTime {
-      let segmentProgress = progress / squeezeKeyTime
-      let eased = cubicBezier(
-        x1: 0.66,
-        y1: 0,
-        x2: 1,
-        y2: 1,
-        progress: segmentProgress
-      )
-      return interpolate(from: 1, to: squeezeScale, progress: eased)
-    }
-
-    let segmentProgress = (progress - squeezeKeyTime) / (1 - squeezeKeyTime)
-    let eased = cubicBezier(
-      x1: 0,
-      y1: 0,
-      x2: 0.6227,
-      y2: 0.9299,
-      progress: segmentProgress
+  static func scaleDownFactor(entryHeight: CGFloat, defaultHeight: CGFloat) -> CGFloat {
+    guard defaultHeight > 0 else { return minimumScale }
+    let heightRange = defaultHeight * (maximumEntryHeightMultiple - 1)
+    let heightProgress = clampedProgress((entryHeight - defaultHeight) / heightRange)
+    return interpolate(
+      from: minimumScale,
+      to: maximumScale,
+      progress: heightProgress
     )
-    return interpolate(from: squeezeScale, to: 1, progress: eased)
+  }
+
+  static func glassBubbleScale(
+    entryHeight: CGFloat,
+    defaultHeight: CGFloat,
+    scaleDownProgress: CGFloat,
+    scaleUpProgress: CGFloat
+  ) -> CGFloat {
+    let scaleDownFactor = scaleDownFactor(entryHeight: entryHeight, defaultHeight: defaultHeight)
+    let down = interpolateUnclamped(from: 1, to: scaleDownFactor, progress: scaleDownProgress)
+    let up = interpolateUnclamped(from: 1, to: 1 / scaleDownFactor, progress: scaleUpProgress)
+    return down * up
   }
 
   static func bubbleOpacity(_ progress: CGFloat) -> CGFloat {
@@ -240,23 +258,45 @@ private struct CommentFlightSurface: View, Animatable {
   let content: String
   let source: CGRect
   let target: CGRect
-  var progress: CGFloat
+  var horizontalProgress: CGFloat
+  var verticalProgress: CGFloat
+  var visualProgress: CGFloat
+  var scaleDownProgress: CGFloat
+  var scaleUpProgress: CGFloat
 
   @Environment(\.displayScale) private var displayScale
 
-  var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
+  typealias PositionData = AnimatablePair<CGFloat, CGFloat>
+  typealias ScaleData = AnimatablePair<CGFloat, CGFloat>
+  typealias VisualData = AnimatablePair<CGFloat, ScaleData>
+  typealias FlightData = AnimatablePair<PositionData, VisualData>
+
+  var animatableData: FlightData {
+    get {
+      FlightData(
+        PositionData(horizontalProgress, verticalProgress),
+        VisualData(visualProgress, ScaleData(scaleDownProgress, scaleUpProgress))
+      )
+    }
+    set {
+      horizontalProgress = newValue.first.first
+      verticalProgress = newValue.first.second
+      visualProgress = newValue.second.first
+      scaleDownProgress = newValue.second.second.first
+      scaleUpProgress = newValue.second.second.second
+    }
   }
 
   var body: some View {
-    let progress = CommentFlightMath.clampedProgress(progress)
+    let visualProgress = CommentFlightMath.clampedProgress(visualProgress)
+    let boundsProgress = CommentFlightMath.boundsProgress(visualProgress)
     let rect = CommentFlightMath.interpolatedRect(
       from: source,
       to: target,
-      progress: progress
+      horizontalProgress: horizontalProgress,
+      verticalProgress: verticalProgress,
+      boundsProgress: boundsProgress
     )
-    let boundsProgress = CommentFlightMath.boundsProgress(progress)
     let shape = CommentFlightBubbleShape(progress: boundsProgress)
     let leadingInset = CommentFlightMath.interpolate(
       from: CommentComposerMetrics.sourceLeadingInset,
@@ -275,11 +315,16 @@ private struct CommentFlightSurface: View, Animatable {
     )
     let contentWidth = max(1, rect.width - leadingInset - trailingInset)
     let contentHeight = max(1, rect.height - verticalInset * 2)
-    let bubbleOpacity = CommentFlightMath.bubbleOpacity(progress)
+    let bubbleOpacity = CommentFlightMath.bubbleOpacity(visualProgress)
     let sourceOpacity = 1 - bubbleOpacity
-    let whiteTextMaskOpacity = CommentFlightMath.whiteTextMaskOpacity(progress)
-    let sendButtonScale = CommentFlightMath.sendButtonScale(progress)
-    let bubbleScale = CommentFlightMath.bubbleScale(progress)
+    let whiteTextMaskOpacity = CommentFlightMath.whiteTextMaskOpacity(visualProgress)
+    let sendButtonScale = CommentFlightMath.sendButtonScale(visualProgress)
+    let bubbleScale = CommentFlightMath.glassBubbleScale(
+      entryHeight: source.height,
+      defaultHeight: CommentComposerMetrics.minimumHeight,
+      scaleDownProgress: scaleDownProgress,
+      scaleUpProgress: scaleUpProgress
+    )
 
     ZStack(alignment: .topLeading) {
       ZStack(alignment: .topLeading) {
@@ -316,7 +361,7 @@ private struct CommentFlightSurface: View, Animatable {
       }
       .frame(width: rect.width, height: rect.height)
       .clipShape(shape)
-      .scaleEffect(bubbleScale, anchor: .trailing)
+      .scaleEffect(bubbleScale)
 
       ZStack {
         Circle().fill(Color.accentColor)
@@ -351,9 +396,15 @@ struct CommentSendFlightOverlay: View {
   let clientId: String
   let content: String
 
-  @State private var progress: CGFloat = 0
+  @State private var horizontalProgress: CGFloat = 0
+  @State private var verticalProgress: CGFloat = 0
+  @State private var visualProgress: CGFloat = 0
+  @State private var scaleDownProgress: CGFloat = 0
+  @State private var scaleUpProgress: CGFloat = 0
   @State private var started = false
   @State private var lockedTarget: CGRect?
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     ZStack(alignment: .topLeading) {
@@ -362,7 +413,11 @@ struct CommentSendFlightOverlay: View {
           content: content,
           source: flight.origin,
           target: lockedTarget ?? flight.target ?? flight.origin,
-          progress: progress
+          horizontalProgress: horizontalProgress,
+          verticalProgress: verticalProgress,
+          visualProgress: visualProgress,
+          scaleDownProgress: scaleDownProgress,
+          scaleUpProgress: scaleUpProgress
         )
       }
     }
@@ -372,8 +427,12 @@ struct CommentSendFlightOverlay: View {
     .task(id: startTrigger) {
       await startWhenTargetSettles(startTrigger)
     }
-    .task(id: clientId) {
-      try? await Task.sleep(for: .seconds(CommentFlightMath.fallbackTimeout))
+    .task(id: started) {
+      let timeout = started
+        ? CommentFlightMotion.animationFallbackTimeout(reduceMotion: reduceMotion)
+        : CommentFlightMotion.targetFallbackTimeout
+      try? await Task.sleep(for: .seconds(timeout))
+      guard !Task.isCancelled else { return }
       guard store.flight?.clientId == clientId else { return }
       store.completeFlight(clientId)
     }
@@ -401,7 +460,7 @@ struct CommentSendFlightOverlay: View {
     else { return }
 
     do {
-      try await Task.sleep(for: .seconds(CommentFlightMath.targetSettleDelay))
+      try await Task.sleep(for: .seconds(CommentFlightMotion.targetSettleDelay))
     } catch {
       return
     }
@@ -417,12 +476,32 @@ struct CommentSendFlightOverlay: View {
     lockedTarget = target
     started = true
     store.lockFlight(clientId)
-    let duration = CommentFlightMath.animationDuration(from: currentFlight.origin, to: target)
+
+    let positionSpring = CommentFlightMotion.positionSpring(reduceMotion: reduceMotion)
+    let scaleDownSpring = CommentFlightMotion.scaleDownSpring(reduceMotion: reduceMotion)
+    let scaleUpSpring = CommentFlightMotion.scaleUpSpring(reduceMotion: reduceMotion)
+
+    withAnimation(.interpolatingSpring(positionSpring)) {
+      horizontalProgress = 1
+    }
     withAnimation(
-      .linear(duration: duration),
-      completionCriteria: .logicallyComplete
+      .interpolatingSpring(positionSpring)
+        .delay(CommentFlightMotion.verticalPositionDelay)
     ) {
-      progress = 1
+      verticalProgress = 1
+    }
+    withAnimation(.linear(duration: CommentFlightMotion.visualDuration)) {
+      visualProgress = 1
+    }
+    withAnimation(.interpolatingSpring(scaleDownSpring)) {
+      scaleDownProgress = 1
+    }
+    withAnimation(
+      .interpolatingSpring(scaleUpSpring)
+        .delay(CommentFlightMotion.scaleUpDelay),
+      completionCriteria: .removed
+    ) {
+      scaleUpProgress = 1
     } completion: {
       store.completeFlight(clientId)
     }
