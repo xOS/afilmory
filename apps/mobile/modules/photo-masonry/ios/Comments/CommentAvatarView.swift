@@ -3,8 +3,7 @@ import SwiftUI
 struct CommentAvatarView: View {
   let imageURL: String?
   let name: String
-
-  private let size: CGFloat = 34
+  var size: CGFloat = 34
 
   var body: some View {
     Group {

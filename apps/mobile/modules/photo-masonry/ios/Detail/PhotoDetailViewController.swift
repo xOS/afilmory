@@ -361,7 +361,7 @@ final class PhotoDetailViewController: UIViewController {
     request.initialCommentCount = commentCount.count ?? -1
     let store = CommentsStore(
       request: request,
-      localization: commentLocalization()
+      localization: .resolve(localization)
     )
     commentsStore = store
 
@@ -419,41 +419,6 @@ final class PhotoDetailViewController: UIViewController {
     commentsNavigationController = nil
   }
 
-  private func commentLocalization() -> CommentLocalization {
-    CommentLocalization(
-      locale: localization.language.localeIdentifier,
-      title: localization.value("comments.title"),
-      done: localization.value("common.done"),
-      empty: localization.value("comments.empty"),
-      error: localization.value("comments.error"),
-      retry: localization.value("common.retry"),
-      loadMoreFailed: localization.value("comments.loadMoreFailed"),
-      loginRequired: localization.value("comments.loginRequired"),
-      reauthenticate: localization.value("comments.reauthenticate"),
-      signIn: localization.value("common.signIn"),
-      pending: localization.value("comments.pending"),
-      placeholder: localization.value("comments.placeholder"),
-      postFailed: localization.value("comments.postFailed"),
-      reactionFailed: localization.value("comments.reactionFailed"),
-      reply: localization.value("comments.reply"),
-      replyingToTemplate: localization.value(
-        "comments.replyingToPlain",
-        arguments: ["user": "__USER__"]
-      ),
-      cancelReply: localization.value("comments.cancelReply"),
-      send: localization.value("comments.send"),
-      sending: localization.value("comments.sending"),
-      like: localization.value("comments.like"),
-      unlike: localization.value("comments.unlike"),
-      copy: localization.value("common.copy"),
-      you: localization.value("comments.you"),
-      anonymous: localization.value("comments.anonymous"),
-      userTemplate: localization.value(
-        "comments.user",
-        arguments: ["id": "__ID__"]
-      )
-    )
-  }
 
   private func buildRemainingMetadata() {
     guard photos.count > 5 else { return }

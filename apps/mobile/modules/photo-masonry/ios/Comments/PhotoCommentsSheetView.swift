@@ -1,18 +1,32 @@
 import SwiftUI
 
+enum CommentsCoordinateSpace {
+  static let root = "afilmory.comments.root"
+}
+
 struct PhotoCommentsSheetView: View {
   @Bindable var store: CommentsStore
+
+  @State private var contentWidth: CGFloat = 0
 
   var body: some View {
     content
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        Divider()
-        if store.isSignedIn {
-          CommentComposerView(store: store)
-        } else {
-          CommentSignInView(store: store)
+        VStack(spacing: 0) {
+          Divider()
+          if store.isSignedIn {
+            CommentComposerView(store: store)
+          } else {
+            CommentSignInView(store: store)
+          }
         }
       }
+      .overlay {
+        if let flight = store.flight {
+          CommentSendFlightOverlay(store: store, clientId: flight.clientId, content: flight.content)
+        }
+      }
+      .coordinateSpace(name: CommentsCoordinateSpace.root)
       .task {
         await store.loadInitial()
       }
@@ -21,10 +35,16 @@ struct PhotoCommentsSheetView: View {
   @ViewBuilder private var content: some View {
     switch store.loadState {
     case .idle, .loading:
-      List(0..<4, id: \.self) { _ in
-        CommentSkeletonRowView()
+      ScrollView {
+        LazyVStack(spacing: 0) {
+          ForEach(0..<4, id: \.self) { _ in
+            CommentSkeletonRowView()
+          }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
       }
-      .listStyle(.plain)
+      .scrollDisabled(true)
     case .failed:
       ContentUnavailableView {
         Label(store.localization.error, systemImage: "exclamationmark.triangle")
@@ -49,44 +69,71 @@ struct PhotoCommentsSheetView: View {
   }
 
   private var commentsList: some View {
-    List {
-      if let inlineError = store.inlineError {
-        CommentInlineErrorView(
-          message: inlineError,
-          dismissLabel: store.localization.done,
-          onDismiss: store.dismissInlineError
-        )
-        .listRowSeparator(.hidden)
-      }
-
-      ForEach(store.collection.comments, id: \.identity) { comment in
-        CommentRowView(comment: comment, store: store)
-          .task(id: comment.id) {
-            await store.loadMoreIfNeeded(lastVisibleCommentId: comment.id)
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(spacing: 0) {
+          if let inlineError = store.inlineError {
+            CommentInlineErrorView(
+              message: inlineError,
+              dismissLabel: store.localization.done,
+              onDismiss: store.dismissInlineError
+            )
+            .padding(.vertical, 4)
           }
-      }
 
-      if store.isLoadingMore {
-        HStack {
-          Spacer()
-          ProgressView()
-            .accessibilityLabel(store.localization.sending)
-          Spacer()
+          ForEach(store.collection.comments, id: \.identity) { comment in
+            CommentRowView(comment: comment, store: store, bubbleMaxWidth: bubbleMaxWidth)
+              .id(comment.identity)
+              .task(id: comment.id) {
+                await store.loadMoreIfNeeded(lastVisibleCommentId: comment.id)
+              }
+          }
+
+          if store.isLoadingMore {
+            ProgressView()
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, 18)
+              .accessibilityLabel(store.localization.sending)
+          } else if store.loadMoreFailed {
+            Button {
+              Task { await store.retryLoadMore() }
+            } label: {
+              Label(store.localization.loadMoreFailed, systemImage: "arrow.clockwise")
+                .font(.footnote)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+          }
         }
-        .listRowSeparator(.hidden)
-      } else if store.loadMoreFailed {
-        Button {
-          Task { await store.retryLoadMore() }
-        } label: {
-          Label(store.localization.loadMoreFailed, systemImage: "arrow.clockwise")
-            .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 16)
+      }
+      .scrollDismissesKeyboard(.interactively)
+      .refreshable {
+        await store.refresh()
+      }
+      .onGeometryChange(for: CGFloat.self) { proxy in
+        proxy.size.width
+      } action: { width in
+        contentWidth = width
+      }
+      .onChange(of: store.pendingScrollIdentity) { _, identity in
+        guard let identity else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          proxy.scrollTo(identity, anchor: .bottom)
         }
-        .listRowSeparator(.hidden)
+        store.clearPendingScroll()
       }
     }
-    .listStyle(.plain)
-    .refreshable {
-      await store.refresh()
-    }
+  }
+
+  private var bubbleMaxWidth: CGFloat {
+    guard contentWidth > 0 else { return .infinity }
+    return max(120, (contentWidth - 24) * CommentBubbleMetrics.maxWidthRatio)
   }
 }

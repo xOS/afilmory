@@ -7,6 +7,7 @@ import { font } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 
 import { ApiEnvironmentSection } from './ApiEnvironmentSection'
+import { CommentsLabSection } from './CommentsLabSection'
 
 export function DevLabScreen() {
   const { palette } = useTheme()
@@ -39,6 +40,14 @@ export function DevLabScreen() {
       </View>
 
       <ApiEnvironmentSection />
+
+      <View style={styles.sectionHeading}>
+        <Text style={styles.eyebrow}>COMPONENT LAB</Text>
+        <Text style={styles.title}>Comment send flight</Text>
+        <Text style={styles.subtitle}>Native comments sheet on demo data — verify bubbles and the send animation.</Text>
+      </View>
+
+      <CommentsLabSection />
     </ScrollView>
   )
 }

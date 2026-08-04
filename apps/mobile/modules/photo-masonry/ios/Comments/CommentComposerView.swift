@@ -1,18 +1,37 @@
 import SwiftUI
 
+enum CommentComposerMetrics {
+  static let cornerRadius: CGFloat = 22
+  static let chromeInset: CGFloat = 3
+  static let contentSpacing: CGFloat = 6
+  static let fieldHorizontalInset: CGFloat = 11
+  static let fieldVerticalInset: CGFloat = 8
+  static let sendButtonSize: CGFloat = 32
+  static let textSize: CGFloat = 14
+
+  static var sourceLeadingInset: CGFloat { chromeInset + fieldHorizontalInset }
+  static var sourceTrailingInset: CGFloat {
+    chromeInset + fieldHorizontalInset + contentSpacing + sendButtonSize
+  }
+  static var sourceVerticalInset: CGFloat { chromeInset + fieldVerticalInset }
+}
+
 struct CommentComposerView: View {
   @Bindable var store: CommentsStore
   @FocusState private var isFocused: Bool
 
+  @Environment(\.displayScale) private var displayScale
+
   var body: some View {
     VStack(spacing: 0) {
       if let reply = store.replyComment {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
           Image(systemName: "arrowshape.turn.up.left")
+            .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
           Text(store.localization.replyingTo(store.authorName(for: reply)))
-            .font(.footnote)
+            .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .lineLimit(1)
           Spacer(minLength: 8)
@@ -21,17 +40,29 @@ struct CommentComposerView: View {
           }
           .labelStyle(.iconOnly)
           .buttonStyle(.plain)
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-
-        Divider()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background {
+          let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+          shape.fill(Color.accentColor.opacity(0.12))
+          shape.strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1 / displayScale)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
       }
 
-      HStack(alignment: .bottom, spacing: 10) {
+      HStack(alignment: .bottom, spacing: CommentComposerMetrics.contentSpacing) {
         VStack(alignment: .trailing, spacing: 3) {
-          TextField(store.localization.placeholder, text: $store.draft, axis: .vertical)
+          TextField(
+            store.flight == nil ? store.localization.placeholder : "",
+            text: $store.draft,
+            axis: .vertical
+          )
             .focused($isFocused)
+            .font(.system(size: CommentComposerMetrics.textSize))
             .lineLimit(1...5)
             .textFieldStyle(.plain)
             .submitLabel(.send)
@@ -49,18 +80,41 @@ struct CommentComposerView: View {
               .accessibilityLabel("\(store.characterCount) / 1000")
           }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 10)
-        .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, CommentComposerMetrics.fieldHorizontalInset)
+        .padding(.vertical, CommentComposerMetrics.fieldVerticalInset)
 
-        Button(store.localization.send, systemImage: "arrow.up.circle.fill") {
+        Button {
           Task { await store.send() }
+        } label: {
+          ZStack {
+            Circle()
+              .fill(Color.accentColor)
+            if store.flight == nil {
+              Image(systemName: "arrow.up")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+            }
+          }
+          .frame(
+            width: CommentComposerMetrics.sendButtonSize,
+            height: CommentComposerMetrics.sendButtonSize
+          )
         }
-        .labelStyle(.iconOnly)
-        .font(.system(size: 29, weight: .semibold))
         .buttonStyle(.plain)
         .disabled(!store.canSend)
+        .opacity(store.canSend ? 1 : 0.38)
         .accessibilityLabel(store.localization.send)
+      }
+      .padding(CommentComposerMetrics.chromeInset)
+      .background {
+        let shape = RoundedRectangle(cornerRadius: CommentComposerMetrics.cornerRadius, style: .continuous)
+        shape.fill(Color(.secondarySystemFill))
+        shape.strokeBorder(Color(.separator), lineWidth: 1 / displayScale)
+      }
+      .onGeometryChange(for: CGRect.self) { proxy in
+        proxy.frame(in: .named(CommentsCoordinateSpace.root))
+      } action: { frame in
+        store.updateComposerFrame(frame)
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 9)

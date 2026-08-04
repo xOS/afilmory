@@ -3,6 +3,13 @@ import Observation
 import SwiftUI
 import UIKit
 
+struct CommentFlight: Equatable {
+  let clientId: String
+  let content: String
+  let origin: CGRect
+  var target: CGRect?
+}
+
 @MainActor
 @Observable
 final class CommentsStore {
@@ -28,21 +35,25 @@ final class CommentsStore {
   var replyCommentId: String?
   var pendingReactionIds: Set<String> = []
   var requiresAuthentication = false
+  var flight: CommentFlight?
+  var pendingScrollIdentity: String?
   private(set) var requestedSignIn = false
 
   @ObservationIgnored var onRequestSignIn: (() -> Void)?
-  @ObservationIgnored private let api: AfilmoryAPI
+  @ObservationIgnored var composerFrame: CGRect = .zero
+  @ObservationIgnored private let transport: CommentsTransport
+  @ObservationIgnored private var flightLocked = false
   @ObservationIgnored private var baselineCommentCount: Int?
   @ObservationIgnored private var successfulCreateCount = 0
 
   init(
     request: PhotoCommentsSheetRequest,
     localization: CommentLocalization,
-    api: AfilmoryAPI = .shared
+    transport: CommentsTransport? = nil
   ) {
     self.request = request
     self.localization = localization
-    self.api = api
+    self.transport = transport ?? LiveCommentsTransport(baseURL: request.baseURL)
     baselineCommentCount = request.initialCommentCount >= 0 ? request.initialCommentCount : nil
   }
 
@@ -72,9 +83,7 @@ final class CommentsStore {
     loadState = .loading
     inlineError = nil
     do {
-      let page: CommentPage = try await api.request(
-        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: nil)
-      )
+      let page = try await transport.list(photoId: request.photoId, cursor: nil)
       collection = CommentsState.mergePage(.empty, page: page, replacing: true)
       nextCursor = CommentsState.advanceCursor(current: nil, page: page, replacing: true)
       updateInferredBaselineIfComplete()
@@ -95,9 +104,7 @@ final class CommentsStore {
     loadMoreFailed = false
     defer { isRefreshing = false }
     do {
-      let page: CommentPage = try await api.request(
-        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: nil)
-      )
+      let page = try await transport.list(photoId: request.photoId, cursor: nil)
       collection = CommentsState.mergePage(collection, page: page, replacing: true)
       nextCursor = CommentsState.advanceCursor(current: nextCursor, page: page, replacing: true)
       updateInferredBaselineIfComplete()
@@ -149,24 +156,31 @@ final class CommentsStore {
     inlineError = nil
     draft = ""
     replyCommentId = nil
-    mutateAnimated {
-      collection.comments.append(optimistic)
-      collection.users[viewerUserId] = CommentUser(
-        id: viewerUserId,
-        name: localization.you,
-        image: nil,
-        website: nil
-      )
+    beginFlight(clientId: clientId, content: content)
+    let insert = {
+      self.collection.comments.append(optimistic)
+      if self.collection.users[viewerUserId] == nil {
+        self.collection.users[viewerUserId] = CommentUser(
+          id: viewerUserId,
+          name: self.localization.you,
+          image: nil,
+          website: nil
+        )
+      }
     }
+    if flight == nil {
+      mutateAnimated(insert)
+    } else {
+      insert()
+    }
+    pendingScrollIdentity = clientId
 
     do {
-      let endpoint = try CommentsAPI.create(
-        baseURL: request.baseURL,
+      let page = try await transport.create(
         content: content,
         photoId: request.photoId,
         parentId: parentId
       )
-      let page: CommentPage = try await api.request(endpoint)
       mutateAnimated {
         collection = CommentsState.settleOptimisticComment(
           collection,
@@ -176,6 +190,7 @@ final class CommentsStore {
       }
       successfulCreateCount += 1
     } catch {
+      completeFlight(clientId)
       mutateAnimated {
         collection = CommentsState.removeFailedOptimisticComment(collection, clientId: clientId)
       }
@@ -203,8 +218,7 @@ final class CommentsStore {
     collection.comments[index] = CommentsState.toggleLocalReaction(original)
 
     do {
-      let endpoint = try CommentsAPI.toggleReaction(baseURL: request.baseURL, commentId: commentId)
-      let response: CommentReactionResponse = try await api.request(endpoint)
+      let response = try await transport.toggleReaction(commentId: commentId)
       let page = CommentPage(comments: [response.item], relations: [:], users: [:], nextCursor: nextCursor)
       collection = CommentsState.mergePage(collection, page: page)
     } catch {
@@ -237,6 +251,36 @@ final class CommentsStore {
     onRequestSignIn?()
   }
 
+  func updateComposerFrame(_ frame: CGRect) {
+    composerFrame = frame
+  }
+
+  func updateFlightTarget(_ frame: CGRect, clientId: String) {
+    guard var active = flight,
+          active.clientId == clientId,
+          !flightLocked,
+          frame.width > 0,
+          frame.height > 0
+    else { return }
+    active.target = frame
+    flight = active
+  }
+
+  func lockFlight(_ clientId: String) {
+    guard flight?.clientId == clientId else { return }
+    flightLocked = true
+  }
+
+  func completeFlight(_ clientId: String) {
+    guard flight?.clientId == clientId else { return }
+    flight = nil
+    flightLocked = false
+  }
+
+  func clearPendingScroll() {
+    pendingScrollIdentity = nil
+  }
+
   func user(for comment: CommentItem) -> CommentUser? {
     collection.users[comment.userId]
   }
@@ -257,14 +301,19 @@ final class CommentsStore {
     return localization.user(id: String(comment.userId.suffix(6)))
   }
 
+  private func beginFlight(clientId: String, content: String) {
+    let origin = composerFrame
+    guard !UIAccessibility.isReduceMotionEnabled, origin.width > 0, origin.height > 0 else { return }
+    flightLocked = false
+    flight = CommentFlight(clientId: clientId, content: content, origin: origin, target: nil)
+  }
+
   private func loadMore(cursor: String) async {
     isLoadingMore = true
     loadMoreFailed = false
     defer { isLoadingMore = false }
     do {
-      let page: CommentPage = try await api.request(
-        CommentsAPI.list(baseURL: request.baseURL, photoId: request.photoId, cursor: cursor)
-      )
+      let page = try await transport.list(photoId: request.photoId, cursor: cursor)
       collection = CommentsState.mergePage(collection, page: page)
       nextCursor = CommentsState.advanceCursor(current: nextCursor, page: page, replacing: false)
       updateInferredBaselineIfComplete()
