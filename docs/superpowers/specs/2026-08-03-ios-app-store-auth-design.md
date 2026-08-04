@@ -68,7 +68,7 @@ The backend Apple provider configuration consists of:
 | Key ID                | Non-secret system setting or environment variable          | Identifies the Apple signing key.                                                      |
 | `.p8` private key     | Environment secret or deployment secret manager only       | Never expose it through the current settings UI or store it in settings JSONB.         |
 
-The backend generates the ES256 client-secret JWT on demand and caches it for a bounded duration below Apple's maximum validity. If the Better Auth Apple flow requires it, include `https://appleid.apple.com` in `trustedOrigins`. The administration dashboard continues to support email/password review credentials; its existing social-login UI receives Apple only when the optional Services ID makes the web flow operational.
+The backend generates the ES256 client-secret JWT on demand and caches it for a bounded duration below Apple's maximum validity. If the Better Auth Apple flow requires it, include `https://appleid.apple.com` in `trustedOrigins`. The administration dashboard continues to support email/password review credentials; its existing social-login UI receives Apple only when the optional Services ID makes the web flow operational. Because Apple returns web authorization with `response_mode=form_post`, the OAuth Gateway validates the wrapped state from the form body and uses a 307 redirect to preserve the one-time authorization payload for Core's existing POST callback handler.
 
 ### Native Authorization Flow
 
