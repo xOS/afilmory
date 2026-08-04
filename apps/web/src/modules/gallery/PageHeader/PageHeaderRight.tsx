@@ -299,6 +299,9 @@ const LoginButton = () => {
 // 登录平台图标
 const LoginPlatformIcon = ({ provider }: { provider: string }) => {
   switch (provider) {
+    case 'apple': {
+      return <i className="i-simple-icons-apple text-base" />
+    }
     case 'github': {
       return <i className="i-simple-icons-github text-base" />
     }
