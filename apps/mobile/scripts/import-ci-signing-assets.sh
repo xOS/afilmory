@@ -45,6 +45,7 @@ install_profile() {
   local encoded_profile="$1"
   local expected_bundle_id="$2"
   local output_prefix="$3"
+  local required_app_group="${4:-}"
   local source_path="$RUNNER_TEMP/${output_prefix}.mobileprovision"
   local plist_path="$RUNNER_TEMP/${output_prefix}.plist"
 
@@ -86,6 +87,18 @@ install_profile() {
     echo "Provisioning profile for $expected_bundle_id is an enterprise profile; an App Store profile is required." >&2
     exit 1
   fi
+  if [[ -n "$required_app_group" ]]; then
+    local profile_app_groups
+    profile_app_groups="$(
+      /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$plist_path" 2>/dev/null \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+        || true
+    )"
+    if ! grep -Fxq "$required_app_group" <<< "$profile_app_groups"; then
+      echo "Provisioning profile for $expected_bundle_id does not include required App Group $required_app_group." >&2
+      exit 1
+    fi
+  fi
 
   cp "$source_path" "$legacy_profiles_directory/$profile_uuid.mobileprovision"
   cp "$source_path" "$xcode_profiles_directory/$profile_uuid.mobileprovision"
@@ -96,6 +109,6 @@ install_profile() {
   printf 'Installed App Store profile %s for %s (%s).\n' "$profile_name" "$expected_bundle_id" "$profile_uuid"
 }
 
-install_profile "$APP_PROFILE_BASE64" 'app.afilmory' 'IOS_APP'
-install_profile "$SHARE_PROFILE_BASE64" 'app.afilmory.share' 'IOS_SHARE'
+install_profile "$APP_PROFILE_BASE64" 'app.afilmory' 'IOS_APP' 'group.app.afilmory'
+install_profile "$SHARE_PROFILE_BASE64" 'app.afilmory.share' 'IOS_SHARE' 'group.app.afilmory'
 install_profile "$WIDGETS_PROFILE_BASE64" 'app.afilmory.widgets' 'IOS_WIDGETS'
