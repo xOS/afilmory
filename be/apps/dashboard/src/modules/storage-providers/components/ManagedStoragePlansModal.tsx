@@ -17,6 +17,8 @@ import { useManagedStoragePlansQuery } from '~/modules/storage-plans'
 const managedStorageI18nKeys = {
   title: 'photos.storage.managed.title',
   description: 'photos.storage.managed.description',
+  quotaTitle: 'photos.storage.managed.quota.title',
+  quotaDescription: 'photos.storage.managed.quota.description',
   unavailable: 'photos.storage.managed.unavailable',
   empty: 'photos.storage.managed.empty',
   capacityLabel: 'photos.storage.managed.capacity.label',
@@ -40,7 +42,11 @@ const managedStorageI18nKeys = {
   toastCheckoutUnavailable: 'photos.storage.managed.toast.checkout-unavailable',
 } as const
 
-export const ManagedStoragePlansModal: ModalComponent = () => {
+export interface ManagedStoragePlansModalProps {
+  reason?: 'quota-exceeded'
+}
+
+export const ManagedStoragePlansModal: ModalComponent<ManagedStoragePlansModalProps> = ({ reason }) => {
   const { t } = useTranslation()
   const plansQuery = useManagedStoragePlansQuery()
   const queryClient = useQueryClient()
@@ -116,10 +122,12 @@ export const ManagedStoragePlansModal: ModalComponent = () => {
     <div className="flex h-full max-h-[85vh] flex-col">
       <DialogHeader>
         <DialogTitle className="text-lg font-semibold leading-none tracking-tight">
-          {t(managedStorageI18nKeys.title)}
+          {t(reason === 'quota-exceeded' ? managedStorageI18nKeys.quotaTitle : managedStorageI18nKeys.title)}
         </DialogTitle>
         <DialogDescription className="text-text-secondary text-sm">
-          {t(managedStorageI18nKeys.description)}
+          {t(
+            reason === 'quota-exceeded' ? managedStorageI18nKeys.quotaDescription : managedStorageI18nKeys.description,
+          )}
         </DialogDescription>
       </DialogHeader>
 
@@ -218,11 +226,10 @@ function PlanCard({
       ? t(managedStorageI18nKeys.actionsSwitch)
       : t(managedStorageI18nKeys.actionsSubscribe)
 
-  const isPaidPlan = Boolean(plan.payment?.creemProductId)
   const showManage = isCurrent && canManage
   const primaryAction = showManage ? onPortal : onCheckout
   const primaryLabel = showManage ? t(managedStorageI18nKeys.actionsManage) : actionLabel
-  const shouldDisable = isProcessing || (isPaidPlan && !canCheckout) || (isCurrent && !showManage && isPaidPlan)
+  const shouldDisable = isProcessing || (!showManage && (isCurrent || !canCheckout))
 
   return (
     <div

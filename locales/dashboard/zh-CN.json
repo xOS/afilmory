@@ -302,6 +302,8 @@
   "photos.storage.managed.price.free": "包含在当前订阅内",
   "photos.storage.managed.price.label": "{{price}} / 月",
   "photos.storage.managed.provider": "托管服务提供方：{{provider}}",
+  "photos.storage.managed.quota.description": "当前托管存储空间已用尽。选择更大的存储方案后，即可继续上传和同步照片。",
+  "photos.storage.managed.quota.title": "托管存储空间已满",
   "photos.storage.managed.title": "托管存储",
   "photos.storage.managed.toast.checkout-failure": "无法拉起支付，请稍后再试。",
   "photos.storage.managed.toast.checkout-unavailable": "当前无法发起托管存储的支付。",

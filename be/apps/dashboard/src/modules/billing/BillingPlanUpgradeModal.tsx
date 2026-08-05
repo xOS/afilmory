@@ -1,40 +1,7 @@
 import type { ModalComponent } from '@afilmory/ui'
-import { Button, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Modal } from '@afilmory/ui'
+import { Button, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@afilmory/ui'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
-
-import { getRequestErrorCode, getRequestStatusCode } from '~/lib/errors'
-import { ManagedStoragePlansModal } from '~/modules/storage-providers/components/ManagedStoragePlansModal'
-
-const PLAN_LIMIT_CODE = 40
-const STORAGE_LIMIT_CODE = 41
-
-export type BillingUpgradeCategory = 'plan' | 'storage'
-
-export function resolveBillingUpgradeCategory(error: unknown): BillingUpgradeCategory | null {
-  const code = getRequestErrorCode(error)
-  if (code === PLAN_LIMIT_CODE) {
-    return 'plan'
-  }
-  if (code === STORAGE_LIMIT_CODE) {
-    return 'storage'
-  }
-
-  const status = getRequestStatusCode(error)
-  if (status === 402) {
-    return 'plan'
-  }
-
-  return null
-}
-
-export function presentBillingUpgradeModal(category: BillingUpgradeCategory) {
-  if (category === 'storage') {
-    Modal.present(ManagedStoragePlansModal, {}, { dismissOnOutsideClick: true })
-    return
-  }
-  Modal.present(BillingPlanUpgradeModal, {}, { dismissOnOutsideClick: true })
-}
 
 const billingPlanUpgradeKeys = {
   title: 'plan.upgrade-modal.title',

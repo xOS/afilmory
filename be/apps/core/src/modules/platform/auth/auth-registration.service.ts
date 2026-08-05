@@ -16,6 +16,7 @@ import { TenantService } from '../tenant/tenant.service'
 import type { TenantRecord } from '../tenant/tenant.types'
 import type { AuthSession } from './auth.provider'
 import { AuthProvider } from './auth.provider'
+import { resolveRegistrationStorageDefaults } from './auth-registration-storage.policy'
 import { WorkspaceMembershipService } from './workspace-membership.service'
 
 const DIACRITIC_PATTERN = /[\u0300-\u036F]/g
@@ -35,7 +36,7 @@ type RegisterTenantInput = {
     name: string
     slug?: string | null
   }
-  settings?: Array<{ key: string; value: unknown }>
+  settings?: Array<{ key: string, value: unknown }>
   useSessionAccount?: boolean
 }
 
@@ -169,7 +170,7 @@ export class AuthRegistrationService {
   }
 
   private async finalizePendingTenant(params: {
-    tenantContext: { tenant: TenantRecord; requestedSlug?: string | null }
+    tenantContext: { tenant: TenantRecord, requestedSlug?: string | null }
     tenantInput?: RegisterTenantInput['tenant']
     settings?: RegisterTenantInput['settings']
     authSession: AuthSession | null
@@ -189,19 +190,25 @@ export class AuthRegistrationService {
     }
 
     const currentSlug = tenantContext.tenant.slug?.toLowerCase() ?? ''
-    const requestedSlug =
-      tenantInput.slug?.trim().toLowerCase() ?? tenantContext.requestedSlug?.toLowerCase() ?? currentSlug
+    const requestedSlug
+      = tenantInput.slug?.trim().toLowerCase() ?? tenantContext.requestedSlug?.toLowerCase() ?? currentSlug
     if (!requestedSlug || requestedSlug !== currentSlug) {
       throw new BizException(ErrorCode.COMMON_BAD_REQUEST, {
         message: '当前子域与请求的空间标识不匹配，无法完成注册。',
       })
     }
 
+    const storageDefaults = resolveRegistrationStorageDefaults(await this.systemSettings.getManagedStorageProvider())
     const db = this.dbAccessor.get()
     const now = new Date().toISOString()
     const [updatedTenant] = await db
       .update(tenants)
-      .set({ name: tenantName, status: 'active', updatedAt: now })
+      .set({
+        name: tenantName,
+        status: 'active',
+        storagePlanId: storageDefaults?.storagePlanId ?? null,
+        updatedAt: now,
+      })
       .where(and(eq(tenants.id, tenantContext.tenant.id), eq(tenants.status, 'pending')))
       .returning()
 
@@ -212,7 +219,7 @@ export class AuthRegistrationService {
     }
 
     await this.memberships.createOwnerMembership(authSession.user.id, updatedTenant.id)
-    await this.applyInitialSettings(updatedTenant.id, settings)
+    await this.applyInitialSettings(updatedTenant.id, settings, storageDefaults?.activeProvider ?? null)
     await this.memberships.setSessionActiveWorkspace({
       sessionId: authSession.session.id,
       userId: authSession.user.id,
@@ -245,10 +252,15 @@ export class AuthRegistrationService {
     }
 
     const slug = await this.generateUniqueSlug(slugBase)
+    const storageDefaults = resolveRegistrationStorageDefaults(await this.systemSettings.getManagedStorageProvider())
     let tenantId: string | null = null
 
     try {
-      const tenantAggregate = await this.tenantService.createTenant({ name: tenantName, slug })
+      const tenantAggregate = await this.tenantService.createTenant({
+        name: tenantName,
+        slug,
+        storagePlanId: storageDefaults?.storagePlanId ?? null,
+      })
       tenantId = tenantAggregate.tenant.id
 
       let response: Response
@@ -276,15 +288,17 @@ export class AuthRegistrationService {
             tenantId,
           })
         }
-      } else if (authSession) {
+      }
+      else if (authSession) {
         userId = authSession.user.id
         response = this.jsonResponse({ user: authSession.user })
-      } else {
+      }
+      else {
         throw new BizException(ErrorCode.AUTH_UNAUTHORIZED, { message: '请先登录后再创建工作区' })
       }
 
       await this.memberships.createOwnerMembership(userId, tenantId)
-      await this.applyInitialSettings(tenantId, settings)
+      await this.applyInitialSettings(tenantId, settings, storageDefaults?.activeProvider ?? null)
 
       if (authSession) {
         await this.memberships.setSessionActiveWorkspace({
@@ -301,7 +315,8 @@ export class AuthRegistrationService {
         accountId: userId,
         success: true,
       }
-    } catch (error) {
+    }
+    catch (error) {
       if (tenantId) {
         await this.tenantService.deleteTenant(tenantId).catch(() => {})
       }
@@ -309,14 +324,25 @@ export class AuthRegistrationService {
     }
   }
 
-  private async applyInitialSettings(tenantId: string, settings?: RegisterTenantInput['settings']): Promise<void> {
+  private async applyInitialSettings(
+    tenantId: string,
+    settings: RegisterTenantInput['settings'] | undefined,
+    defaultActiveProvider: 'managed' | null,
+  ): Promise<void> {
+    if (defaultActiveProvider) {
+      await this.settingService.set('builder.storage.activeProvider', defaultActiveProvider, {
+        tenantId,
+        isSensitive: false,
+      })
+    }
+
     const initialSettings = this.normalizeSettings(settings)
     if (initialSettings.length === 0) {
       return
     }
 
     await this.settingService.setMany(
-      initialSettings.map((entry) => ({
+      initialSettings.map(entry => ({
         ...entry,
         options: {
           tenantId,
@@ -330,18 +356,20 @@ export class AuthRegistrationService {
     try {
       const auth = HttpContext.getValue('auth') as AuthSession | undefined
       return auth?.user && auth.session ? auth : null
-    } catch {
+    }
+    catch {
       return null
     }
   }
 
-  private async readSignUpIdentity(response: Response): Promise<{ userId: string; token: string | null }> {
+  private async readSignUpIdentity(response: Response): Promise<{ userId: string, token: string | null }> {
     try {
-      const payload = (await response.clone().json()) as { token?: string | null; user?: { id?: string } } | null
+      const payload = (await response.clone().json()) as { token?: string | null, user?: { id?: string } } | null
       if (payload?.user?.id) {
         return { userId: payload.user.id, token: payload.token ?? null }
       }
-    } catch {
+    }
+    catch {
       // The explicit error below is more useful than a JSON parsing error.
     }
 
