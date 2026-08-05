@@ -72,6 +72,13 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   var onZoomStateChange: ((Bool) -> Void)?
   var onLivePhotoPlaybackStateChange: ((Bool) -> Void)?
   var onLivePhotoModeChange: ((String, LivePhotoPlaybackMode) -> Void)?
+  var onOriginalLoadStateChange: ((PhotoOriginalLoadState) -> Void)?
+
+  private(set) var originalLoadState = PhotoOriginalLoadState.idle
+
+  var representedPhotoId: String? {
+    photo?.id
+  }
 
   var isZoomed: Bool {
     scrollView.zoomScale > scrollView.minimumZoomScale + 0.01
@@ -171,9 +178,11 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     displayedTier = 0
     lastViewportSize = .zero
     wasZoomed = false
+    originalLoadState = .idle
     onZoomStateChange = nil
     onLivePhotoPlaybackStateChange = nil
     onLivePhotoModeChange = nil
+    onOriginalLoadStateChange = nil
     livePhotoBadge.isHidden = true
     livePhotoBadge.alpha = 1
     externalBadgeAlpha = 1
@@ -206,6 +215,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     displayedTier = 0
     lastViewportSize = .zero
     wasZoomed = false
+    setOriginalLoadState(.idle)
     scrollView.setZoomScale(1, animated: false)
     scrollView.panGestureRecognizer.isEnabled = false
     previewImageView.image = ThumbHashCache.image(forHex: photo.thumbHash)
@@ -282,6 +292,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     )
     let expectedPhotoId = photo.id
     let hadDetailImage = detailImageView.image != nil
+    setOriginalLoadState(.loading(tier: tier, receivedBytes: 0, expectedBytes: 0))
 
     detailImageView.sd_setImage(
       with: url,
@@ -291,13 +302,22 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
         .imagePreserveAspectRatio: true,
         .imageThumbnailPixelSize: NSValue(cgSize: pixelSize),
       ],
-      progress: nil,
+      progress: { [weak self] receivedBytes, expectedBytes, _ in
+        DispatchQueue.main.async {
+          guard let self, self.photo?.id == expectedPhotoId, self.loadedTier == tier else { return }
+          self.setOriginalLoadState(
+            .loading(tier: tier, receivedBytes: receivedBytes, expectedBytes: expectedBytes)
+          )
+        }
+      },
       completed: { [weak self] image, error, _, _ in
         guard let self, self.photo?.id == expectedPhotoId, self.loadedTier == tier else { return }
         guard error == nil, let image else {
           self.loadedTier = self.displayedTier
+          self.setOriginalLoadState(.failed)
           return
         }
+        self.setOriginalLoadState(.finished)
         self.detailImageView.image = image
         self.displayedTier = tier
         guard !hadDetailImage else { return }
@@ -310,6 +330,11 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
         }
       }
     )
+  }
+
+  private func setOriginalLoadState(_ state: PhotoOriginalLoadState) {
+    originalLoadState = state
+    onOriginalLoadStateChange?(state)
   }
 
   private func centerImage() {

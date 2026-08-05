@@ -182,6 +182,8 @@
   "photo.liveMode.off": "Live 끔",
   "photo.livePhoto": "Live Photo",
   "photo.livePhotoHint": "사진을 길게 눌러 재생합니다.",
+  "photo.loading.failed": "원본을 불러오지 못했습니다",
+  "photo.loading.original": "원본 불러오는 중",
   "photo.next": "다음 사진",
   "photo.noExif": "이 사진에는 내장 EXIF 메타데이터가 없습니다.",
   "photo.previous": "이전 사진",

@@ -16,6 +16,8 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
   private let bottomScrim = PhotoDetailScrimView(edge: .bottom)
   private let navigationBar = PhotoDetailNavigationBar()
   private let toolbar = PhotoDetailToolbar()
+  private let loadingPillHost = UIView()
+  private let loadingPill = PhotoDetailLoadingPillView()
   private let reactionRail = PhotoDetailReactionRailView()
   private let reactionBurst = PhotoDetailReactionBurstLayer()
   private lazy var inspector = PhotoDetailInspectorPresenter(
@@ -69,6 +71,9 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     addSubview(topScrim)
     addSubview(navigationBar)
     addSubview(toolbar)
+    loadingPillHost.isUserInteractionEnabled = false
+    loadingPillHost.addSubview(loadingPill)
+    addSubview(loadingPillHost)
     addSubview(reactionBurst)
     addSubview(reactionRail)
 
@@ -107,6 +112,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     toolbar.alpha = alpha
     topScrim.alpha = alpha
     bottomScrim.alpha = alpha
+    loadingPillHost.alpha = alpha
     viewer.setLiveBadgeAlpha(alpha)
   }
 
@@ -559,6 +565,10 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     }
     viewer.onNativeInfoRequest = { [weak self] in self?.toggleInfo() }
     viewer.onNativeRequestClose = { [weak self] in self?.requestClose() }
+    viewer.onActivePhotoLoadStateChange = { [weak self] state in
+      self?.loadingPill.handle(state)
+    }
+    loadingPill.onSizeChange = { [weak self] in self?.setNeedsLayout() }
 
     addGestureRecognizer(tapGestureRecognizer)
     viewer.configureExternalTapGesture(tapGestureRecognizer)
@@ -592,6 +602,14 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
     toolbar.frame = CGRect(x: 0, y: toolbarY, width: width, height: toolbarHeight)
     bottomScrim.frame = CGRect(x: 0, y: bounds.height - scrimSpan, width: width, height: scrimSpan)
 
+    loadingPillHost.frame = bounds
+    let pillSize = loadingPill.sizeThatFits(CGSize(width: width - 32, height: .greatestFiniteMagnitude))
+    loadingPill.bounds = CGRect(origin: .zero, size: pillSize)
+    loadingPill.center = CGPoint(
+      x: width - 16 - pillSize.width / 2,
+      y: toolbarY - 12 - pillSize.height / 2
+    )
+
     toolbar.layoutIfNeeded()
     let reactionsItemFrame = toolbar.reactionsItemFrame(in: self)
     reactionRail.anchorXCenter = reactionsItemFrame?.midX
@@ -624,6 +642,7 @@ final class PhotoDetailView: ExpoView, UIGestureRecognizerDelegate {
       toolbar.alpha = visibility.toolbarAlpha
       topScrim.alpha = visibility.topScrimAlpha
       bottomScrim.alpha = visibility.bottomScrimAlpha
+      loadingPillHost.alpha = visibility.loadingPillAlpha
       viewer.setLiveBadgeAlpha(visibility.liveBadgeAlpha)
     }
   }

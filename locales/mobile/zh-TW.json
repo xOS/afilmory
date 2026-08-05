@@ -182,6 +182,8 @@
   "photo.liveMode.off": "關閉原況",
   "photo.livePhoto": "原況照片",
   "photo.livePhotoHint": "按住照片即可播放。",
+  "photo.loading.failed": "原圖載入失敗",
+  "photo.loading.original": "載入原圖",
   "photo.next": "下一張照片",
   "photo.noExif": "此照片沒有可用的內嵌 EXIF 中繼資料。",
   "photo.previous": "上一張照片",

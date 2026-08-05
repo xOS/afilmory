@@ -7,6 +7,7 @@ final class PhotoViewerView: ExpoView {
   var onNativeInfoRequest: (() -> Void)?
   var onNativeRequestClose: (() -> Void)?
   var onNativeZoomChange: ((Bool) -> Void)?
+  var onActivePhotoLoadStateChange: ((PhotoOriginalLoadState) -> Void)?
 
   var keyboardCloseTitle = ""
   var keyboardInfoTitle = ""
@@ -171,6 +172,7 @@ final class PhotoViewerView: ExpoView {
     guard photos.indices.contains(currentIndex) else { return }
     let photo = photos[currentIndex]
     onNativeIndexChange?(photo, currentIndex)
+    onActivePhotoLoadStateChange?(currentCell()?.originalLoadState ?? .idle)
     updateVisibleCellActivity()
     prefetchNeighborPhotos()
   }
@@ -367,6 +369,10 @@ extension PhotoViewerView: UICollectionViewDataSource {
     }
     cell.onLivePhotoModeChange = { [weak self] photoId, mode in
       self?.livePhotoModes[photoId] = mode
+    }
+    cell.onOriginalLoadStateChange = { [weak self, weak cell] state in
+      guard let self, let cell, cell.representedPhotoId == self.currentPhotoId() else { return }
+      self.onActivePhotoLoadStateChange?(state)
     }
     let photo = photos[indexPath.item]
     cell.configure(

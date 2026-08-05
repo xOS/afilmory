@@ -19,6 +19,7 @@ struct PhotoDetailChromeVisibility {
   var topScrimAlpha: CGFloat { base * (1 - clampedInfoProgress) }
   var bottomScrimAlpha: CGFloat { base }
   var liveBadgeAlpha: CGFloat { base }
+  var loadingPillAlpha: CGFloat { dismissing ? 0 : 1 }
   var statusBarHidden: Bool { userHidden || zoomed }
   var homeIndicatorHidden: Bool { userHidden || zoomed }
 
