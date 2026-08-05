@@ -60,7 +60,11 @@ jobs:
         run: bash scripts/import-ci-signing-assets.sh
 
       - name: Configure manual signing
-        run: GEM_HOME="$(brew --prefix cocoapods)/libexec" GEM_PATH="$(brew --prefix cocoapods)/libexec" /usr/bin/ruby scripts/configure-ci-signing.rb
+        run: |
+          XCODEPROJ_GEM_HOME="$RUNNER_TEMP/xcodeproj-gems"
+          /usr/bin/gem install --no-document --install-dir "$XCODEPROJ_GEM_HOME" xcodeproj --version 1.27.0
+          GEM_HOME="$XCODEPROJ_GEM_HOME" GEM_PATH="$XCODEPROJ_GEM_HOME" \
+            /usr/bin/ruby scripts/configure-ci-signing.rb
 
       - name: Archive
         run: |
