@@ -129,9 +129,8 @@ async function ensureBucket(options: SeedDevCliOptions): Promise<'created' | 'ex
       state = 'created'
     }
 
-    // The manifest hands out thumbnail URLs straight from the bucket rather
-    // than through /api/storage/sign, so a private bucket renders the whole
-    // grid as broken images even with secure access enabled.
+    // Development manifests use direct object URLs, so the local bucket must
+    // allow public reads for gallery previews.
     await client.send(
       new PutBucketPolicyCommand({
         Bucket: options.bucket,
@@ -476,8 +475,5 @@ async function configureTenantStorage(
   await storageSettings.setMany([
     { key: 'builder.storage.providers', options: { tenantId }, value: JSON.stringify([provider]) },
     { key: 'builder.storage.activeProvider', options: { tenantId }, value: provider.id },
-    // Without this the manifest hands out unsigned public URLs, which a
-    // freshly created RustFS bucket answers with 403.
-    { key: 'photo.storage.secureAccess', options: { tenantId }, value: 'true' },
   ])
 }

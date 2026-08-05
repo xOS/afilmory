@@ -13,7 +13,6 @@ export type SuperAdminSettingsWithStorage = SuperAdminSettings & {
   storagePlanProducts?: Record<string, unknown>
   managedStorageProvider?: string | null
   managedStorageProviders?: StorageProvider[]
-  managedStorageSecureAccess?: boolean
 }
 
 export interface SuperAdminStats {
@@ -26,15 +25,15 @@ type SuperAdminSettingsResponseShape = {
   stats: SuperAdminStats
 }
 
-export type SuperAdminSettingsResponse =
+export type SuperAdminSettingsResponse
+  = | (SuperAdminSettingsResponseShape & {
+    values: SuperAdminSettings
+    settings?: never
+  })
   | (SuperAdminSettingsResponseShape & {
-      values: SuperAdminSettings
-      settings?: never
-    })
-  | (SuperAdminSettingsResponseShape & {
-      settings: SuperAdminSettings
-      values?: never
-    })
+    settings: SuperAdminSettings
+    values?: never
+  })
 
 export type UpdateSuperAdminSettingsPayload = Partial<{
   managedStorageProvider: string | null
@@ -42,38 +41,52 @@ export type UpdateSuperAdminSettingsPayload = Partial<{
   storagePlanCatalog: Record<string, unknown>
   storagePlanPricing: Record<string, unknown>
   storagePlanProducts: Record<string, unknown>
-  managedStorageSecureAccess: boolean
 }>
 
-export type BuilderDebugProgressEvent =
-  | {
-      type: 'start'
-      payload: {
-        storageKey: string
-        filename: string
-        contentType: string | null
-        size: number
-      }
+export interface ManagedStorageProbeResult {
+  providerId: string
+  providerType: string
+  fileName: string
+  objectKey: string
+  size: number
+  checksum: string
+  etag: string | null
+  uploadDurationMs: number
+  readDurationMs: number
+  cleanupDurationMs: number
+  cleanupSucceeded: boolean
+  cleanupError: string | null
+}
+
+export type BuilderDebugProgressEvent
+  = | {
+    type: 'start'
+    payload: {
+      storageKey: string
+      filename: string
+      contentType: string | null
+      size: number
     }
+  }
   | {
-      type: 'log'
-      payload: {
-        level: PhotoSyncLogLevel
-        message: string
-        timestamp: string
-        details?: Record<string, unknown> | null
-      }
+    type: 'log'
+    payload: {
+      level: PhotoSyncLogLevel
+      message: string
+      timestamp: string
+      details?: Record<string, unknown> | null
     }
+  }
   | {
-      type: 'complete'
-      payload: BuilderDebugResult
-    }
+    type: 'complete'
+    payload: BuilderDebugResult
+  }
   | {
-      type: 'error'
-      payload: {
-        message: string
-      }
+    type: 'error'
+    payload: {
+      message: string
     }
+  }
 
 export interface BuilderDebugResult {
   storageKey: string

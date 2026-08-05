@@ -6,7 +6,7 @@ import Busboy from 'busboy'
 import type { Context } from 'hono'
 import { injectable } from 'tsyringe'
 
-import { formatBytesForDisplay, normalizeDirectoryValue, normalizeRequestHeaders } from '../access/storage-access.utils'
+import { formatBytesForDisplay, normalizeDirectoryValue, normalizeRequestHeaders } from '../storage/storage.utils'
 import type { UploadAssetInput } from './photo-asset.types'
 import { MAX_TEXT_FIELDS_PER_REQUEST, MAX_UPLOAD_FILES_PER_BATCH } from './photo-upload-limits'
 

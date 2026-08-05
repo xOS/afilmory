@@ -5,8 +5,6 @@ import { ManagedStorageModule } from '@core/modules/platform/managed-storage/man
 import { PushNotificationModule } from '@core/modules/platform/push-notifications/push-notification.module'
 import { Module } from '@tsuki-hono/common'
 
-import { StorageAccessController } from './access/storage-access.controller'
-import { StorageAccessService } from './access/storage-access.service'
 import { PhotoController } from './assets/photo.controller'
 import { PhotoAssetService } from './assets/photo-asset.service'
 import { PhotoUploadParser } from './assets/photo-upload.parser'
@@ -16,12 +14,11 @@ import { PhotoStorageService } from './storage/photo-storage.service'
 
 @Module({
   imports: [SystemSettingModule, BillingModule, ManagedStorageModule, PushNotificationModule],
-  controllers: [PhotoController, StorageAccessController],
+  controllers: [PhotoController],
   providers: [
     PhotoBuilderService,
     PhotoStorageService,
     PhotoAssetService,
-    StorageAccessService,
     PhotoUploadLimitInterceptor,
     PhotoUploadParser,
     BuilderConfigService,

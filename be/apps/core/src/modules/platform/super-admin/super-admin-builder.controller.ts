@@ -19,7 +19,7 @@ import { createProgressSseResponse } from '@core/modules/shared/http/sse'
 import { ContextParam, Controller, createLogger, Post } from '@tsuki-hono/common'
 import type { Context } from 'hono'
 
-import { joinSegments, normalizeKeyPath } from '../../content/photo/access/storage-access.utils'
+import { joinSegments, normalizeKeyPath } from '../../content/photo/storage/storage.utils'
 import type { BuilderDebugProgressEvent, StorageResolution, UploadedDebugFile } from './InMemoryDebugStorageProvider'
 import { InMemoryDebugStorageProvider } from './InMemoryDebugStorageProvider'
 

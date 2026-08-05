@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { StorageProvider } from '../storage-providers/types'
 import {
   deleteSuperAdminTenant,
   fetchSuperAdminSettings,
   fetchSuperAdminStorageTenants,
   fetchSuperAdminTenantPhotos,
   fetchSuperAdminTenants,
+  testSuperAdminStorageUpload,
   updateSuperAdminSettings,
   updateSuperAdminTenantBan,
   updateSuperAdminTenantPlan,
@@ -38,7 +40,7 @@ export function useSuperAdminTenantsQuery(params?: SuperAdminTenantListParams) {
   return useQuery<SuperAdminTenantListResponse>({
     queryKey: [...SUPER_ADMIN_TENANTS_QUERY_KEY, params],
     queryFn: () => fetchSuperAdminTenants(params),
-    placeholderData: (previousData) => previousData,
+    placeholderData: previousData => previousData,
   })
 }
 
@@ -46,7 +48,7 @@ export function useSuperAdminStorageTenantsQuery(params?: SuperAdminTenantListPa
   return useQuery<SuperAdminTenantListResponse>({
     queryKey: [...SUPER_ADMIN_STORAGE_TENANTS_QUERY_KEY, params],
     queryFn: () => fetchSuperAdminStorageTenants(params),
-    placeholderData: (previousData) => previousData,
+    placeholderData: previousData => previousData,
   })
 }
 
@@ -63,6 +65,13 @@ export function useUpdateSuperAdminSettingsMutation(options?: SuperAdminSettings
       queryClient.setQueryData(SUPER_ADMIN_SETTINGS_QUERY_KEY, data)
       options?.onSuccess?.(data)
     },
+  })
+}
+
+export function useManagedStorageProbeMutation() {
+  return useMutation({
+    mutationFn: async ({ provider, file }: { provider: StorageProvider, file: File }) =>
+      await testSuperAdminStorageUpload(provider, file),
   })
 }
 

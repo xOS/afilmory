@@ -9,7 +9,7 @@ import { SettingService } from '../setting/setting.service'
 import { parseStorageProviders } from '../setting/storage-provider.utils'
 import { createStorageProviderFormSchema } from './storage-provider.ui-schema'
 
-type StorageSettingKey = 'builder.storage.providers' | 'builder.storage.activeProvider' | 'photo.storage.secureAccess'
+type StorageSettingKey = 'builder.storage.providers' | 'builder.storage.activeProvider'
 
 @injectable()
 export class StorageSettingService {

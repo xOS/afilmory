@@ -33,15 +33,9 @@ import { EventEmitterService } from '@tsuki-hono/event-emitter'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
-import { StorageAccessService } from '../access/storage-access.service'
-import {
-  createProxyUrl,
-  formatBytesForDisplay,
-  formatBytesToMb,
-  normalizeKeyPath,
-} from '../access/storage-access.utils'
 import { PhotoBuilderService } from '../builder/photo-builder.service'
 import { PhotoStorageService } from '../storage/photo-storage.service'
+import { formatBytesForDisplay, formatBytesToMb, normalizeKeyPath } from '../storage/storage.utils'
 import type { TransactionalUploadProgressEvent } from '../storage/transactional-storage.manager'
 import { TransactionalStorageManager } from '../storage/transactional-storage.manager'
 import type { PhotoAssetListItem, PhotoAssetRecord, PhotoAssetSummary, UploadAssetInput } from './photo-asset.types'
@@ -82,7 +76,6 @@ export class PhotoAssetService {
     private readonly dbAccessor: DbAccessor,
     private readonly photoBuilderService: PhotoBuilderService,
     private readonly photoStorageService: PhotoStorageService,
-    private readonly storageAccessService: StorageAccessService,
     private readonly billingPlanService: BillingPlanService,
     private readonly billingUsageService: BillingUsageService,
     private readonly storagePlanService: StoragePlanService,
@@ -110,18 +103,12 @@ export class PhotoAssetService {
 
     const { builderConfig, storageConfig } = await this.photoStorageService.resolveConfigForTenant(tenant.tenant.id)
     const storageManager = await this.createStorageManager(builderConfig, storageConfig)
-    const secureAccessEnabled = await this.storageAccessService.resolveSecureAccessPreference(
-      storageConfig,
-      tenant.tenant.id,
-    )
-
     return await Promise.all(
       records.map(async (record) => {
         const publicUrl = await this.resolvePublicUrlForRecord({
           storageManager,
           storageKey: record.storageKey,
           storageProvider: record.storageProvider,
-          secureAccessEnabled,
         })
 
         return {
@@ -318,10 +305,6 @@ export class PhotoAssetService {
     builder.setStorageManager(transactionalStorageManager)
     await builder.ensurePluginsReady()
     const storageManager = transactionalStorageManager
-    const secureAccessEnabled = await this.storageAccessService.resolveSecureAccessPreference(
-      storageConfig,
-      tenant.tenant.id,
-    )
     const { photoPlans, videoPlans } = this.prepareUploadPlans(inputs, storageConfig)
     const unmatchedVideoBaseNames = this.validateLivePhotoPairs(photoPlans, videoPlans)
 
@@ -376,7 +359,6 @@ export class PhotoAssetService {
         tenant.tenant.id,
         storageManager,
         db,
-        secureAccessEnabled,
       )
       throwIfAborted()
 
@@ -523,7 +505,6 @@ export class PhotoAssetService {
         abortSignal: options?.abortSignal,
         builderLogEmitter,
         progressEmitter: options?.progress,
-        secureAccessEnabled,
         onProcessed: async ({ storageObject, manifestItem }) => {
           throwIfAborted()
           processedCount += 1
@@ -719,7 +700,6 @@ export class PhotoAssetService {
     tenantId: string,
     storageManager: StorageManager,
     db: ReturnType<DbAccessor['get']>,
-    secureAccessEnabled: boolean,
   ): Promise<{
     items: PhotoAssetListItem[]
     keySet: Set<string>
@@ -772,7 +752,6 @@ export class PhotoAssetService {
           storageManager,
           storageKey: record.storageKey,
           storageProvider: record.storageProvider,
-          secureAccessEnabled,
         })
 
         return {
@@ -944,7 +923,6 @@ export class PhotoAssetService {
     abortSignal?: AbortSignal
     builderLogEmitter?: DataSyncProgressEmitter
     progressEmitter?: DataSyncProgressEmitter
-    secureAccessEnabled: boolean
     onProcessed?: (payload: {
       plan: PreparedUploadPlan
       storageObject: StorageObject
@@ -965,7 +943,6 @@ export class PhotoAssetService {
       abortSignal,
       builderLogEmitter,
       progressEmitter,
-      secureAccessEnabled,
       onProcessed,
     } = params
 
@@ -1181,7 +1158,6 @@ export class PhotoAssetService {
         storageManager,
         storageKey: resolvedPhotoKey,
         storageProvider: storageConfig.provider,
-        secureAccessEnabled,
       })
 
       await this.recordManagedStorageReferences(storageConfig, tenantId, [
@@ -1258,11 +1234,6 @@ export class PhotoAssetService {
     const normalizedTags = this.normalizeTagList(tagsInput)
     const { builderConfig, storageConfig } = await this.photoStorageService.resolveConfigForTenant(tenant.tenant.id)
     const storageManager = await this.createStorageManager(builderConfig, storageConfig)
-    const secureAccessEnabled = await this.storageAccessService.resolveSecureAccessPreference(
-      storageConfig,
-      tenant.tenant.id,
-    )
-
     const sanitizeKey = normalizeKeyPath(record.storageKey)
     const normalizeStorageKey = createStorageKeyNormalizer(storageConfig)
     const relativeKey = normalizeStorageKey(sanitizeKey)
@@ -1344,7 +1315,6 @@ export class PhotoAssetService {
       storageManager,
       storageKey: saved.storageKey,
       storageProvider: saved.storageProvider,
-      secureAccessEnabled,
     })
 
     await this.emitManifestChanged(tenant.tenant.id)
@@ -1970,16 +1940,10 @@ export class PhotoAssetService {
     storageManager: StorageManager
     storageKey: string
     storageProvider: string
-    secureAccessEnabled: boolean
-    intent?: string
   }): Promise<string | null> {
-    const { storageManager, storageKey, storageProvider, secureAccessEnabled, intent } = params
+    const { storageManager, storageKey, storageProvider } = params
     if (storageProvider === DATABASE_ONLY_PROVIDER) {
       return null
-    }
-
-    if (secureAccessEnabled) {
-      return createProxyUrl(storageKey, intent)
     }
 
     try {

@@ -3,9 +3,11 @@ import { coreApi, coreApiBaseURL } from '~/lib/api-client'
 import { camelCaseKeys } from '~/lib/case'
 import { withLanguageHeaderInit } from '~/lib/request-language'
 
+import type { StorageProvider } from '../storage-providers/types'
 import type {
   BuilderDebugProgressEvent,
   BuilderDebugResult,
+  ManagedStorageProbeResult,
   SuperAdminSettingsResponse,
   SuperAdminTenantListParams,
   SuperAdminTenantListResponse,
@@ -19,6 +21,7 @@ import type {
 const SUPER_ADMIN_SETTINGS_ENDPOINT = '/super-admin/settings'
 const SUPER_ADMIN_TENANTS_ENDPOINT = '/super-admin/tenants'
 const SUPER_ADMIN_STORAGE_TENANTS_ENDPOINT = '/super-admin/tenants/storage'
+const SUPER_ADMIN_STORAGE_PROBE_ENDPOINT = '/super-admin/storage-providers/test-upload'
 const STABLE_NEWLINE = /\r?\n/
 
 type RunBuilderDebugOptions = {
@@ -42,17 +45,45 @@ export async function updateSuperAdminSettings(payload: UpdateSuperAdminSettings
   })
 }
 
+export async function testSuperAdminStorageUpload(
+  provider: StorageProvider,
+  file: File,
+): Promise<ManagedStorageProbeResult> {
+  const formData = new FormData()
+  formData.append('provider', JSON.stringify(provider))
+  formData.append('file', file)
+
+  const response = await coreApi<ManagedStorageProbeResult>(SUPER_ADMIN_STORAGE_PROBE_ENDPOINT, {
+    method: 'POST',
+    body: formData,
+  })
+
+  return camelCaseKeys<ManagedStorageProbeResult>(response)
+}
+
 export async function fetchSuperAdminTenants(
   params?: SuperAdminTenantListParams,
 ): Promise<SuperAdminTenantListResponse> {
   const query = new URLSearchParams()
   if (params) {
-    if (params.page) query.set('page', String(params.page))
-    if (params.limit) query.set('limit', String(params.limit))
-    if (params.search) query.set('search', params.search)
-    if (params.status) query.set('status', params.status)
-    if (params.sortBy) query.set('sortBy', params.sortBy)
-    if (params.sortDir) query.set('sortDir', params.sortDir)
+    if (params.page) {
+      query.set('page', String(params.page))
+    }
+    if (params.limit) {
+      query.set('limit', String(params.limit))
+    }
+    if (params.search) {
+      query.set('search', params.search)
+    }
+    if (params.status) {
+      query.set('status', params.status)
+    }
+    if (params.sortBy) {
+      query.set('sortBy', params.sortBy)
+    }
+    if (params.sortDir) {
+      query.set('sortDir', params.sortDir)
+    }
   }
 
   const queryString = query.toString()
@@ -69,11 +100,21 @@ export async function fetchSuperAdminStorageTenants(
 ): Promise<SuperAdminTenantListResponse> {
   const query = new URLSearchParams()
   if (params) {
-    if (params.page) query.set('page', String(params.page))
-    if (params.limit) query.set('limit', String(params.limit))
-    if (params.search) query.set('search', params.search)
-    if (params.sortBy) query.set('sortBy', params.sortBy)
-    if (params.sortDir) query.set('sortDir', params.sortDir)
+    if (params.page) {
+      query.set('page', String(params.page))
+    }
+    if (params.limit) {
+      query.set('limit', String(params.limit))
+    }
+    if (params.search) {
+      query.set('search', params.search)
+    }
+    if (params.sortBy) {
+      query.set('sortBy', params.sortBy)
+    }
+    if (params.sortDir) {
+      query.set('sortDir', params.sortDir)
+    }
   }
 
   const queryString = query.toString()
@@ -192,7 +233,8 @@ export async function runBuilderDebugTest(file: File, options?: RunBuilderDebugO
       if (parsed.type === 'error') {
         lastErrorMessage = parsed.payload.message
       }
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to parse builder debug event', error)
     }
   }
@@ -219,7 +261,8 @@ export async function runBuilderDebugTest(file: File, options?: RunBuilderDebugO
       stageEvent(buffer)
       buffer = ''
     }
-  } finally {
+  }
+  finally {
     reader.releaseLock()
   }
 

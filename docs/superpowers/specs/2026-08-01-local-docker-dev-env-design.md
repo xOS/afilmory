@@ -44,7 +44,7 @@ Alternatives considered and rejected: Cloudflare Tunnel exposing the whole stack
 iOS Simulator
   ├─ http://localhost:1841/api             platform API (auth, workspaces)
   ├─ http://<slug>.localhost:1841/api      tenant API (photos, comments, reactions)
-  └─ http://localhost:9300/...             presigned object URLs
+  └─ http://localhost:9300/...             direct object URLs
 
 Host process
   └─ pnpm dev:be                            core, :1841, hot reload
@@ -102,12 +102,9 @@ Run: `pnpm --filter @afilmory/core seed:dev [-- --slug <workspace>]`.
 
 **Global step (always).** Creates the bucket via `@aws-sdk/client-s3` (already a `core` dependency, so no CLI container) with `forcePathStyle`, then sets system setting `oauthGatewayUrl` = `http://localhost:1841`, which `buildGatewayRedirectUri` concatenates into the registered callback.
 
-**Workspace step (`--slug`).** Writes `builder.storage.providers`, `builder.storage.activeProvider`, and `photo.storage.secureAccess` for that workspace: provider `s3`, endpoint `http://localhost:9300`, bucket, region, credentials.
+**Workspace step (`--slug`).** Writes `builder.storage.providers` and `builder.storage.activeProvider` for that workspace: provider `s3`, endpoint `http://localhost:9300`, bucket, region, credentials.
 
-Two settings that look optional are not:
-
-- `photo.storage.secureAccess = true` — with it off, the manifest hands out unsigned bucket URLs that a fresh RustFS bucket answers with 403.
-- a **public-read bucket policy**, applied alongside bucket creation — even with secure access on, only `originalUrl` is routed through `/api/storage/sign`; thumbnails are emitted as raw bucket URLs, so a private bucket renders the whole grid as broken images.
+A **public-read bucket policy** is applied alongside bucket creation because development manifests use direct object URLs for originals and thumbnails.
 
 **Photo step (also `--slug`).** Uploads everything in `photos/` (override with `--photos-dir`) through `PhotoAssetService.uploadAssets` — the same call the HTTP endpoint makes, so EXIF, thumbnails, blurhash and Live Photo pairing all run for real. It goes in-process rather than over HTTP because the endpoint is multipart-plus-SSE and needs a session; `HttpContext.run` + `HttpContext.assign({ tenant })` supplies the tenant that `requireTenantContext()` expects, and the size-limit lookup has to sit inside that scope too.
 
@@ -165,11 +162,9 @@ NSExceptionDomains → localhost → { NSIncludesSubdomains: true, NSExceptionAl
 
 ## Data flow: photo bytes
 
-`manifest.service.ts` rewrites each `s3Key` into `/api/storage/sign?objectKey=…` (`storage-access.utils.ts:21`). The app requests that path against the tenant host; `core` issues a presigned URL; the app fetches it directly.
+The manifest contains direct RustFS object URLs. Because both `core` and the Simulator run on the same machine, `http://localhost:9300` is reachable from both sides without host rewriting.
 
-The presigned host participates in the SigV4 signature, so `core` must sign against the same origin the Simulator will call. Because both `core` and the Simulator run on the same machine, `http://localhost:9300` satisfies both sides with no proxy and no host rewriting.
-
-Verified against a running RustFS: path-style create/put/presign/GET all succeed, while virtual-host addressing fails outright with `NotImplemented: Unknown operation`. Path-style is therefore mandatory — and already unconditional on both sides: `storage-access.service.ts:223` hardcodes `forcePathStyle: true`, and the builder's hand-rolled SigV4 client falls through to `${endpoint}/${bucket}/` for a custom endpoint that does not embed the bucket (`packages/builder/src/s3/client.ts:102`). No code change was needed.
+Verified against a running RustFS: path-style create, upload, and GET requests succeed, while virtual-host addressing fails with `NotImplemented: Unknown operation`. The builder's S3 client already uses path-style URLs for a custom endpoint that does not embed the bucket (`packages/builder/src/s3/client.ts:102`).
 
 ## Error handling
 

@@ -43,7 +43,6 @@ export interface SystemSettings {
   storagePlanPricing: StoragePlanPricingConfigs
   managedStorageProvider: string | null
   managedStorageProviders: BuilderStorageProvider[]
-  managedStorageSecureAccess: boolean
 }
 
 export type SystemSettingValueMap = {

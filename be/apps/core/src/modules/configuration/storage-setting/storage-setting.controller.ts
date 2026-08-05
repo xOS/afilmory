@@ -11,7 +11,6 @@ import { StorageSettingService } from './storage-setting.service'
 const STORAGE_SETTING_KEYS = [
   'builder.storage.providers',
   'builder.storage.activeProvider',
-  'photo.storage.secureAccess',
 ] as const
 type StorageSettingKey = (typeof STORAGE_SETTING_KEYS)[number]
 
