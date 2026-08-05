@@ -390,15 +390,16 @@ Push Device Token 应绑定 `auth_user.id`，而不是 Tenant 或 Membership。
 
 ### 12.4 Cookie 边界与命名空间轮换
 
-数据库中的 Session 全局化后，浏览器 Cookie 仍必须明确区分可信域边界：
+数据库中的 Session 继续表示全局身份，但浏览器 Cookie 必须以具体 Host 为安全边界：
 
-- Cookie 命名空间从 Better Auth 默认名称轮换为 `afilmory-global`，防止旧 host-only 租户 Cookie 与新 Cookie 同名并产生解析歧义；
-- 请求 Host 为平台 `baseDomain` 或其直接、间接子域时，Session Cookie 的 Domain 设置为 `baseDomain`，使工作区切换后仍保持同一全局会话；
-- 请求 Host 为 Custom Domain 时只签发 host-only Cookie，不得将平台主域 Cookie 发送到或尝试设置到自定义域；
+- Cookie 命名空间从原来的 `afilmory-global` 轮换为 `afilmory-tenant`，防止浏览器遗留的 parent-domain Cookie 与新 host-only Cookie 同名并产生解析歧义；
+- 平台 `baseDomain`、每个 Workspace 子域、OAuth/Mobile Broker 子域、Localhost 以及 Custom Domain 均只签发 host-only Cookie，不设置 `Domain` 属性；
 - 生产 Cookie 保持 `HttpOnly`、`Secure` 与 `SameSite=Lax`；
-- 所有 `*.baseDomain` Host 属于同一认证信任区。平台不得在该信任区内托管可执行的租户 HTML；用户媒体下载必须使用不可执行内容策略或隔离域，以降低 Cookie Tossing 与 Login CSRF 风险。
+- 全局 Platform User 与 host-only Cookie 不冲突：不同 Host 的 Session 可以指向同一个 Global User，但浏览器不会自动向兄弟租户发送凭据；
+- 切换 Workspace 不得依赖 parent-domain Cookie。目标 Host 已有 Session 时可直接使用，否则必须重新认证；未来若要求无感单点登录，应通过 Platform Auth Broker 的短时一次性交换码完成；
+- 迁移到新命名空间时必须删除既有 `auth_session`，使旧全域 Cookie 中的 bearer token 立即失效，而不是仅依赖浏览器自然过期。
 
-Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Global User，但浏览器不会跨两个 registrable domain 共享 Cookie。若未来要求 Custom Domain 无感单点登录，应通过平台 Auth Broker 的一次性交换码完成，不得扩大 Cookie Domain。
+Host-only Cookie 可缩小凭据的被动暴露范围并阻止兄弟子域直接覆盖该 Cookie，但它不能替代服务端授权、Origin/CSRF 防护或安全的内容隔离策略。
 
 ### 12.5 已发布迁移的前向权限修复
 
@@ -449,7 +450,7 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 
 - Auth Store 保存完整 Membership 列表与 `activeWorkspace`。
 - Tenant API Client 只使用用户显式选择的 active workspace slug。
-- Gallery API Client 继续根据 Explorer 目标 Gallery slug 请求平台管理的 Gallery Host，并附带同一个全局 Cookie；不得向任意 Custom Domain 转发平台 Cookie。
+- Gallery API Client 继续根据 Explorer 目标 Gallery slug 请求平台管理的 Gallery Host。Native Client 显式保存并附加 Broker Session，不依赖浏览器的跨子域 Cookie 规则，且不得向任意 Custom Domain 转发该凭据。
 - 用户没有 Workspace 时，Explorer 与社交能力可用；Own Gallery、Studio 和上传入口显示“创建或选择 Workspace”。
 - Workspace 切换必须先调用服务端 switch API，成功后再更新本地 active slug。
 
@@ -457,7 +458,7 @@ Custom Domain 上的 host-only Session 与平台主域 Session 指向同一 Glob
 
 - Dashboard 以当前 Host 的 `requestedWorkspace` 为资源工作区。
 - 进入管理页面时检查 `requestedMembership` 或权限端点，而不是将用户强制重定向到 Session active workspace。
-- Workspace Selector 执行显式 switch 后跳转到目标 Workspace Host。
+- Workspace Selector 跳转到目标 Workspace Host；目标 Host 已有独立 Session 时直接进入，否则进入该 Host 的登录流程。不得把来源 Host 的 Cookie 转交给目标 Host。
 - Platform Superadmin 页面只依赖 Platform Role。
 
 ### 14.3 公开资料链接

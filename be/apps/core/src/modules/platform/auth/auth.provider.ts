@@ -27,7 +27,7 @@ import { AppleClientSecretService } from './apple-client-secret.service'
 import type { AuthModuleOptions, SocialProviderOptions, SocialProvidersConfig } from './auth.config'
 import { AuthConfig } from './auth.config'
 import { AUTH_ADMIN_PLUGIN_OPTIONS } from './auth-admin.policy'
-import { resolveAuthCookieScope } from './auth-cookie.policy'
+import { AUTH_COOKIE_POLICY } from './auth-cookie.policy'
 import { WorkspaceMembershipService } from './workspace-membership.service'
 
 export type BetterAuthInstance = ReturnType<typeof betterAuth>
@@ -196,11 +196,6 @@ export class AuthProvider implements OnModuleInit {
     )
 
     const requestedTenantId = explicitTenantId ?? this.resolveTenantIdFromContext()
-    const cookieScope = resolveAuthCookieScope({
-      requestHost: this.resolveRequestEndpoint().host,
-      baseDomain: options.baseDomain,
-    })
-
     const auth = betterAuth({
       database: drizzleAdapter(db, {
         provider: 'pg',
@@ -278,9 +273,7 @@ export class AuthProvider implements OnModuleInit {
         },
       },
       advanced: {
-        cookiePrefix: 'afilmory-global',
-        crossSubDomainCookies:
-          cookieScope.kind === 'managed-domain' ? { enabled: true, domain: cookieScope.domain } : { enabled: false },
+        ...AUTH_COOKIE_POLICY,
         database: {
           generateId: () => generateId(),
         },

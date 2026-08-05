@@ -12,7 +12,7 @@ The backend already contains a first-class `*.localhost` dev topology. It was ne
 |---|---|---|
 | Base domain in dev | `tenant-context-resolver.service.ts:160` | `NODE_ENV=development` → `'localhost'` |
 | Slug extraction | `tenant-host.utils.ts` | dedicated `.localhost` suffix branch, strips port first |
-| Cookie scope | `auth-cookie.policy.spec.ts` | `alpha.localhost` + base `localhost` → `domain=localhost`, with a unit test |
+| Cookie scope | `auth-cookie.policy.spec.ts` | every localhost host receives a host-only Cookie with no `Domain` attribute |
 | Trusted origins | `auth.provider.ts:138-146` | non-production hardcodes `http://*.localhost:*`, `http://localhost:*`, `afilmory://` |
 | Cross-host callback | `auth.provider.ts:199` | `skipStateCookieCheck: true` |
 | Reserved slugs | `packages/utils/src/tenant.ts:9` | `api` is reserved → `api.localhost` resolves to no tenant, same as production |
@@ -207,7 +207,7 @@ Blocked on missing data, not on the environment:
     - **Upload** re-adds the same file through the PHPicker and runs the full derive pipeline: `5606×3737`, EXIF `ILCE-7M3`, `dateTaken`, thumbHash, HDR flag, and a thumbnail served from RustFS (200, 172 KB).
     - **Edit tags** rewrites the storage key into a tag path (`DSCF0038.avif` → `local-test/anya/DSCF0038.avif`) and moves the object rather than orphaning it; the grid re-renders from the new URL.
 
-    Reaching this needed two auth fixes, both of which affect production, not just the local stack — see `fix(mobile): persist the auth session across launches`. `@better-auth/expo` filters `Set-Cookie` on a `cookiePrefix` that defaulted to `better-auth` while the server issues `afilmory-global.session_token`, so the session was never stored; and its `getCookie()` reads storage synchronously, which `expo-secure-store` cannot do on Simulator builds, so every relaunch fell back to signed-out.
+    Reaching this needed two auth fixes, both of which affect production, not just the local stack — see `fix(mobile): persist the auth session across launches`. `@better-auth/expo` filters `Set-Cookie` on a `cookiePrefix` that defaulted to `better-auth` while the server issues the Afilmory-specific session cookie (currently `afilmory-tenant.session_token`), so the session was never stored; and its `getCookie()` reads storage synchronously, which `expo-secure-store` cannot do on Simulator builds, so every relaunch fell back to signed-out.
 
 Blocked on credentials:
 

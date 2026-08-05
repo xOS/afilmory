@@ -1,33 +1,16 @@
-export type AuthCookieScope = { kind: 'managed-domain'; domain: string } | { kind: 'host-only' }
+import type { BetterAuthOptions } from 'better-auth'
 
-const IPV4_PATTERN = /^\d{1,3}(?:\.\d{1,3}){3}$/
+// The namespace is intentionally different from the former domain-wide
+// `afilmory-global` cookies. Browsers can retain those cookies until their
+// original expiry, so reusing the name would make host-only and parent-domain
+// cookies ambiguous on managed tenant hosts.
+export const AUTH_COOKIE_PREFIX = 'afilmory-tenant'
 
-function normalizeHostname(value: string | null | undefined): string | null {
-  const candidate = value?.split(',', 1)[0]?.trim()
-  if (!candidate) {
-    return null
-  }
-
-  try {
-    return new URL(candidate.includes('://') ? candidate : `http://${candidate}`).hostname.toLowerCase()
-  } catch {
-    return null
-  }
-}
-
-export function resolveAuthCookieScope(input: {
-  requestHost: string | null | undefined
-  baseDomain: string
-}): AuthCookieScope {
-  const requestHostname = normalizeHostname(input.requestHost)
-  const baseDomain = normalizeHostname(input.baseDomain)
-  if (!requestHostname || !baseDomain || IPV4_PATTERN.test(baseDomain) || baseDomain.includes(':')) {
-    return { kind: 'host-only' }
-  }
-
-  if (requestHostname !== baseDomain && !requestHostname.endsWith(`.${baseDomain}`)) {
-    return { kind: 'host-only' }
-  }
-
-  return { kind: 'managed-domain', domain: baseDomain }
-}
+// A Platform User remains global, but browser credentials are isolated to the
+// exact host that created them. Better Auth omits the Domain attribute when
+// cross-subdomain cookies are disabled, producing a host-only cookie on tenant,
+// platform, broker, localhost, and custom-domain hosts alike.
+export const AUTH_COOKIE_POLICY = {
+  cookiePrefix: AUTH_COOKIE_PREFIX,
+  crossSubDomainCookies: { enabled: false },
+} as const satisfies NonNullable<BetterAuthOptions['advanced']>

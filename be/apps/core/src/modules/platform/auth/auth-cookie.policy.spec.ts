@@ -1,64 +1,30 @@
+import type { BetterAuthOptions } from 'better-auth'
+import { getCookies } from 'better-auth/cookies'
 import { describe, expect, it } from 'vitest'
 
-import { resolveAuthCookieScope } from './auth-cookie.policy'
+import { AUTH_COOKIE_POLICY, AUTH_COOKIE_PREFIX } from './auth-cookie.policy'
 
-describe('resolveAuthCookieScope', () => {
-  it('shares the global session across platform-managed workspace subdomains', () => {
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'alpha.afilmory.art',
-        baseDomain: 'afilmory.art',
-      }),
-    ).toEqual({ kind: 'managed-domain', domain: 'afilmory.art' })
-  })
+describe('auth cookie isolation', () => {
+  it.each([
+    ['managed tenant', 'https://alpha.afilmory.art'],
+    ['platform root', 'https://afilmory.art'],
+    ['mobile broker', 'https://api.afilmory.art'],
+    ['custom domain', 'https://photos.example.net'],
+  ])('emits host-only Better Auth cookies on the %s host', (_label, baseURL) => {
+    const cookies = getCookies({
+      baseURL,
+      advanced: AUTH_COOKIE_POLICY,
+    } as BetterAuthOptions)
 
-  it('shares the session from the platform base and API hosts', () => {
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'afilmory.art',
-        baseDomain: 'afilmory.art',
-      }),
-    ).toEqual({ kind: 'managed-domain', domain: 'afilmory.art' })
-
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'api.afilmory.art:443',
-        baseDomain: 'afilmory.art',
-      }),
-    ).toEqual({ kind: 'managed-domain', domain: 'afilmory.art' })
-  })
-
-  it('uses a host-only cookie on verified custom domains', () => {
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'photos.example.net',
-        baseDomain: 'afilmory.art',
-      }),
-    ).toEqual({ kind: 'host-only' })
-  })
-
-  it('does not treat a lookalike suffix as a managed domain', () => {
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'attacker-afilmory.art',
-        baseDomain: 'afilmory.art',
-      }),
-    ).toEqual({ kind: 'host-only' })
-  })
-
-  it('supports the local workspace subdomain topology without sharing on IP hosts', () => {
-    expect(
-      resolveAuthCookieScope({
-        requestHost: 'alpha.localhost:3000',
-        baseDomain: 'localhost',
-      }),
-    ).toEqual({ kind: 'managed-domain', domain: 'localhost' })
-
-    expect(
-      resolveAuthCookieScope({
-        requestHost: '127.0.0.1:3000',
-        baseDomain: '127.0.0.1',
-      }),
-    ).toEqual({ kind: 'host-only' })
+    expect(cookies.sessionToken.name).toBe(`__Secure-${AUTH_COOKIE_PREFIX}.session_token`)
+    for (const cookie of Object.values(cookies)) {
+      expect(cookie.attributes).not.toHaveProperty('domain')
+      expect(cookie.attributes).toMatchObject({
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
+      })
+    }
   })
 })

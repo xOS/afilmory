@@ -1,7 +1,8 @@
 import * as SecureStore from 'expo-secure-store'
 
 export const AUTH_STORAGE_PREFIX = 'afilmory'
-export const AUTH_COOKIE_PREFIX = 'afilmory-global'
+// Must remain aligned with Core's host-isolated Better Auth cookie namespace.
+export const AUTH_COOKIE_PREFIX = 'afilmory-tenant'
 
 const HYDRATED_KEYS = [`${AUTH_STORAGE_PREFIX}_cookie`, `${AUTH_STORAGE_PREFIX}_session_data`]
 
