@@ -1,8 +1,20 @@
 import { requireNativeModule } from 'expo'
+import Constants from 'expo-constants'
 import { Platform } from 'react-native'
+
+export type AfilmoryAppVariant = 'local' | 'production'
+
+export interface AfilmoryBuildConfiguration {
+  allowsApiEnvironmentOverride: boolean
+  apiEnvironment: AfilmoryAppVariant
+  appVariant: AfilmoryAppVariant
+  supportsAppleAuthentication: boolean
+  urlScheme: string
+}
 
 interface AfilmorySessionNativeModule {
   clearSession: () => void
+  getBuildConfiguration: () => AfilmoryBuildConfiguration
   hasStoredCookie: () => boolean
   registerSession: (cookie: string) => void
   setApiEnvironment: (
@@ -17,6 +29,24 @@ interface AfilmorySessionNativeModule {
 
 const nativeSession
   = Platform.OS === 'ios' ? (requireNativeModule('AfilmorySession') as AfilmorySessionNativeModule) : null
+
+const fallbackVariant = Constants.expoConfig?.extra?.appVariant === 'local' ? 'local' : 'production'
+const fallbackBuildConfiguration: AfilmoryBuildConfiguration = {
+  allowsApiEnvironmentOverride: __DEV__,
+  apiEnvironment: fallbackVariant,
+  appVariant: fallbackVariant,
+  supportsAppleAuthentication: fallbackVariant === 'production',
+  urlScheme: fallbackVariant === 'local' ? 'afilmory-local' : 'afilmory',
+}
+
+export function getBuildConfiguration(): AfilmoryBuildConfiguration {
+  try {
+    return nativeSession?.getBuildConfiguration() ?? fallbackBuildConfiguration
+  }
+  catch {
+    return fallbackBuildConfiguration
+  }
+}
 
 export function registerNativeSession(cookie: string): void {
   nativeSession?.registerSession(cookie)

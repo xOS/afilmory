@@ -34,4 +34,15 @@ final class PushNotificationTests: XCTestCase {
   func testUnrelatedNotificationDoesNotProduceADeepLink() {
     XCTAssertNil(galleryNotificationDeepLink(userInfo: ["route": "comment"]))
   }
+
+  func testGalleryNotificationUsesTheInstalledVariantsScheme() throws {
+    let url = try XCTUnwrap(
+      galleryNotificationDeepLink(
+        userInfo: ["route": "gallery", "gallerySlug": "street-photo"],
+        scheme: "afilmory-local"
+      )
+    )
+
+    XCTAssertEqual(url.scheme, "afilmory-local")
+  }
 }

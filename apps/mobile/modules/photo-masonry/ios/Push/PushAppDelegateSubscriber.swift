@@ -2,7 +2,10 @@ import ExpoModulesCore
 import UIKit
 import UserNotifications
 
-func galleryNotificationDeepLink(userInfo: [AnyHashable: Any]) -> URL? {
+func galleryNotificationDeepLink(
+  userInfo: [AnyHashable: Any],
+  scheme: String = AfilmoryBuildConfiguration.urlScheme
+) -> URL? {
   guard userInfo["route"] as? String == "gallery",
         let rawSlug = userInfo["gallerySlug"] as? String,
         let slug = rawSlug.trimmingToNil
@@ -10,7 +13,7 @@ func galleryNotificationDeepLink(userInfo: [AnyHashable: Any]) -> URL? {
 
   let galleryName = (userInfo["galleryName"] as? String)?.trimmingToNil ?? slug
   let eventId = (userInfo["eventId"] as? String)?.trimmingToNil ?? UUID().uuidString
-  guard var components = URLComponents(string: "afilmory:///explore") else { return nil }
+  guard var components = URLComponents(string: "\(scheme):///explore") else { return nil }
   components.queryItems = [
     URLQueryItem(name: "gallery", value: slug),
     URLQueryItem(name: "name", value: galleryName),
@@ -23,12 +26,14 @@ public final class PushAppDelegateSubscriber: ExpoAppDelegateSubscriber, UNUserN
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return true }
     UNUserNotificationCenter.current().delegate = self
     APNsRegistrationCoordinator.shared.start()
     return true
   }
 
   public func applicationDidBecomeActive(_ application: UIApplication) {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     APNsRegistrationCoordinator.shared.registerForRemoteNotificationsIfAuthorized()
   }
 
@@ -36,6 +41,7 @@ public final class PushAppDelegateSubscriber: ExpoAppDelegateSubscriber, UNUserN
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     APNsRegistrationCoordinator.shared.didRegisterForRemoteNotifications(deviceToken: deviceToken)
   }
 
@@ -43,6 +49,7 @@ public final class PushAppDelegateSubscriber: ExpoAppDelegateSubscriber, UNUserN
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     APNsRegistrationCoordinator.shared.didFailToRegisterForRemoteNotifications(error)
   }
 

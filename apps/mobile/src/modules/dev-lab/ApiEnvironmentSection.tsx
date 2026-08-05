@@ -3,11 +3,13 @@ import { DevSettings, Pressable, StyleSheet, Text, TextInput, View } from 'react
 
 import type { ApiEnvironment } from '@/api/environment'
 import {
+  BUILD_DEFAULT_ENVIRONMENT,
   buildPlatformOrigin,
   buildTenantOrigin,
   BUILT_IN_ENVIRONMENTS,
   getActiveEnvironment,
   persistEnvironment,
+  resetEnvironment,
 } from '@/api/environment'
 import { signInWithPassword, useAuth } from '@/modules/auth/sessionStore'
 import type { Palette } from '@/theme/palette'
@@ -65,6 +67,12 @@ export function ApiEnvironmentSection() {
   // cached queries — switching hosts invalidates both.
   const applyAndReload = () => {
     void persistEnvironment(draft).then(() => {
+      DevSettings.reload()
+    })
+  }
+
+  const resetAndReload = () => {
+    void resetEnvironment().then(() => {
       DevSettings.reload()
     })
   }
@@ -147,6 +155,10 @@ export function ApiEnvironmentSection() {
           <Text style={styles.primaryActionLabel}>Apply &amp; reload</Text>
         </Pressable>
       </View>
+
+      <Pressable accessibilityRole="button" onPress={resetAndReload} style={styles.resetAction}>
+        <Text style={styles.secondaryActionLabel}>{`Reset to ${BUILD_DEFAULT_ENVIRONMENT.label}`}</Text>
+      </Pressable>
 
       {probe.kind === 'done' ? (
         <Text style={[styles.probeResult, probe.ok ? styles.probeOk : styles.probeFail]}>
@@ -272,6 +284,14 @@ function createStyles(palette: Palette) {
       paddingVertical: 10,
     },
     primaryActionLabel: { color: '#fff', fontFamily: font.ui, fontSize: 12, fontWeight: '700' },
+    resetAction: {
+      alignItems: 'center',
+      borderColor: palette.border,
+      borderCurve: 'continuous',
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingVertical: 10,
+    },
     actionDisabled: { opacity: 0.4 },
     probeResult: { fontFamily: font.mono, fontSize: 11 },
     probeOk: { color: palette.textSecondary },

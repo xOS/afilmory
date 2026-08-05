@@ -103,6 +103,7 @@ final class UploadJobPreparerTests: XCTestCase {
     )
     XCTAssertNil(ShareUploadHandoff.parameters(from: URL(string: "https://example.com")!))
     XCTAssertNil(ShareUploadHandoff.parameters(from: URL(string: "afilmory://share-upload?batchID=invalid")!))
+    XCTAssertNil(ShareUploadHandoff.parameters(from: url, scheme: "afilmory-local"))
   }
 
   private func occurrences(of value: String, in data: Data) -> Int {

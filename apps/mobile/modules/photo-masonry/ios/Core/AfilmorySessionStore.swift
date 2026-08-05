@@ -24,7 +24,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
   private var bootstrapped = false
 
   private init() {
-    let environment = ApiEnvironmentStore.storedOrProduction()
+    let environment = ApiEnvironmentStore.storedOrBuildDefault()
     platformBaseURL = environment.platformAPIBaseURL().absoluteString
     tenantBaseURL = nil
     state = Self.readCookie() == nil ? .signedOut : .loading

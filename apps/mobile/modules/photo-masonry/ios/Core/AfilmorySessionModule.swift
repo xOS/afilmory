@@ -46,6 +46,16 @@ public final class AfilmorySessionModule: Module {
       )
     }
 
+    Function("getBuildConfiguration") {
+      [
+        "allowsApiEnvironmentOverride": AfilmoryBuildConfiguration.allowsApiEnvironmentOverride,
+        "apiEnvironment": AfilmoryBuildConfiguration.defaultApiEnvironment.id,
+        "appVariant": AfilmoryBuildConfiguration.variant.rawValue,
+        "supportsAppleAuthentication": AfilmoryBuildConfiguration.supportsAppleAuthentication,
+        "urlScheme": AfilmoryBuildConfiguration.urlScheme,
+      ] as [String: Any]
+    }
+
     Function("clearSession") {
       AfilmorySessionStore.shared.clearSession()
     }

@@ -1,6 +1,8 @@
 import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
 
+import { getBuildConfiguration } from '@/native/afilmorySession'
+
 export interface AppleAuthorizationResult {
   authorizationCode: string
   email: string | null
@@ -17,10 +19,16 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 export async function isAppleAuthenticationAvailable(): Promise<boolean> {
+  if (!getBuildConfiguration().supportsAppleAuthentication) {
+    return false
+  }
   return await AppleAuthentication.isAvailableAsync().catch(() => false)
 }
 
 export async function requestAppleAuthorization(): Promise<AppleAuthorizationResult> {
+  if (!getBuildConfiguration().supportsAppleAuthentication) {
+    throw new Error('Sign in with Apple is unavailable in this build.')
+  }
   const nonce = bytesToHex(await Crypto.getRandomBytesAsync(32))
   const state = Crypto.randomUUID()
   const credential = await AppleAuthentication.signInAsync({

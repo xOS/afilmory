@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store'
 
-import { setNativeApiEnvironment } from '@/native/afilmorySession'
+import { getBuildConfiguration, setNativeApiEnvironment } from '@/native/afilmorySession'
 
 export interface ApiEnvironment {
   id: string
@@ -30,6 +30,8 @@ export const LOCAL_ENVIRONMENT: ApiEnvironment = {
 }
 
 export const BUILT_IN_ENVIRONMENTS: readonly ApiEnvironment[] = [PRODUCTION_ENVIRONMENT, LOCAL_ENVIRONMENT]
+export const BUILD_DEFAULT_ENVIRONMENT
+  = getBuildConfiguration().apiEnvironment === 'local' ? LOCAL_ENVIRONMENT : PRODUCTION_ENVIRONMENT
 
 const STORAGE_KEY = 'api.environment'
 const HOST_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d{1,5})?$/i
@@ -66,15 +68,15 @@ function parseEnvironment(raw: string | null): ApiEnvironment | null {
   }
 }
 
-let activeEnvironment = PRODUCTION_ENVIRONMENT
+let activeEnvironment = BUILD_DEFAULT_ENVIRONMENT
 
 // SecureStore's synchronous `getItem` throws `errSecMissingEntitlement` on
 // simulator builds, so the override is hydrated asynchronously and the app
 // blocks its first render on it — see waitForEnvironment.
-const hydration: Promise<void> = __DEV__
+const hydration: Promise<void> = getBuildConfiguration().allowsApiEnvironmentOverride
   ? SecureStore.getItemAsync(STORAGE_KEY)
       .then((raw) => {
-        activeEnvironment = parseEnvironment(raw) ?? PRODUCTION_ENVIRONMENT
+        activeEnvironment = parseEnvironment(raw) ?? BUILD_DEFAULT_ENVIRONMENT
       })
       .catch(() => {})
   : Promise.resolve()
@@ -88,8 +90,19 @@ export function getActiveEnvironment(): ApiEnvironment {
 }
 
 export async function persistEnvironment(next: ApiEnvironment): Promise<void> {
+  if (!getBuildConfiguration().allowsApiEnvironmentOverride) {
+    throw new Error('API environment overrides are unavailable in release builds.')
+  }
   await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(next))
   setNativeApiEnvironment(next)
+}
+
+export async function resetEnvironment(): Promise<void> {
+  if (!getBuildConfiguration().allowsApiEnvironmentOverride) {
+    throw new Error('API environment overrides are unavailable in release builds.')
+  }
+  await SecureStore.deleteItemAsync(STORAGE_KEY)
+  setNativeApiEnvironment(BUILD_DEFAULT_ENVIRONMENT)
 }
 
 export function buildPlatformOrigin(environment: ApiEnvironment): string {

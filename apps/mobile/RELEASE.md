@@ -3,6 +3,24 @@
 CI: `.github/workflows/mobile-testflight.yml` — prebuild → archive → upload to TestFlight.
 Trigger: push a `mobile-v*` tag, or run manually via workflow_dispatch.
 
+## Local simulator variant
+
+The generated iOS project supports two independently installable variants. Production remains the
+safe default when `AFILMORY_APP_VARIANT` is omitted.
+
+| Variant | Command | Bundle ID | Default API |
+| --- | --- | --- | --- |
+| Production | `pnpm --filter @afilmory/mobile ios:production` | `app.afilmory` | `https://api.afilmory.art` |
+| Local | `pnpm --filter @afilmory/mobile ios:local` | `app.afilmory.local` | `http://localhost:1841` |
+
+Both commands run a clean Expo Prebuild before compiling because the generated native project keeps
+the previous variant's identifier. The Local build generates only the main application: Sign in with
+Apple, push notifications, Share Extension, widgets, Live Activities, and StoreKit sponsorship are
+production-only. Use the local password account for agent testing.
+
+Run `pnpm --filter @afilmory/mobile variant:test` to verify the variant boundary without generating
+the native project.
+
 ## One-time setup
 
 ### Apple Developer portal ([developer.apple.com](https://developer.apple.com/account))

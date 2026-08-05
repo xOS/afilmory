@@ -2,6 +2,7 @@ import { expoClient } from '@better-auth/expo/client'
 import { createAuthClient } from 'better-auth/react'
 
 import { getApiBaseUrl } from '@/api/client'
+import { getBuildConfiguration } from '@/native/afilmorySession'
 
 import { AUTH_COOKIE_PREFIX, AUTH_STORAGE_PREFIX, authStorage } from './authStorage'
 
@@ -14,7 +15,7 @@ function createClient() {
         // Set-Cookie whose name does not start with this, so a mismatch means
         // the session is silently never persisted.
         cookiePrefix: AUTH_COOKIE_PREFIX,
-        scheme: 'afilmory',
+        scheme: getBuildConfiguration().urlScheme,
         storagePrefix: AUTH_STORAGE_PREFIX,
         storage: authStorage,
       }),

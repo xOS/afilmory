@@ -9,13 +9,13 @@ struct ShareUploadContextSnapshot: Codable {
 }
 
 enum ShareUploadContract {
-  static let appGroupIdentifier = "group.app.afilmory"
   static let contextKey = "share-upload.context.v1"
   static let inboxDirectory = "share-upload/inbox"
   static let receiptDirectory = "share-upload/receipts"
 
   static var containerURL: URL? {
-    FileManager.default.containerURL(
+    guard let appGroupIdentifier = AfilmoryBuildConfiguration.appGroupIdentifier else { return nil }
+    return FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroupIdentifier
     )
   }
@@ -69,7 +69,8 @@ enum ShareUploadContextStore {
   }
 
   private static var defaults: UserDefaults? {
-    UserDefaults(suiteName: ShareUploadContract.appGroupIdentifier)
+    guard let appGroupIdentifier = AfilmoryBuildConfiguration.appGroupIdentifier else { return nil }
+    return UserDefaults(suiteName: appGroupIdentifier)
   }
 
   private static func save(_ snapshot: ShareUploadContextSnapshot) {

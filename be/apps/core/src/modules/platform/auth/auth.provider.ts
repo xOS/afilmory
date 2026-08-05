@@ -169,6 +169,7 @@ export class AuthProvider implements OnModuleInit {
         'https://*.localhost:*',
         'http://localhost:*',
         'https://localhost:*',
+        'afilmory-local://',
         ...mobileOrigins,
       ]
     }

@@ -17,6 +17,15 @@ struct ApiEnvironment: Codable, Equatable, Sendable {
     baseDomain: "afilmory.art",
     port: nil
   )
+
+  static let local = ApiEnvironment(
+    id: "local",
+    label: "Local",
+    scheme: "http",
+    platformHost: "localhost:1841",
+    baseDomain: "localhost",
+    port: 1841
+  )
 }
 
 final class ApiEnvironmentStore: @unchecked Sendable {
@@ -28,7 +37,7 @@ final class ApiEnvironmentStore: @unchecked Sendable {
   private var environment: ApiEnvironment
 
   private init() {
-    environment = Self.storedOrProduction()
+    environment = Self.storedOrBuildDefault()
   }
 
   func current() -> ApiEnvironment {
@@ -38,6 +47,13 @@ final class ApiEnvironmentStore: @unchecked Sendable {
   }
 
   func set(_ environment: ApiEnvironment) throws {
+    guard AfilmoryBuildConfiguration.allowsApiEnvironmentOverride else {
+      throw NSError(
+        domain: "app.afilmory.api-environment",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "API environment overrides are unavailable in release builds."]
+      )
+    }
     guard environment.scheme == "http" || environment.scheme == "https",
           URL(string: "\(environment.scheme)://\(environment.platformHost)")?.host != nil,
           URL(string: "\(environment.scheme)://\(environment.baseDomain)")?.host != nil
@@ -104,8 +120,11 @@ final class ApiEnvironmentStore: @unchecked Sendable {
     return try? JSONDecoder().decode(ApiEnvironment.self, from: data)
   }
 
-  static func storedOrProduction() -> ApiEnvironment {
-    load() ?? .production
+  static func storedOrBuildDefault() -> ApiEnvironment {
+    guard AfilmoryBuildConfiguration.allowsApiEnvironmentOverride else {
+      return AfilmoryBuildConfiguration.defaultApiEnvironment
+    }
+    return load() ?? AfilmoryBuildConfiguration.defaultApiEnvironment
   }
 
   private static var query: [String: Any] {

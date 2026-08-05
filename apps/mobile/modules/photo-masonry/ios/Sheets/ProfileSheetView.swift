@@ -30,6 +30,7 @@ struct ProfileSheetView: View {
     .background(Color(.systemGroupedBackground).ignoresSafeArea())
     .onAppear(perform: readCacheSize)
     .task {
+      guard AfilmoryBuildConfiguration.supportsStoreKitSponsorship else { return }
       await sponsorshipStore.load()
       await sponsorshipStore.observeTransactionUpdates()
     }
@@ -145,8 +146,10 @@ struct ProfileSheetView: View {
         onAccountSettings()
       }
       rowDivider
-      sponsorshipRow
-      rowDivider
+      if AfilmoryBuildConfiguration.supportsStoreKitSponsorship {
+        sponsorshipRow
+        rowDivider
+      }
       cacheRow
       rowDivider
       actionRow(icon: "person.crop.circle.badge.minus", title: profile.localization.deleteAccount, tint: .red) {

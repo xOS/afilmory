@@ -7,6 +7,8 @@
     "android": "expo run:android",
     "bundle": "expo export --platform ios --output-dir .expo/export-check",
     "ios": "expo run:ios",
+    "ios:local": "pnpm native:locales && AFILMORY_APP_VARIANT=local expo prebuild -p ios --clean && AFILMORY_APP_VARIANT=local expo run:ios",
+    "ios:production": "pnpm native:locales && AFILMORY_APP_VARIANT=production expo prebuild -p ios --clean && AFILMORY_APP_VARIANT=production expo run:ios",
     "native:locales": "node scripts/copy-native-locales.mjs",
     "native:test": "pnpm native:test:prepare && xcodebuild test -workspace ios/Afilmory.xcworkspace -scheme AfilmoryNativeTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro'",
     "native:test:prepare": "GEM_HOME=\"$(brew --prefix cocoapods)/libexec\" \"$(brew --prefix ruby)/bin/ruby\" scripts/configure-native-tests.rb",
@@ -14,7 +16,8 @@
     "preios": "pnpm native:locales",
     "prestart": "pnpm native:locales",
     "start": "expo start",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "variant:test": "tsx --test app.config.test.mjs"
   },
   "dependencies": {
     "@bacons/apple-targets": "^5.0.0",

@@ -51,6 +51,7 @@ final class APNsRegistrationCoordinator {
   }
 
   func start() {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     guard !started else { return }
     started = true
     sessionObservation = AfilmorySessionStore.shared.observe { [weak self] state in
@@ -63,6 +64,7 @@ final class APNsRegistrationCoordinator {
   }
 
   func registerForRemoteNotificationsIfAuthorized() {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     authorizationTask?.cancel()
     authorizationTask = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -92,6 +94,7 @@ final class APNsRegistrationCoordinator {
   }
 
   nonisolated static func unregisterCurrentDevice(using snapshot: AfilmorySessionSnapshot) {
+    guard AfilmoryBuildConfiguration.supportsPushNotifications else { return }
     guard let token = UserDefaults.standard.string(forKey: cachedTokenKey),
           !token.isEmpty,
           snapshot.cookie != nil,
