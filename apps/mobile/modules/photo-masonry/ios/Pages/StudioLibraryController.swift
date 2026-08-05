@@ -21,6 +21,14 @@ private struct StudioDeleteResponse: Decodable {
   let deleted: Bool
 }
 
+enum StudioLibraryDeletePolicy {
+  static func requiresStorageDeletion(storageProviders: [String]) -> Bool {
+    storageProviders.contains { provider in
+      provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "managed"
+    }
+  }
+}
+
 final class StudioLibraryController: UIViewController {
   private let appContext: AppContext?
   private let localization = Localization.shared
@@ -338,7 +346,13 @@ final class StudioLibraryController: UIViewController {
   }
 
   private func confirmDelete() {
-    guard !selectedIds.isEmpty, !mutating else { return }
+    guard !selectedIds.isEmpty, !mutating, let feed else { return }
+    let selectedProviders = feed.studioPhotos
+      .filter { selectedIds.contains($0.asset.id) }
+      .map(\.asset.storageProvider)
+    let requiresStorageDeletion = StudioLibraryDeletePolicy.requiresStorageDeletion(
+      storageProviders: selectedProviders
+    )
     let alert = UIAlertController(
       title: localization.value("studio.library.delete.title"),
       message: localization.value(
@@ -348,6 +362,14 @@ final class StudioLibraryController: UIViewController {
       preferredStyle: .alert
     )
     alert.addAction(UIAlertAction(title: localization.value("common.cancel"), style: .cancel))
+    if requiresStorageDeletion {
+      alert.addAction(UIAlertAction(
+        title: localization.value("common.delete"),
+        style: .destructive
+      ) { [weak self] _ in self?.deleteSelected(fromStorage: true) })
+      present(alert, animated: true)
+      return
+    }
     alert.addAction(UIAlertAction(
       title: localization.value("studio.library.delete.databaseOnly"),
       style: .destructive
