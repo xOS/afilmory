@@ -54,6 +54,7 @@ import { createSystemSettingUiSchema } from './system-setting.ui-schema'
 const TRAILING_SLASHES_REGEX = /\/+$/
 
 const PLAN_OVERRIDE_ENTRY_SCHEMA = z.object({
+  customDomainLimit: z.number().int().min(0).nullable().optional(),
   monthlyAssetProcessLimit: z.number().int().min(0).nullable().optional(),
   libraryItemLimit: z.number().int().min(0).nullable().optional(),
   maxUploadSizeMb: z.number().int().min(1).nullable().optional(),

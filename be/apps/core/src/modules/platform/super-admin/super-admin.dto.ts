@@ -6,6 +6,7 @@ import { z } from 'zod'
 const planQuotaFields = (() => {
   const fields: Record<string, z.ZodTypeAny> = {}
   for (const planId of BILLING_PLAN_IDS) {
+    fields[`billingPlan.${planId}.quota.customDomainLimit`] = z.number().int().min(0).nullable().optional()
     fields[`billingPlan.${planId}.quota.monthlyAssetProcessLimit`] = z.number().int().min(0).nullable().optional()
     fields[`billingPlan.${planId}.quota.libraryItemLimit`] = z.number().int().min(0).nullable().optional()
     fields[`billingPlan.${planId}.quota.maxUploadSizeMb`] = z.number().int().min(1).nullable().optional()

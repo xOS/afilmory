@@ -61,6 +61,7 @@ const planI18nPrefixes = {
 } as const
 
 const QUOTA_LABEL_KEYS: Record<string, I18nKeys> = {
+  customDomainLimit: `${planI18nPrefixes.quotaLabelPrefix}customDomainLimit`,
   monthlyAssetProcessLimit: `${planI18nPrefixes.quotaLabelPrefix}monthlyAssetProcessLimit`,
   libraryItemLimit: `${planI18nPrefixes.quotaLabelPrefix}libraryItemLimit`,
   maxUploadSizeMb: `${planI18nPrefixes.quotaLabelPrefix}maxUploadSizeMb`,
@@ -68,10 +69,17 @@ const QUOTA_LABEL_KEYS: Record<string, I18nKeys> = {
 }
 
 const QUOTA_UNIT_KEYS: Record<string, I18nKeys | null> = {
+  customDomainLimit: null,
   monthlyAssetProcessLimit: `${planI18nPrefixes.quotaUnitPrefix}photos`,
   libraryItemLimit: `${planI18nPrefixes.quotaUnitPrefix}photos`,
   maxUploadSizeMb: `${planI18nPrefixes.quotaUnitPrefix}megabytes`,
   maxSyncObjectSizeMb: `${planI18nPrefixes.quotaUnitPrefix}megabytes`,
+}
+
+const PLAN_DESCRIPTION_KEYS: Record<string, I18nKeys> = {
+  free: 'plan.description.free',
+  pro: 'plan.description.pro',
+  friend: 'plan.description.friend',
 }
 
 export function Component() {
@@ -260,7 +268,9 @@ function PlanCard({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-text">{plan.name}</h2>
-          <p className="text-text-secondary text-sm">{plan.description}</p>
+          <p className="text-text-secondary text-sm">
+            {PLAN_DESCRIPTION_KEYS[plan.planId] ? t(PLAN_DESCRIPTION_KEYS[plan.planId]) : plan.description}
+          </p>
           {plan.pricing && plan.pricing.monthlyPrice !== null && plan.pricing.monthlyPrice !== undefined && (
             <p
               className={clsxm(
@@ -354,7 +364,7 @@ function PlanSkeleton() {
           <div className="bg-fill/50 h-6 w-1/2 animate-pulse rounded" />
           <div className="bg-fill/30 mt-2 h-4 w-2/3 animate-pulse rounded" />
           <div className="mt-6 space-y-2">
-            {Array.from({ length: 4 }).map((__, quotaIndex) => (
+            {Array.from({ length: 5 }).map((__, quotaIndex) => (
               <div key={`quota-${quotaIndex}`} className="bg-fill/20 h-4 animate-pulse rounded" />
             ))}
           </div>

@@ -178,6 +178,7 @@ export const SYSTEM_SETTING_DEFINITIONS = {
 } as const
 
 const BILLING_PLAN_QUOTA_KEYS = [
+  'customDomainLimit',
   'monthlyAssetProcessLimit',
   'libraryItemLimit',
   'maxUploadSizeMb',

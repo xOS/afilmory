@@ -5,9 +5,15 @@ import type { UiNode, UiSchema } from '@core/modules/ui/ui-schema/ui-schema.type
 
 import type { SystemSettingField } from './system-setting.constants'
 
-export const SYSTEM_SETTING_UI_SCHEMA_VERSION = '1.5.0'
+export const SYSTEM_SETTING_UI_SCHEMA_VERSION = '1.6.0'
 
 const PLAN_QUOTA_FIELDS = [
+  {
+    suffix: 'customDomainLimit',
+    titleKey: 'system.sections.billing.fields.quota.custom-domain.title',
+    descriptionKey: 'system.sections.billing.fields.quota.custom-domain.description',
+    placeholderKey: 'system.sections.billing.fields.quota.custom-domain.placeholder',
+  },
   {
     suffix: 'monthlyAssetProcessLimit',
     titleKey: 'system.sections.billing.fields.quota.monthly-asset.title',

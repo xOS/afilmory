@@ -3,6 +3,7 @@ import { Modal } from '@afilmory/ui'
 import { getRequestErrorCode, getRequestStatusCode } from '~/lib/errors'
 import { ManagedStoragePlansModal } from '~/modules/storage-providers/components/ManagedStoragePlansModal'
 
+import type { BillingPlanUpgradeReason } from './BillingPlanUpgradeModal'
 import { BillingPlanUpgradeModal } from './BillingPlanUpgradeModal'
 
 const PLAN_LIMIT_CODE = 40
@@ -27,10 +28,13 @@ export function resolveBillingUpgradeCategory(error: unknown): BillingUpgradeCat
   return null
 }
 
-export function presentBillingUpgradeModal(category: BillingUpgradeCategory) {
+export function presentBillingUpgradeModal(
+  category: BillingUpgradeCategory,
+  reason: BillingPlanUpgradeReason = 'quota-exceeded',
+) {
   if (category === 'storage') {
     Modal.present(ManagedStoragePlansModal, { reason: 'quota-exceeded' }, { dismissOnOutsideClick: true })
     return
   }
-  Modal.present(BillingPlanUpgradeModal, {}, { dismissOnOutsideClick: true })
+  Modal.present(BillingPlanUpgradeModal, { reason }, { dismissOnOutsideClick: true })
 }

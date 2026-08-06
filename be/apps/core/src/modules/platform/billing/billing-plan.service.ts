@@ -117,7 +117,7 @@ export class BillingPlanService {
         payment: this.buildPaymentInfo(productConfigs[id]),
         pricing: this.buildPricingInfo(pricingConfigs[id]),
       }
-    }).filter((plan) => this.shouldExposePlan(plan.planId, plan.payment))
+    }).filter(plan => this.shouldExposePlan(plan.planId, plan.payment))
   }
 
   async ensurePhotoProcessingAllowance(tenantId: string, incomingItems: number): Promise<void> {
@@ -141,6 +141,25 @@ export class BillingPlanService {
         message: `当月新增照片额度不足，可用剩余：${remaining}，请求新增：${incomingItems}。升级订阅后即可提升限额。`,
       })
     }
+  }
+
+  async ensureCustomDomainAllowance(tenantId: string, currentDomainCount: number): Promise<void> {
+    const quota = await this.getQuotaForTenant(tenantId)
+    const limit = quota.customDomainLimit
+    if (limit === null || currentDomainCount < limit) {
+      return
+    }
+
+    const message
+      = limit === 0
+        ? '当前套餐不包含自定义域名。升级至 Pro 后可绑定 1 个自定义域名并使用托管 HTTPS。'
+        : `自定义域名额度已用完（${currentDomainCount}/${limit}）。请删除现有域名后再绑定新的域名。`
+    throw new BizException(ErrorCode.BILLING_PLAN_QUOTA_EXCEEDED, { message })
+  }
+
+  async hasCustomDomainEntitlement(tenantId: string): Promise<boolean> {
+    const quota = await this.getQuotaForTenant(tenantId)
+    return quota.customDomainLimit === null || quota.customDomainLimit > 0
   }
 
   async updateTenantPlan(tenantId: string, planId: BillingPlanId): Promise<void> {
@@ -175,6 +194,7 @@ export class BillingPlanService {
       return { ...base }
     }
     return {
+      customDomainLimit: override.customDomainLimit !== undefined ? override.customDomainLimit : base.customDomainLimit,
       monthlyAssetProcessLimit:
         override.monthlyAssetProcessLimit !== undefined
           ? override.monthlyAssetProcessLimit

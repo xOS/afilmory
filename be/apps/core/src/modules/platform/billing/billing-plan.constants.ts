@@ -6,9 +6,10 @@ export const BILLING_PLAN_DEFINITIONS: Record<BillingPlanId, BillingPlanDefiniti
   free: {
     id: 'free',
     name: 'Free',
-    description: '默认入门方案，适用于个人与试用场景。',
+    description: '使用 Afilmory 子域名创建并发布个人图库。',
     includedStorageBytes: 0,
     quotas: {
+      customDomainLimit: 0,
       monthlyAssetProcessLimit: 300,
       libraryItemLimit: 500,
       maxUploadSizeMb: 20,
@@ -18,9 +19,10 @@ export const BILLING_PLAN_DEFINITIONS: Record<BillingPlanId, BillingPlanDefiniti
   pro: {
     id: 'pro',
     name: 'Pro',
-    description: '专业方案',
+    description: '面向需要更大图库、品牌域名与托管 HTTPS 的创作者。',
     includedStorageBytes: 0,
     quotas: {
+      customDomainLimit: 1,
       monthlyAssetProcessLimit: 1000,
       libraryItemLimit: 5000,
       maxUploadSizeMb: 200,
@@ -33,6 +35,7 @@ export const BILLING_PLAN_DEFINITIONS: Record<BillingPlanId, BillingPlanDefiniti
     description: '内部使用的好友方案，没有任何限制，仅超级管理员可设置。',
     includedStorageBytes: null,
     quotas: {
+      customDomainLimit: null,
       monthlyAssetProcessLimit: null,
       libraryItemLimit: null,
       maxUploadSizeMb: null,

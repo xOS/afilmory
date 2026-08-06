@@ -27,8 +27,8 @@ const checkTenantSlugSchema = z.object({
       z
         .string()
         .nullable()
-        .refine((val) => val !== null, { message: '空间名称不能为空' })
-        .transform((val) => val as string)
+        .refine(val => val !== null, { message: '空间名称不能为空' })
+        .transform(val => val as string)
         .pipe(
           z
             .string()
@@ -108,22 +108,25 @@ export class TenantController {
   @Get('/domains')
   @TenantRoles('admin')
   async listDomains() {
-    const domains = await this.tenantDomainService.listDomainsForTenant()
-    return { domains }
+    const [domains, customDomainLimit] = await Promise.all([
+      this.tenantDomainService.listDomainsForTenant(),
+      this.tenantDomainService.getCustomDomainLimitForCurrentTenant(),
+    ])
+    return { domains, cnameTarget: this.tenantDomainService.getCnameTarget(), customDomainLimit }
   }
 
   @Post('/domains')
   @TenantRoles('admin')
   async requestDomain(@Body() body: RequestTenantDomainDto) {
     const aggregate = await this.tenantDomainService.requestDomain(body.domain)
-    return { domain: aggregate.domain }
+    return { domain: aggregate.domain, cnameTarget: this.tenantDomainService.getCnameTarget() }
   }
 
   @Post('/domains/:domainId/verify')
   @TenantRoles('admin')
   async verifyDomain(@Param('domainId') domainId: string) {
     const aggregate = await this.tenantDomainService.verifyDomain(domainId)
-    return { domain: aggregate.domain }
+    return { domain: aggregate.domain, cnameTarget: this.tenantDomainService.getCnameTarget() }
   }
 
   @Delete('/domains/:domainId')

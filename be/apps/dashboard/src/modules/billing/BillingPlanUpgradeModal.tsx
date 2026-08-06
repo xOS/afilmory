@@ -8,11 +8,16 @@ const billingPlanUpgradeKeys = {
   description: 'plan.upgrade-modal.description',
   actionUpgrade: 'plan.upgrade-modal.action.upgrade',
   actionLater: 'plan.upgrade-modal.action.later',
+  customDomainTitle: 'plan.upgrade-modal.custom-domain.title',
+  customDomainDescription: 'plan.upgrade-modal.custom-domain.description',
 } as const
 
-export const BillingPlanUpgradeModal: ModalComponent = ({ dismiss }) => {
+export type BillingPlanUpgradeReason = 'quota-exceeded' | 'custom-domain'
+
+export const BillingPlanUpgradeModal: ModalComponent<{ reason?: BillingPlanUpgradeReason }> = ({ dismiss, reason }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const isCustomDomain = reason === 'custom-domain'
 
   const handleUpgrade = () => {
     dismiss?.()
@@ -23,10 +28,10 @@ export const BillingPlanUpgradeModal: ModalComponent = ({ dismiss }) => {
     <div className="flex w-full max-w-[520px] flex-col gap-4">
       <DialogHeader>
         <DialogTitle className="text-lg font-semibold leading-none tracking-tight">
-          {t(billingPlanUpgradeKeys.title)}
+          {t(isCustomDomain ? billingPlanUpgradeKeys.customDomainTitle : billingPlanUpgradeKeys.title)}
         </DialogTitle>
         <DialogDescription className="text-sm text-text-secondary">
-          {t(billingPlanUpgradeKeys.description)}
+          {t(isCustomDomain ? billingPlanUpgradeKeys.customDomainDescription : billingPlanUpgradeKeys.description)}
         </DialogDescription>
       </DialogHeader>
       <DialogFooter className="mt-1 gap-2">

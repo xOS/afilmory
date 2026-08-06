@@ -232,6 +232,11 @@ const zhCnUiSchema = {
         fields: {
           quota: {
             'helper': '留空表示遵循默认或不限，填写数字后将覆盖对应计划。',
+            'custom-domain': {
+              title: '自定义域名数量',
+              description: '限制租户可绑定的品牌域名数量，0 表示不提供此功能。',
+              placeholder: '例如 1',
+            },
             'monthly-asset': {
               title: '每月可新增照片（张）',
               description: '达到上限后将阻止新增照片。留空表示回退到默认值或不限。',

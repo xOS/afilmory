@@ -41,6 +41,14 @@ export const env = createEnv({
     RESEND_API_KEY: z.string().min(1).optional(),
     RESEND_FROM: z.string().min(1).default('AFILMORY <notification@afilmory.art>'),
 
+    // Cloudflare for SaaS custom hostnames
+    CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
+    CLOUDFLARE_ZONE_ID: z
+      .string()
+      .regex(/^[a-f0-9]{32}$/i)
+      .optional(),
+    CLOUDFLARE_CUSTOM_HOSTNAME_TARGET: z.string().min(1).optional(),
+
     // Apple Push Notification service
     APNS_TEAM_ID: z.string().min(1).optional(),
     APNS_KEY_ID: z.string().min(1).optional(),

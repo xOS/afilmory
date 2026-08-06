@@ -234,6 +234,11 @@ const enUiSchema = {
         fields: {
           quota: {
             'helper': 'Leave empty to inherit defaults or no limit; numbers override plan settings.',
+            'custom-domain': {
+              title: 'Custom domains',
+              description: 'Maximum branded domains a tenant can bind. Use 0 to make the feature unavailable.',
+              placeholder: 'e.g. 1',
+            },
             'monthly-asset': {
               title: 'Monthly new photos',
               description: 'Stop new uploads once this monthly cap is reached. Empty means fallback or unlimited.',

@@ -1,4 +1,5 @@
 export interface BillingPlanQuota {
+  customDomainLimit: number | null
   monthlyAssetProcessLimit: number | null
   libraryItemLimit: number | null
   maxUploadSizeMb: number | null
