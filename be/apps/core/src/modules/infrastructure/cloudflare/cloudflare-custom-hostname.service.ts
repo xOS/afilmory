@@ -6,6 +6,13 @@ import { injectable } from 'tsyringe'
 const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4'
 const HTTP_PROTOCOL_PATTERN = /^https?:\/\//
 const TRAILING_DOT_PATTERN = /\.$/
+const CUSTOM_HOSTNAME_SSL_CONFIG = {
+  method: 'http',
+  type: 'dv',
+  settings: {
+    min_tls_version: '1.2',
+  },
+} as const
 
 interface CloudflareApiError {
   code?: number
@@ -48,12 +55,7 @@ export class CloudflareCustomHostnameService {
       method: 'POST',
       body: {
         hostname,
-        ssl: {
-          method: 'http',
-          settings: {
-            min_tls_version: '1.2',
-          },
-        },
+        ssl: CUSTOM_HOSTNAME_SSL_CONFIG,
       },
     })
   }
@@ -87,12 +89,7 @@ export class CloudflareCustomHostnameService {
     return await this.request<CloudflareCustomHostname>(`/custom_hostnames/${customHostnameId}`, {
       method: 'PATCH',
       body: {
-        ssl: {
-          method: 'http',
-          settings: {
-            min_tls_version: '1.2',
-          },
-        },
+        ssl: CUSTOM_HOSTNAME_SSL_CONFIG,
       },
     })
   }

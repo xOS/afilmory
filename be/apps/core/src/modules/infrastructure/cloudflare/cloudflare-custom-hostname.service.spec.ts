@@ -58,7 +58,32 @@ describe('cloudflareCustomHostnameService', () => {
     expect(request.headers).toMatchObject({ authorization: 'Bearer test-token' })
     expect(JSON.parse(String(request.body))).toEqual({
       hostname: 'photos.example.com',
-      ssl: { method: 'http', settings: { min_tls_version: '1.2' } },
+      ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
+    })
+  })
+
+  it('retries domain validation with a complete domain-validation SSL payload', async () => {
+    fetchMock.mockResolvedValueOnce(
+      cloudflareResponse(
+        {
+          id: 'hostname-id',
+          hostname: 'photos.example.com',
+          status: 'active',
+          ssl: { method: 'http', status: 'active' },
+        },
+        { status: 202 },
+      ),
+    )
+
+    await service.retryValidation('hostname-id')
+
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'https://api.cloudflare.com/client/v4/zones/0123456789abcdef0123456789abcdef/custom_hostnames/hostname-id',
+    )
+    expect(request.method).toBe('PATCH')
+    expect(JSON.parse(String(request.body))).toEqual({
+      ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
     })
   })
 
