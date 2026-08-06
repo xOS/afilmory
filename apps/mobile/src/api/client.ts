@@ -1,3 +1,4 @@
+import Constants from 'expo-constants'
 import { ofetch } from 'ofetch'
 
 import { getAuthCookie } from './auth'
@@ -12,6 +13,11 @@ export {
 } from './endpoints'
 
 function attachAuthCookie(headers: Headers): void {
+  headers.set('x-afilmory-surface', 'mobile')
+  const appVersion = Constants.expoConfig?.version ?? Constants.nativeAppVersion
+  if (appVersion) {
+    headers.set('x-afilmory-app-version', appVersion)
+  }
   const cookie = getAuthCookie()
   if (cookie) {
     headers.set('Cookie', cookie)

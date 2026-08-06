@@ -171,3 +171,173 @@ export interface UpdateTenantBanPayload {
 export interface SuperAdminTenantPhotosResponse {
   photos: PhotoAssetListItem[]
 }
+
+export type UserCommercialStatus = 'none' | 'free-owner' | 'paid-owner' | 'paid-member' | 'mixed'
+
+export interface SuperAdminUserStats {
+  totalUsers: number
+  newUsers7d: number
+  newUsers30d: number
+  activeUsers7d: number
+  activeUsers30d: number
+  dormantUsers90d: number
+  verifiedUsers: number
+  bannedUsers: number
+  deletingUsers: number
+}
+
+export interface SuperAdminUserSummary {
+  id: string
+  name: string
+  email: string
+  image: string | null
+  emailVerified: boolean
+  role: 'user' | 'superadmin'
+  banned: boolean
+  banReason: string | null
+  banExpires: string | null
+  twoFactorEnabled: boolean
+  hadTrial: boolean
+  deletionRequestedAt: string | null
+  createdAt: string
+  updatedAt: string
+  lastSignedInAt: string | null
+  lastActiveAt: string | null
+  lastActiveSurface: string | null
+  membershipCount: number
+  mobileDeviceCount: number
+  mobileLastSeenAt: string | null
+  latestAppVersion: string | null
+  commercialStatus: UserCommercialStatus
+}
+
+export interface SuperAdminUserListParams {
+  page: number
+  limit: number
+  search?: string
+  status?: 'active' | 'banned' | 'deleting'
+  emailVerified?: boolean
+  hasMobileDevice?: boolean
+  commercialStatus?: UserCommercialStatus
+  sortBy?: 'createdAt' | 'lastSignedInAt' | 'lastActiveAt' | 'name'
+  sortDir?: 'asc' | 'desc'
+}
+
+export interface SuperAdminUserListResponse {
+  users: SuperAdminUserSummary[]
+  total: number
+  stats: SuperAdminUserStats
+}
+
+export interface SuperAdminUserDetailResponse {
+  user: SuperAdminUserSummary & {
+    username?: string | null
+    displayUsername?: string | null
+    creemCustomerId?: string | null
+  }
+  memberships: Array<{
+    id: string
+    tenantId: string
+    tenantName: string
+    tenantSlug: string
+    role: string
+    status: string
+    planId: string
+    storagePlanId: string | null
+    tenantStatus: string
+    createdAt: string
+  }>
+  accounts: Array<{ providerId: string, createdAt: string, updatedAt: string }>
+  sessions: Array<{
+    id: string
+    activeTenantId: string | null
+    ipAddress: string | null
+    userAgent: string | null
+    createdAt: string
+    updatedAt: string
+    expiresAt: string
+  }>
+  activities: Array<{
+    id: string
+    tenantId: string | null
+    eventType: string
+    surface: string
+    appVersion: string | null
+    occurredAt: string
+    metadata: Record<string, unknown> | null
+  }>
+  devices: Array<{
+    id: string
+    environment: string
+    locale: string | null
+    appVersion: string | null
+    enabled: boolean
+    lastSeenAt: string
+    createdAt: string
+  }>
+  mobileSummary: {
+    activityCount: number
+    deviceCount: number
+    lastSeenAt: string | null
+    latestAppVersion: string | null
+  }
+  subscriptions: Array<{
+    tenantId: string
+    tenantName: string
+    tenantSlug: string
+    planId: string
+    subscriptionId: string | null
+    productId: string | null
+    status: string | null
+    periodStart: string | null
+    periodEnd: string | null
+    cancelAtPeriodEnd: boolean | null
+  }>
+  social: { comments: number, commentReactions: number, gallerySubscriptions: number }
+}
+
+export interface TenantCleanupCandidate {
+  id: string
+  slug: string
+  name: string
+  createdAt: string
+  lastActivityAt: string
+  ownerName: string | null
+  ownerEmail: string | null
+}
+
+export interface TenantCleanupCandidatesResponse {
+  candidates: TenantCleanupCandidate[]
+  total: number
+  inactiveMonths: number
+  cutoff: string
+  confirmation: string
+}
+
+export interface TenantCleanupResult {
+  batchId: string
+  deletedCount: number
+  skippedCount: number
+  failedCount: number
+  completedAt: string
+}
+
+export interface SuperAdminAuditLog {
+  id: string
+  actorUserId: string | null
+  action: string
+  targetType: string
+  targetId: string
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  requestId: string | null
+  batchId: string | null
+  result: string
+  errorCode: string | null
+  occurredAt: string
+}
+
+export interface SuperAdminAuditLogResponse {
+  logs: SuperAdminAuditLog[]
+  total: number
+}

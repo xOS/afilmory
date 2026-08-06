@@ -29,6 +29,7 @@ import { HealthModule } from './infrastructure/health/health.module'
 import { StaticWebModule } from './infrastructure/static-web/static-web.module'
 import { MailModule } from './mail/mail.module'
 import { AccountDeletionModule } from './platform/account-deletion/account-deletion.module'
+import { ActivityModule } from './platform/activity/activity.module'
 import { AuthModule } from './platform/auth/auth.module'
 import { BillingModule } from './platform/billing/billing.module'
 import { DashboardModule } from './platform/dashboard/dashboard.module'
@@ -55,6 +56,7 @@ function createEventModuleOptions(redis: RedisAccessor) {
     }),
     RedisModule,
     MailModule,
+    ActivityModule,
     AuthModule,
     AccountDeletionModule,
     CacheModule,

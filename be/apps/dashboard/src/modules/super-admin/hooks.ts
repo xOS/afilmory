@@ -3,21 +3,31 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { StorageProvider } from '../storage-providers/types'
 import {
   deleteSuperAdminTenant,
+  executeTenantCleanup,
+  fetchSuperAdminAuditLogs,
   fetchSuperAdminSettings,
   fetchSuperAdminStorageTenants,
   fetchSuperAdminTenantPhotos,
   fetchSuperAdminTenants,
+  fetchSuperAdminUser,
+  fetchSuperAdminUsers,
+  fetchTenantCleanupCandidates,
+  revokeSuperAdminUserSessions,
   testSuperAdminStorageUpload,
   updateSuperAdminSettings,
   updateSuperAdminTenantBan,
   updateSuperAdminTenantPlan,
   updateSuperAdminTenantStoragePlan,
+  updateSuperAdminUserBan,
 } from './api'
 import type {
   SuperAdminSettingsResponse,
   SuperAdminTenantListParams,
   SuperAdminTenantListResponse,
   SuperAdminTenantPhotosResponse,
+  SuperAdminUserDetailResponse,
+  SuperAdminUserListParams,
+  SuperAdminUserListResponse,
   UpdateSuperAdminSettingsPayload,
   UpdateTenantBanPayload,
   UpdateTenantPlanPayload,
@@ -27,6 +37,9 @@ import type {
 export const SUPER_ADMIN_SETTINGS_QUERY_KEY = ['super-admin', 'settings'] as const
 export const SUPER_ADMIN_TENANTS_QUERY_KEY = ['super-admin', 'tenants'] as const
 export const SUPER_ADMIN_STORAGE_TENANTS_QUERY_KEY = ['super-admin', 'tenants', 'storage'] as const
+export const SUPER_ADMIN_USERS_QUERY_KEY = ['super-admin', 'users'] as const
+export const SUPER_ADMIN_TENANT_CLEANUP_QUERY_KEY = ['super-admin', 'tenant-cleanup'] as const
+export const SUPER_ADMIN_AUDIT_QUERY_KEY = ['super-admin', 'audit-logs'] as const
 
 export function useSuperAdminSettingsQuery() {
   return useQuery<SuperAdminSettingsResponse>({
@@ -136,5 +149,64 @@ export function useSuperAdminTenantPhotosQuery(tenantId: string | undefined) {
     queryKey: [...SUPER_ADMIN_TENANTS_QUERY_KEY, tenantId, 'photos'],
     queryFn: () => fetchSuperAdminTenantPhotos(tenantId!),
     enabled: !!tenantId,
+  })
+}
+
+export function useSuperAdminUsersQuery(params: SuperAdminUserListParams) {
+  return useQuery<SuperAdminUserListResponse>({
+    queryKey: [...SUPER_ADMIN_USERS_QUERY_KEY, params],
+    queryFn: () => fetchSuperAdminUsers(params),
+    placeholderData: previousData => previousData,
+  })
+}
+
+export function useSuperAdminUserQuery(userId: string | undefined) {
+  return useQuery<SuperAdminUserDetailResponse>({
+    queryKey: [...SUPER_ADMIN_USERS_QUERY_KEY, userId],
+    queryFn: () => fetchSuperAdminUser(userId!),
+    enabled: Boolean(userId),
+  })
+}
+
+export function useUpdateSuperAdminUserBanMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: updateSuperAdminUserBan,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_USERS_QUERY_KEY }),
+  })
+}
+
+export function useRevokeSuperAdminUserSessionsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: revokeSuperAdminUserSessions,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_USERS_QUERY_KEY }),
+  })
+}
+
+export function useTenantCleanupCandidatesQuery(enabled = false) {
+  return useQuery({
+    queryKey: SUPER_ADMIN_TENANT_CLEANUP_QUERY_KEY,
+    queryFn: () => fetchTenantCleanupCandidates(3),
+    enabled,
+  })
+}
+
+export function useExecuteTenantCleanupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: executeTenantCleanup,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_TENANTS_QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_TENANT_CLEANUP_QUERY_KEY })
+    },
+  })
+}
+
+export function useSuperAdminAuditLogsQuery(page: number, limit = 50) {
+  return useQuery({
+    queryKey: [...SUPER_ADMIN_AUDIT_QUERY_KEY, page, limit],
+    queryFn: () => fetchSuperAdminAuditLogs({ page, limit }),
+    placeholderData: previousData => previousData,
   })
 }

@@ -8,10 +8,16 @@ import type {
   BuilderDebugProgressEvent,
   BuilderDebugResult,
   ManagedStorageProbeResult,
+  SuperAdminAuditLogResponse,
   SuperAdminSettingsResponse,
   SuperAdminTenantListParams,
   SuperAdminTenantListResponse,
   SuperAdminTenantPhotosResponse,
+  SuperAdminUserDetailResponse,
+  SuperAdminUserListParams,
+  SuperAdminUserListResponse,
+  TenantCleanupCandidatesResponse,
+  TenantCleanupResult,
   UpdateSuperAdminSettingsPayload,
   UpdateTenantBanPayload,
   UpdateTenantPlanPayload,
@@ -22,6 +28,9 @@ const SUPER_ADMIN_SETTINGS_ENDPOINT = '/super-admin/settings'
 const SUPER_ADMIN_TENANTS_ENDPOINT = '/super-admin/tenants'
 const SUPER_ADMIN_STORAGE_TENANTS_ENDPOINT = '/super-admin/tenants/storage'
 const SUPER_ADMIN_STORAGE_PROBE_ENDPOINT = '/super-admin/storage-providers/test-upload'
+const SUPER_ADMIN_USERS_ENDPOINT = '/super-admin/users'
+const SUPER_ADMIN_TENANT_CLEANUP_ENDPOINT = '/super-admin/tenant-cleanup'
+const SUPER_ADMIN_AUDIT_ENDPOINT = '/super-admin/audit-logs'
 const STABLE_NEWLINE = /\r?\n/
 
 type RunBuilderDebugOptions = {
@@ -282,4 +291,71 @@ export async function fetchSuperAdminTenantPhotos(tenantId: string): Promise<Sup
     method: 'GET',
   })
   return camelCaseKeys<SuperAdminTenantPhotosResponse>(response)
+}
+
+export async function fetchSuperAdminUsers(params: SuperAdminUserListParams): Promise<SuperAdminUserListResponse> {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined) {
+      query.set(key, String(value))
+    }
+  })
+  const response = await coreApi<SuperAdminUserListResponse>(`${SUPER_ADMIN_USERS_ENDPOINT}?${query}`, {
+    method: 'GET',
+  })
+  return camelCaseKeys(response)
+}
+
+export async function fetchSuperAdminUser(userId: string): Promise<SuperAdminUserDetailResponse> {
+  const response = await coreApi<SuperAdminUserDetailResponse>(`${SUPER_ADMIN_USERS_ENDPOINT}/${userId}`, {
+    method: 'GET',
+  })
+  return camelCaseKeys(response)
+}
+
+export async function updateSuperAdminUserBan(input: {
+  userId: string
+  banned: boolean
+  reason?: string | null
+  expiresAt?: string | null
+}): Promise<void> {
+  await coreApi(`${SUPER_ADMIN_USERS_ENDPOINT}/${input.userId}/ban`, {
+    method: 'PATCH',
+    body: { banned: input.banned, reason: input.reason, expiresAt: input.expiresAt },
+  })
+}
+
+export async function revokeSuperAdminUserSessions(userId: string): Promise<{ revokedSessions: number }> {
+  return await coreApi(`${SUPER_ADMIN_USERS_ENDPOINT}/${userId}/sessions`, { method: 'DELETE' })
+}
+
+export async function fetchTenantCleanupCandidates(inactiveMonths = 3): Promise<TenantCleanupCandidatesResponse> {
+  const response = await coreApi<TenantCleanupCandidatesResponse>(
+    `${SUPER_ADMIN_TENANT_CLEANUP_ENDPOINT}/candidates?inactiveMonths=${inactiveMonths}`,
+    { method: 'GET' },
+  )
+  return camelCaseKeys(response)
+}
+
+export async function executeTenantCleanup(input: {
+  inactiveMonths: number
+  tenantIds: string[]
+  confirmation: string
+}): Promise<TenantCleanupResult> {
+  const response = await coreApi<TenantCleanupResult>(`${SUPER_ADMIN_TENANT_CLEANUP_ENDPOINT}/batches`, {
+    method: 'POST',
+    body: input,
+  })
+  return camelCaseKeys(response)
+}
+
+export async function fetchSuperAdminAuditLogs(params: {
+  page: number
+  limit: number
+}): Promise<SuperAdminAuditLogResponse> {
+  const response = await coreApi<SuperAdminAuditLogResponse>(
+    `${SUPER_ADMIN_AUDIT_ENDPOINT}?page=${params.page}&limit=${params.limit}`,
+    { method: 'GET' },
+  )
+  return camelCaseKeys(response)
 }

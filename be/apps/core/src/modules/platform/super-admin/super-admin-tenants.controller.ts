@@ -1,4 +1,4 @@
-import { photoAssets } from '@afilmory/db'
+import { photoAssets, tenants } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { PlatformRoles } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
@@ -20,6 +20,7 @@ import {
   UpdateTenantPlanDto,
   UpdateTenantStoragePlanDto,
 } from './super-admin.dto'
+import { SuperAdminAuditService } from './super-admin-audit.service'
 
 @Controller('super-admin/tenants')
 @PlatformRoles('superadmin')
@@ -33,6 +34,7 @@ export class SuperAdminTenantController {
     private readonly managedStorageService: ManagedStorageService,
     private readonly systemSettings: SystemSettingService,
     private readonly db: DbAccessor,
+    private readonly audit: SuperAdminAuditService,
   ) {}
 
   @Get('/:tenantId/photos')
@@ -46,7 +48,7 @@ export class SuperAdminTenantController {
       .orderBy(desc(photoAssets.createdAt))
 
     return {
-      photos: photos.map((p) => ({
+      photos: photos.map(p => ({
         ...p,
         publicUrl: p.manifest.data.thumbnailUrl,
       })),
@@ -71,15 +73,15 @@ export class SuperAdminTenantController {
 
     const { items: tenantAggregates, total } = tenantResult
 
-    const tenantIds = tenantAggregates.map((aggregate) => aggregate.tenant.id)
+    const tenantIds = tenantAggregates.map(aggregate => aggregate.tenant.id)
     const usageTotalsMap = await this.billingUsageService.getUsageTotalsForTenants(tenantIds)
-    const storageUsageMap =
-      managedProviderKey && tenantIds.length > 0
+    const storageUsageMap
+      = managedProviderKey && tenantIds.length > 0
         ? await this.managedStorageService.getUsageTotalsForTenants(managedProviderKey, tenantIds)
         : {}
 
     return {
-      tenants: tenantAggregates.map((aggregate) => ({
+      tenants: tenantAggregates.map(aggregate => ({
         ...aggregate.tenant,
         usageTotals: usageTotalsMap[aggregate.tenant.id] ?? [],
         storageUsage: storageUsageMap[aggregate.tenant.id] ?? null,
@@ -110,15 +112,15 @@ export class SuperAdminTenantController {
     ])
 
     const { items: tenantAggregates, total } = tenantResult
-    const tenantIds = tenantAggregates.map((aggregate) => aggregate.tenant.id)
+    const tenantIds = tenantAggregates.map(aggregate => aggregate.tenant.id)
 
-    const storageUsageMap =
-      managedProviderKey && tenantIds.length > 0
+    const storageUsageMap
+      = managedProviderKey && tenantIds.length > 0
         ? await this.managedStorageService.getUsageTotalsForTenants(managedProviderKey, tenantIds)
         : {}
 
     return {
-      tenants: tenantAggregates.map((aggregate) => ({
+      tenants: tenantAggregates.map(aggregate => ({
         ...aggregate.tenant,
         storageUsage: storageUsageMap[aggregate.tenant.id] ?? null,
       })),
@@ -133,24 +135,88 @@ export class SuperAdminTenantController {
 
   @Patch('/:tenantId/plan')
   async updateTenantPlan(@Param() params: TenantIdParamDto, @Body() dto: UpdateTenantPlanDto) {
-    await this.billingPlanService.updateTenantPlan(params.tenantId, dto.planId as BillingPlanId)
-    return { updated: true }
+    const before = await this.getTenantAuditSnapshot(params.tenantId)
+    return await this.audit.run(
+      {
+        action: 'tenant.plan.update',
+        targetType: 'tenant',
+        targetId: params.tenantId,
+        before,
+      },
+      async () => {
+        await this.billingPlanService.updateTenantPlan(params.tenantId, dto.planId as BillingPlanId)
+        return { updated: true, planId: dto.planId }
+      },
+      result => ({ after: result }),
+    )
   }
 
   @Patch('/:tenantId/storage-plan')
   async updateTenantStoragePlan(@Param() params: TenantIdParamDto, @Body() dto: UpdateTenantStoragePlanDto) {
-    await this.tenantService.updateStoragePlan(params.tenantId, dto.storagePlanId)
-    return { updated: true }
+    const before = await this.getTenantAuditSnapshot(params.tenantId)
+    return await this.audit.run(
+      {
+        action: 'tenant.storage-plan.update',
+        targetType: 'tenant',
+        targetId: params.tenantId,
+        before,
+      },
+      async () => {
+        await this.tenantService.updateStoragePlan(params.tenantId, dto.storagePlanId)
+        return { updated: true, storagePlanId: dto.storagePlanId }
+      },
+      result => ({ after: result }),
+    )
   }
 
   @Patch('/:tenantId/ban')
   async updateTenantBan(@Param() params: TenantIdParamDto, @Body() dto: UpdateTenantBanDto) {
-    await this.tenantService.setBanned(params.tenantId, dto.banned)
-    return { updated: true }
+    const before = await this.getTenantAuditSnapshot(params.tenantId)
+    return await this.audit.run(
+      {
+        action: dto.banned ? 'tenant.ban' : 'tenant.unban',
+        targetType: 'tenant',
+        targetId: params.tenantId,
+        before,
+      },
+      async () => {
+        await this.tenantService.setBanned(params.tenantId, dto.banned)
+        return { updated: true, banned: dto.banned }
+      },
+      result => ({ after: result }),
+    )
   }
 
   @Delete('/:tenantId')
   async deleteTenant(@Param() params: TenantIdParamDto) {
-    return await this.dataManagementService.deleteTenantAccountById(params.tenantId)
+    const before = await this.getTenantAuditSnapshot(params.tenantId)
+    return await this.audit.run(
+      {
+        action: 'tenant.delete',
+        targetType: 'tenant',
+        targetId: params.tenantId,
+        before,
+      },
+      async () => await this.dataManagementService.deleteTenantAccountById(params.tenantId),
+      result => ({ after: result }),
+    )
+  }
+
+  private async getTenantAuditSnapshot(tenantId: string) {
+    const [tenant] = await this.db
+      .get()
+      .select({
+        id: tenants.id,
+        slug: tenants.slug,
+        name: tenants.name,
+        status: tenants.status,
+        banned: tenants.banned,
+        planId: tenants.planId,
+        storagePlanId: tenants.storagePlanId,
+      })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1)
+    return tenant ?? null
   }
 }

@@ -155,6 +155,9 @@ export const authUsers = pgTable(
     banReason: text('ban_reason'),
     banExpires: timestamp('ban_expires_at', { mode: 'string' }),
     deletionRequestedAt: timestamp('deletion_requested_at', { mode: 'string' }),
+    lastSignedInAt: timestamp('last_signed_in_at', { mode: 'string' }),
+    lastActiveAt: timestamp('last_active_at', { mode: 'string' }),
+    lastActiveSurface: text('last_active_surface'),
   },
   t => [uniqueIndex('uq_auth_user_email_normalized').on(sql`lower(trim(${t.email}))`)],
 )
@@ -572,6 +575,96 @@ export const billingUsageEvents = pgTable(
   ],
 )
 
+export type PlatformActivityMetadata = Record<string, unknown>
+
+export const platformActivityEvents = pgTable(
+  'platform_activity_event',
+  {
+    id: snowflakeId,
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
+    sessionId: text('session_id'),
+    eventType: text('event_type').notNull(),
+    surface: text('surface').notNull(),
+    appVersion: text('app_version'),
+    metadata: jsonb('metadata').$type<PlatformActivityMetadata | null>().default(null),
+    occurredAt: timestamp('occurred_at', { mode: 'string' }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  t => [
+    index('idx_platform_activity_user_occurred').on(t.userId, t.occurredAt),
+    index('idx_platform_activity_tenant_occurred').on(t.tenantId, t.occurredAt),
+    index('idx_platform_activity_type_occurred').on(t.eventType, t.occurredAt),
+  ],
+)
+
+export type SuperAdminAuditSnapshot = Record<string, unknown>
+
+export const superAdminAuditLogs = pgTable(
+  'super_admin_audit_log',
+  {
+    id: snowflakeId,
+    actorUserId: text('actor_user_id').references(() => authUsers.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    before: jsonb('before').$type<SuperAdminAuditSnapshot | null>().default(null),
+    after: jsonb('after').$type<SuperAdminAuditSnapshot | null>().default(null),
+    requestId: text('request_id'),
+    batchId: text('batch_id'),
+    result: text('result').notNull().default('success'),
+    errorCode: text('error_code'),
+    occurredAt: timestamp('occurred_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  t => [
+    index('idx_super_admin_audit_actor_occurred').on(t.actorUserId, t.occurredAt),
+    index('idx_super_admin_audit_target_occurred').on(t.targetType, t.targetId, t.occurredAt),
+    index('idx_super_admin_audit_batch').on(t.batchId),
+  ],
+)
+
+export const tenantCleanupBatches = pgTable(
+  'tenant_cleanup_batch',
+  {
+    id: snowflakeId,
+    actorUserId: text('actor_user_id').references(() => authUsers.id, { onDelete: 'set null' }),
+    inactiveMonths: integer('inactive_months').notNull().default(3),
+    status: text('status').notNull().default('processing'),
+    candidateCount: integer('candidate_count').notNull().default(0),
+    deletedCount: integer('deleted_count').notNull().default(0),
+    skippedCount: integer('skipped_count').notNull().default(0),
+    failedCount: integer('failed_count').notNull().default(0),
+    startedAt: timestamp('started_at', { mode: 'string' }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { mode: 'string' }),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  t => [index('idx_tenant_cleanup_batch_created').on(t.createdAt)],
+)
+
+export const tenantCleanupItems = pgTable(
+  'tenant_cleanup_item',
+  {
+    id: snowflakeId,
+    batchId: text('batch_id')
+      .notNull()
+      .references(() => tenantCleanupBatches.id, { onDelete: 'cascade' }),
+    tenantId: text('tenant_id').notNull(),
+    tenantSlug: text('tenant_slug').notNull(),
+    status: text('status').notNull().default('pending'),
+    lastActivityAt: timestamp('last_activity_at', { mode: 'string' }),
+    reason: text('reason'),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { mode: 'string' }),
+  },
+  t => [
+    unique('uq_tenant_cleanup_item_batch_tenant').on(t.batchId, t.tenantId),
+    index('idx_tenant_cleanup_item_batch_status').on(t.batchId, t.status),
+  ],
+)
+
 export const dbSchema = {
   tenants,
   tenantDomains,
@@ -596,6 +689,10 @@ export const dbSchema = {
   photoAssets,
   photoSyncRuns,
   billingUsageEvents,
+  platformActivityEvents,
+  superAdminAuditLogs,
+  tenantCleanupBatches,
+  tenantCleanupItems,
 }
 
 export type DBSchema = typeof dbSchema
