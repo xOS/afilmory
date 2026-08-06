@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from 'react'
 
-import { setAuthCookie } from '@/api/auth'
+import { adoptAuthCookie, setAuthCookie } from '@/api/auth'
 import { setActiveTenantSlug } from '@/api/client'
+import type { NativeSessionSnapshot } from '@/native/afilmorySession'
+import { addNativeSessionListener, getNativeSessionSnapshot } from '@/native/afilmorySession'
 
 import {
   createWorkspace,
@@ -22,14 +24,16 @@ import type {
   SessionInfo,
 } from './types'
 
-export type AuthStatus = 'loading' | 'signedIn' | 'signedOut'
+export type AuthStatus = 'failed' | 'loading' | 'signedIn' | 'signedOut'
 
 export interface AuthState {
   status: AuthStatus
   session: SessionInfo | null
+  error?: string
 }
 
 let state: AuthState = { status: 'loading', session: null }
+let mirroringNativeSession = false
 const listeners = new Set<() => void>()
 
 function setState(next: AuthState) {
@@ -70,22 +74,38 @@ function setSignedIn(session: SessionInfo, cookie: string | null) {
   setState({ status: 'signedIn', session })
 }
 
-export async function hydrateAuth(): Promise<void> {
-  try {
-    const cookie = getAuthClient().getCookie()
-    if (!cookie) {
-      resetToSignedOut()
+function mirrorNativeSession(snapshot: NativeSessionSnapshot): void {
+  if (snapshot.status === 'signedIn') {
+    if (!snapshot.session) {
       return
     }
-    const session = await fetchSession(cookie)
-    if (!session) {
-      resetToSignedOut()
-      return
-    }
-    setSignedIn(session, cookie)
+    adoptAuthCookie(getAuthClient().getCookie())
+    setActiveWorkspace(snapshot.session.activeWorkspace?.slug)
+    setState({ status: 'signedIn', session: snapshot.session })
+    return
   }
-  catch {
-    resetToSignedOut()
+
+  if (snapshot.status === 'signedOut') {
+    adoptAuthCookie(null)
+    setActiveWorkspace(null)
+    setState({ status: 'signedOut', session: null })
+    return
+  }
+
+  // A failed refresh never downgrades a session an interactive flow already established.
+  if (snapshot.status === 'failed' && state.status !== 'signedIn') {
+    setState({ status: 'failed', session: null, error: snapshot.error })
+  }
+}
+
+export function hydrateAuth(): void {
+  if (!mirroringNativeSession) {
+    mirroringNativeSession = true
+    addNativeSessionListener(mirrorNativeSession)
+  }
+  const snapshot = getNativeSessionSnapshot()
+  if (snapshot) {
+    mirrorNativeSession(snapshot)
   }
 }
 
@@ -214,21 +234,6 @@ export async function switchWorkspace(tenantId: string): Promise<void> {
   setSignedIn(session, cookie)
 }
 
-export async function synchronizeWorkspaceFromNative(slug: string): Promise<void> {
+export function synchronizeWorkspaceFromNative(slug: string): void {
   setActiveWorkspace(slug)
-  const cookie = getAuthClient().getCookie()
-  if (!cookie) {
-    return
-  }
-
-  try {
-    const session = await fetchSession(cookie)
-    if (session) {
-      setSignedIn(session, cookie)
-    }
-  }
-  catch {
-    // The native session has already switched. Keep the tenant routing correct
-    // and allow the next auth hydration to refresh the JS session snapshot.
-  }
 }
