@@ -194,6 +194,7 @@
   "photo.reaction.success": "リアクションを追加しました",
   "photo.share": "写真を共有",
   "photo.unavailable": "写真を表示できません",
+  "profile.accountSettings": "アカウント設定",
   "profile.cacheCleared": "削除しました",
   "profile.clearCache": "画像キャッシュを削除",
   "profile.signOutConfirmTitle": "サインアウトしますか？",

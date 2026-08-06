@@ -194,6 +194,7 @@
   "photo.reaction.success": "已新增回應",
   "photo.share": "分享照片",
   "photo.unavailable": "照片無法使用",
+  "profile.accountSettings": "帳號設定",
   "profile.cacheCleared": "已清除",
   "profile.clearCache": "清除圖片快取",
   "profile.signOutConfirmTitle": "登出？",

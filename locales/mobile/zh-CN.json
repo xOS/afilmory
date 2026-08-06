@@ -194,6 +194,7 @@
   "photo.reaction.success": "已添加回应",
   "photo.share": "分享照片",
   "photo.unavailable": "照片不可用",
+  "profile.accountSettings": "账户设置",
   "profile.cacheCleared": "已清除",
   "profile.clearCache": "清除图片缓存",
   "profile.signOutConfirmTitle": "退出登录？",

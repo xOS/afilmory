@@ -194,6 +194,7 @@
   "photo.reaction.success": "Reaction added",
   "photo.share": "Share photo",
   "photo.unavailable": "Photo unavailable",
+  "profile.accountSettings": "Account settings",
   "profile.cacheCleared": "Cleared",
   "profile.clearCache": "Clear image cache",
   "profile.signOutConfirmTitle": "Sign out of your gallery?",
