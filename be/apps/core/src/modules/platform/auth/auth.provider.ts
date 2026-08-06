@@ -26,6 +26,7 @@ import { AppleAuthorizationService } from './apple-authorization.service'
 import { AppleClientSecretService } from './apple-client-secret.service'
 import type { AuthModuleOptions, SocialProviderOptions, SocialProvidersConfig } from './auth.config'
 import { AuthConfig } from './auth.config'
+import { AUTH_ACCOUNT_POLICY } from './auth-account.policy'
 import { AUTH_ADMIN_PLUGIN_OPTIONS } from './auth-admin.policy'
 import { AUTH_COOKIE_POLICY } from './auth-cookie.policy'
 import { WorkspaceMembershipService } from './workspace-membership.service'
@@ -217,15 +218,7 @@ export class AuthProvider implements OnModuleInit {
           activeTenantId: { type: 'string', input: false },
         },
       },
-      account: {
-        // The OAuth gateway forwards the callback across a cross-subdomain
-        // redirect hop (auth.<domain> -> <tenant>.<domain>), which real
-        // browsers can drop the auth-state cookie on depending on SameSite
-        // enforcement. The gateway's HMAC-signed state envelope plus Better
-        // Auth's own DB-backed verification record already authenticate the
-        // callback, so this redundant cookie check is safe to skip.
-        skipStateCookieCheck: true,
-      },
+      account: AUTH_ACCOUNT_POLICY,
 
       user: {
         additionalFields: {
