@@ -13,6 +13,7 @@ final class PhotosHomeController: UIViewController {
   private let onRequestAccountSettings: () -> Void
   private let onRequestAccountDeletion: () -> Void
   private let masonryView: PhotoMasonryView
+  private let emptyStateView = PageEmptyStateView()
   private let sidebarModel = PhotoSidebarModel()
   private weak var sidebarController: UITabBarController?
   private var sidebarBottomView: UIView?
@@ -60,6 +61,15 @@ final class PhotosHomeController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .systemBackground
+    emptyStateView.translatesAutoresizingMaskIntoConstraints = false
+    emptyStateView.isHidden = true
+    view.addSubview(emptyStateView)
+    NSLayoutConstraint.activate([
+      emptyStateView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      emptyStateView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      emptyStateView.topAnchor.constraint(equalTo: view.topAnchor),
+      emptyStateView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+    ])
     filterObservation = PhotoFilterStore.shared.observe { [weak self] in
       self?.renderFeed()
     }
@@ -191,7 +201,7 @@ final class PhotosHomeController: UIViewController {
     if displayedPhotos.isEmpty {
       showFilteredEmpty()
     } else {
-      contentUnavailableConfiguration = nil
+      clearUnavailableState()
     }
     updateChrome()
   }
@@ -715,54 +725,67 @@ final class PhotosHomeController: UIViewController {
     }
   }
 
+  private func showEmptyState(_ content: PageEmptyStateContent) {
+    contentUnavailableConfiguration = nil
+    emptyStateView.apply(content)
+    emptyStateView.isHidden = false
+  }
+
+  private func clearUnavailableState() {
+    contentUnavailableConfiguration = nil
+    emptyStateView.isHidden = true
+  }
+
   private func showLoading() {
+    emptyStateView.isHidden = true
     contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
   }
 
   private func showSignedOut() {
-    var configuration = UIContentUnavailableConfiguration.empty()
-    configuration.image = UIImage(systemName: "photo.on.rectangle")
-    configuration.text = localization.value("gallery.yours.title")
-    configuration.secondaryText = localization.value("gallery.yours.subtitle")
-    configuration.button = .filled()
-    configuration.button.title = localization.value("common.signIn")
-    configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.onRequestSignIn() }
-    contentUnavailableConfiguration = configuration
+    showEmptyState(
+      PageEmptyStateContent(
+        symbolName: "photo.on.rectangle",
+        title: localization.value("gallery.yours.title"),
+        subtitle: localization.value("gallery.yours.subtitle"),
+        primaryAction: PageEmptyStateAction(title: localization.value("common.signIn")) { [weak self] in
+          self?.onRequestSignIn()
+        }
+      )
+    )
   }
 
   private func showPending() {
-    var configuration = UIContentUnavailableConfiguration.empty()
-    configuration.image = UIImage(systemName: "clock")
-    configuration.text = localization.value("gallery.workspace.pending.title")
-    configuration.secondaryText = localization.value("gallery.workspace.pending.subtitle")
-    configuration.button = .filled()
-    configuration.button.title = localization.value("workspace.setup.submit")
-    configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in
-      self?.onRequestWorkspaceSetup()
-    }
-    configuration.secondaryButton = .plain()
-    configuration.secondaryButton.title = localization.value("account.settings.title")
-    configuration.secondaryButtonProperties.primaryAction = UIAction { [weak self] _ in
-      self?.onRequestAccountSettings()
-    }
-    contentUnavailableConfiguration = configuration
+    showEmptyState(
+      PageEmptyStateContent(
+        symbolName: "clock",
+        title: localization.value("gallery.workspace.pending.title"),
+        subtitle: localization.value("gallery.workspace.pending.subtitle"),
+        primaryAction: PageEmptyStateAction(title: localization.value("workspace.setup.submit")) { [weak self] in
+          self?.onRequestWorkspaceSetup()
+        },
+        secondaryAction: PageEmptyStateAction(title: localization.value("account.settings.title")) { [weak self] in
+          self?.onRequestAccountSettings()
+        }
+      )
+    )
   }
 
   private func showFeedError() {
-    var configuration = UIContentUnavailableConfiguration.empty()
-    configuration.image = UIImage(systemName: "exclamationmark.triangle")
-    configuration.text = localization.value("gallery.failed.photos")
-    configuration.secondaryText = localization.value("gallery.failed.detail")
-    configuration.button = .filled()
-    configuration.button.title = localization.value("common.retry")
-    configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in
-      guard let slug = self?.gallerySlug else { return }
-      PhotoFeedStore.shared.load(.manifest(slug), force: true)
-    }
-    contentUnavailableConfiguration = configuration
+    showEmptyState(
+      PageEmptyStateContent(
+        symbolName: "exclamationmark.triangle",
+        title: localization.value("gallery.failed.photos"),
+        subtitle: localization.value("gallery.failed.detail"),
+        primaryAction: PageEmptyStateAction(title: localization.value("common.retry")) { [weak self] in
+          guard let slug = self?.gallerySlug else { return }
+          PhotoFeedStore.shared.load(.manifest(slug), force: true)
+        }
+      )
+    )
   }
 
   private func showEmpty() {
+    emptyStateView.isHidden = true
     var configuration = UIContentUnavailableConfiguration.empty()
     configuration.image = UIImage(systemName: "photo.on.rectangle.angled")
     configuration.text = localization.value("gallery.empty.title")
@@ -771,12 +794,16 @@ final class PhotosHomeController: UIViewController {
   }
 
   private func showFilteredEmpty() {
-    var configuration = UIContentUnavailableConfiguration.search()
-    configuration.text = localization.value("gallery.empty.filtered")
-    configuration.button = .filled()
-    configuration.button.title = localization.value("gallery.query.clearAll")
-    configuration.buttonProperties.primaryAction = UIAction { _ in PhotoFilterStore.shared.clear() }
-    contentUnavailableConfiguration = configuration
+    showEmptyState(
+      PageEmptyStateContent(
+        symbolName: "magnifyingglass",
+        title: localization.value("gallery.empty.filtered"),
+        subtitle: nil,
+        primaryAction: PageEmptyStateAction(title: localization.value("gallery.query.clearAll")) {
+          PhotoFilterStore.shared.clear()
+        }
+      )
+    )
   }
 
   private func preferredItemWidth() -> CGFloat {
