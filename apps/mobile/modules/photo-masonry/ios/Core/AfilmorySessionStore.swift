@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 import UIKit
 
@@ -28,7 +29,10 @@ protocol SessionCookieStorage: Sendable {
 }
 
 struct KeychainSessionCookieStorage: SessionCookieStorage {
-  private static let service = "app.afilmory.session.cookie"
+  private static let logger = Logger(subsystem: "app.afilmory", category: "session-store")
+  private static var service: String {
+    "\(Bundle.main.bundleIdentifier ?? "app.afilmory").session.cookie"
+  }
   private static let account = "authenticated-session"
 
   func read() -> String? {
@@ -37,9 +41,16 @@ struct KeychainSessionCookieStorage: SessionCookieStorage {
     query[kSecMatchLimit as String] = kSecMatchLimitOne
 
     var result: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    guard status == errSecSuccess,
           let data = result as? Data
-    else { return nil }
+    else {
+      Self.logger.notice("Keychain session read; status=\(status, privacy: .public); found=false")
+      return nil
+    }
+    Self.logger.notice(
+      "Keychain session read; status=\(status, privacy: .public); found=true; bytes=\(data.count, privacy: .public)"
+    )
     return String(data: data, encoding: .utf8)
   }
 
@@ -53,6 +64,10 @@ struct KeychainSessionCookieStorage: SessionCookieStorage {
     let status = SecItemAdd(attributes as CFDictionary, nil)
     if status != errSecSuccess {
       NSLog("[AfilmorySessionStore] Unable to persist the session cookie: %d", status)
+    } else {
+      Self.logger.notice(
+        "Keychain session write succeeded; bytes=\(cookie.utf8.count, privacy: .public)"
+      )
     }
   }
 
@@ -74,11 +89,13 @@ struct KeychainSessionCookieStorage: SessionCookieStorage {
 
 final class AfilmorySessionStore: @unchecked Sendable {
   static let shared = AfilmorySessionStore()
+  private static let logger = Logger(subsystem: "app.afilmory", category: "session-store")
 
   private let repository: PhotoCacheRepository
   private let transport: SessionTransport
   private let cookieStorage: SessionCookieStorage
   private let lock = NSLock()
+  private var cookie: String?
   private var platformBaseURL: String?
   private var tenantBaseURL: String?
   private var state: AfilmorySessionState
@@ -96,9 +113,11 @@ final class AfilmorySessionStore: @unchecked Sendable {
     self.repository = repository
     self.transport = transport
     self.cookieStorage = cookieStorage
+    let storedCookie = cookieStorage.read()
+    cookie = storedCookie
     platformBaseURL = ApiEnvironmentStore.storedOrBuildDefault().platformAPIBaseURL().absoluteString
     tenantBaseURL = nil
-    state = cookieStorage.read() == nil ? .signedOut : .loading
+    state = storedCookie == nil ? .signedOut : .loading
     foregroundObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didBecomeActiveNotification,
       object: nil,
@@ -122,6 +141,10 @@ final class AfilmorySessionStore: @unchecked Sendable {
       clearSession()
       return
     }
+    lock.withLock {
+      self.cookie = normalized
+    }
+    Self.logger.notice("Registering validated session; bytes=\(normalized.utf8.count, privacy: .public)")
     cookieStorage.write(normalized)
     refreshSession()
   }
@@ -141,6 +164,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
       refreshGeneration &+= 1
       refreshTask?.cancel()
       refreshTask = nil
+      cookie = nil
       tenantBaseURL = nil
       state = .signedOut
       return Array(self.observers.values)
@@ -152,12 +176,12 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   func current() -> AfilmorySessionSnapshot {
-    let environment = lock.withLock { (platformBaseURL, tenantBaseURL) }
+    let snapshot = lock.withLock { (cookie, platformBaseURL, tenantBaseURL, state) }
     return AfilmorySessionSnapshot(
-      cookie: cookieStorage.read(),
-      platformBaseURL: environment.0,
-      tenantBaseURL: environment.1,
-      state: lock.withLock { state }
+      cookie: snapshot.0,
+      platformBaseURL: snapshot.1,
+      tenantBaseURL: snapshot.2,
+      state: snapshot.3
     )
   }
 
@@ -198,12 +222,12 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   func hasStoredCookie() -> Bool {
-    cookieStorage.read() != nil
+    lock.withLock { cookie != nil }
   }
 
   @MainActor
   private func publishCachedSession() {
-    guard cookieStorage.read() != nil,
+    guard loadCookieIfNeeded() != nil,
           let payload = repository.loadSession(),
           let session = try? JSONDecoder().decode(AfilmorySession.self, from: payload)
     else { return }
@@ -212,7 +236,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
   }
 
   private func startRefresh(joinInFlight: Bool) {
-    guard cookieStorage.read() != nil else {
+    guard loadCookieIfNeeded() != nil else {
       if lock.withLock({ state != .signedOut }) {
         publish(.signedOut)
       }
@@ -247,19 +271,25 @@ final class AfilmorySessionStore: @unchecked Sendable {
       let response = try await transport.fetchSession()
       guard !Task.isCancelled, isCurrentRefresh(generation) else { return }
       guard let session = response?.resolved() else {
+        Self.logger.error("Session validation returned no active session.")
         await applyServerSignOut(generation: generation)
         return
       }
+      Self.logger.notice("Session validation succeeded.")
       ApiEnvironmentStore.shared.activateTenant(slug: session.activeWorkspace?.slug)
       if let payload = try? JSONEncoder().encode(session) {
         await repository.saveSession(payload)
       }
       completeRefresh(generation: generation, state: .signedIn(session))
     } catch APIError.unauthorized {
+      Self.logger.error("Session validation returned unauthorized.")
       await applyServerSignOut(generation: generation)
     } catch APIError.cancelled {
       return
     } catch {
+      Self.logger.error(
+        "Session validation failed; error=\(error.localizedDescription, privacy: .public)"
+      )
       completeRefreshKeepingSession(generation: generation, error: error)
     }
   }
@@ -268,6 +298,9 @@ final class AfilmorySessionStore: @unchecked Sendable {
     guard isCurrentRefresh(generation) else { return }
     APNsRegistrationCoordinator.unregisterCurrentDevice(using: current())
     cookieStorage.clear()
+    lock.withLock {
+      cookie = nil
+    }
     ApiEnvironmentStore.shared.activateTenant(slug: nil)
     await repository.wipeAll()
     completeRefresh(generation: generation, state: .signedOut)
@@ -330,6 +363,19 @@ final class AfilmorySessionStore: @unchecked Sendable {
   ) {
     for observer in observers {
       observer(state)
+    }
+  }
+
+  private func loadCookieIfNeeded() -> String? {
+    if let cached = lock.withLock({ cookie }) {
+      return cached
+    }
+    guard let stored = cookieStorage.read() else { return nil }
+    return lock.withLock {
+      if cookie == nil {
+        cookie = stored
+      }
+      return cookie
     }
   }
 

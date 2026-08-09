@@ -5,7 +5,7 @@ import UIKit
 enum CommentsLabPresenter {
   static func present(outcome: String, latencyMs: Int) {
     let resolvedOutcome = DemoCommentsTransport.Outcome(rawValue: outcome) ?? .success
-    let request = PhotoCommentsSheetRequest()
+    var request = PhotoCommentsSheetRequest()
     request.gallerySlug = "lab"
     request.photoId = "lab-photo"
     request.photoTitle = "Send flight · \(resolvedOutcome.rawValue)"
@@ -14,15 +14,14 @@ enum CommentsLabPresenter {
 
     let store = CommentsStore(
       request: request,
-      localization: .resolve(),
       transport: DemoCommentsTransport(outcome: resolvedOutcome, latencyMs: latencyMs)
     )
 
     let hostingController = UIHostingController(rootView: PhotoCommentsSheetView(store: store))
-    hostingController.navigationItem.title = store.localization.title
+    hostingController.navigationItem.title = String(localized: "Comments")
     hostingController.navigationItem.prompt = request.photoTitle
     hostingController.navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: store.localization.done,
+      title: String(localized: "Done"),
       primaryAction: UIAction { [weak hostingController] _ in
         hostingController?.dismiss(animated: true)
       }

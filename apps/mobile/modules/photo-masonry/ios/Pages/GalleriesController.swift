@@ -1,4 +1,3 @@
-import ExpoModulesCore
 import SDWebImage
 import UIKit
 
@@ -55,9 +54,6 @@ func resolvedGalleryTopOffsetAfterHeaderTransition(
 }
 
 final class GalleriesController: UIViewController {
-  let appContext: AppContext?
-
-  private let localization = Localization.shared
   private let onRequestSignIn: () -> Void
   private let notificationPermissions = GalleryNotificationPermissionCoordinator()
   private let galleryDirectoryStore = GalleryDirectoryStore()
@@ -81,11 +77,10 @@ final class GalleriesController: UIViewController {
   private var previousLayoutWidth: CGFloat = 0
   private var lastGalleryRouteRequestID: String?
 
-  init(appContext: AppContext?, onRequestSignIn: @escaping () -> Void) {
-    self.appContext = appContext
+  init(onRequestSignIn: @escaping () -> Void) {
     self.onRequestSignIn = onRequestSignIn
     super.init(nibName: nil, bundle: nil)
-    title = localization.value("tabs.explore")
+    title = String(localized: "Explore")
   }
 
   @available(*, unavailable)
@@ -100,7 +95,6 @@ final class GalleriesController: UIViewController {
       GalleryDetailController(
         slug: route.slug,
         title: route.title,
-        appContext: appContext,
         onRequestSignIn: onRequestSignIn
       ),
       animated: viewIfLoaded?.window != nil
@@ -108,12 +102,12 @@ final class GalleriesController: UIViewController {
   }
 
   deinit {
-    NotificationCenter.default.removeObserver(self)
     loadTask?.cancel()
     searchDebounceTask?.cancel()
     notificationPermissionTask?.cancel()
     coverTasks.values.forEach { $0.cancel() }
     subscriptionTasks.values.forEach { $0.cancel() }
+    NotificationCenter.default.removeObserver(self)
   }
 
   override func viewDidLoad() {
@@ -142,7 +136,7 @@ final class GalleriesController: UIViewController {
     )
     searchController.searchResultsUpdater = self
     searchController.obscuresBackgroundDuringPresentation = false
-    searchController.searchBar.placeholder = localization.value("explore.search.placeholder")
+    searchController.searchBar.placeholder = String(localized: "Search galleries")
     searchController.searchBar.autocapitalizationType = .none
     searchController.searchBar.autocorrectionType = .no
     navigationItem.searchController = searchController
@@ -321,7 +315,7 @@ final class GalleriesController: UIViewController {
       return
     }
     let item = UIBarButtonItem(
-      title: localization.value("common.signIn"),
+      title: String(localized: "Sign in"),
       style: .plain,
       target: self,
       action: #selector(requestSignIn)
@@ -395,11 +389,11 @@ final class GalleriesController: UIViewController {
   private func presentSubscriptionError() {
     guard presentedViewController == nil else { return }
     let alert = UIAlertController(
-      title: localization.value("gallery.subscription.failed"),
-      message: localization.value("gallery.failed.detail"),
+      title: String(localized: "Couldn’t update subscription"),
+      message: String(localized: "Check your connection and try again."),
       preferredStyle: .alert
     )
-    alert.addAction(UIAlertAction(title: localization.value("common.done"), style: .default))
+    alert.addAction(UIAlertAction(title: String(localized: "Done"), style: .default))
     present(alert, animated: true)
   }
 
@@ -451,18 +445,18 @@ final class GalleriesController: UIViewController {
     else { return }
 
     let alert = UIAlertController(
-      title: localization.value("gallery.notification.prompt.title"),
-      message: localization.value("gallery.notification.prompt.detail"),
+      title: String(localized: "Stay up to date"),
+      message: String(localized: "Afilmory can notify you when galleries you subscribe to publish new photos."),
       preferredStyle: .alert
     )
     alert.addAction(
       UIAlertAction(
-        title: localization.value("gallery.notification.prompt.notNow"),
+        title: String(localized: "Not Now"),
         style: .cancel
       )
     )
     let enableAction = UIAlertAction(
-      title: localization.value("gallery.notification.prompt.enable"),
+      title: String(localized: "Turn On Notifications"),
       style: .default
     ) { [weak self] _ in
       self?.requestNotificationAuthorization()
@@ -544,10 +538,10 @@ final class GalleriesController: UIViewController {
   private func errorConfiguration() -> UIContentUnavailableConfiguration {
     var configuration = UIContentUnavailableConfiguration.empty()
     configuration.image = UIImage(systemName: "exclamationmark.triangle")
-    configuration.text = localization.value("gallery.failed.galleries")
-    configuration.secondaryText = localization.value("gallery.failed.detail")
+    configuration.text = String(localized: "Failed to load galleries")
+    configuration.secondaryText = String(localized: "Check your connection and try again.")
     configuration.button = .filled()
-    configuration.button.title = localization.value("common.retry")
+    configuration.button.title = String(localized: "Retry")
     configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in
       self?.loadGalleries(force: true)
     }
@@ -557,13 +551,13 @@ final class GalleriesController: UIViewController {
   private func emptyConfiguration() -> UIContentUnavailableConfiguration {
     if !activeQuery.isEmpty {
       var configuration = UIContentUnavailableConfiguration.search()
-      configuration.text = localization.value("explore.search.emptyTitle")
-      configuration.secondaryText = localization.value("explore.search.emptyDescription")
+      configuration.text = String(localized: "No galleries found")
+      configuration.secondaryText = String(localized: "Try a gallery name, handle, or photographer.")
       return configuration
     }
     var configuration = UIContentUnavailableConfiguration.empty()
     configuration.image = UIImage(systemName: "rectangle.stack")
-    configuration.text = localization.value("gallery.empty.title")
+    configuration.text = String(localized: "No photos yet")
     return configuration
   }
 }
@@ -587,19 +581,16 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
     cell.configure(
       gallery: gallery,
       covers: coverCache[gallery.slug],
-      photoCount: localization.value("gallery.photos", count: gallery.photoCount),
+      photoCount: String(localized: "\(gallery.photoCount) photos"),
       subscriptionState: resolveGallerySubscriptionButtonState(
         isOwnGallery: gallery.isOwnGallery,
         isSubscribed: gallery.isSubscribed,
         pendingTarget: pendingSubscriptionTargets[gallery.id]
       ),
-      subscribeTitle: localization.value("gallery.subscription.subscribe"),
-      subscribedTitle: localization.value("gallery.subscription.subscribed"),
-      unsubscribeTitle: localization.value("gallery.subscription.unsubscribe"),
-      accessibilityLabel: localization.value(
-        "accessibility.openGallery",
-        arguments: ["name": gallery.name]
-      ),
+      subscribeTitle: String(localized: "Subscribe"),
+      subscribedTitle: String(localized: "Subscribed"),
+      unsubscribeTitle: String(localized: "Unsubscribe"),
+      accessibilityLabel: String(localized: "Open \(gallery.name)"),
       onSubscriptionToggle: { [weak self] in
         self?.toggleSubscription(galleryID: gallery.id)
       }
@@ -623,7 +614,7 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
         for: indexPath
       ) as? GallerySearchSummaryView else { return UICollectionReusableView() }
       summary.configure(
-        text: localization.value("explore.search.results", count: galleries.count),
+        text: String(localized: "\(galleries.count) galleries"),
         horizontalInset: horizontalPadding(for: collectionView.bounds.width)
       )
       return summary
@@ -644,15 +635,15 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
       return banner
     case .enableNotifications:
       content = (
-        localization.value("gallery.notification.banner.enable.title"),
-        localization.value("gallery.notification.banner.enable.detail"),
-        localization.value("gallery.notification.banner.enable.action")
+        String(localized: "Turn on gallery notifications"),
+        String(localized: "Get an alert when galleries you subscribe to publish new photos."),
+        String(localized: "Turn On")
       )
     case .openSettings:
       content = (
-        localization.value("gallery.notification.banner.disabled.title"),
-        localization.value("gallery.notification.banner.disabled.detail"),
-        localization.value("gallery.notification.banner.disabled.action")
+        String(localized: "Notifications are off"),
+        String(localized: "Your subscriptions are saved. Enable notifications in Settings to receive new photo updates."),
+        String(localized: "Open Settings")
       )
     }
     banner.configure(
@@ -674,7 +665,6 @@ extension GalleriesController: UICollectionViewDataSource, UICollectionViewDeleg
       GalleryDetailController(
         slug: gallery.slug,
         title: gallery.name,
-        appContext: appContext,
         onRequestSignIn: onRequestSignIn
       ),
       animated: true

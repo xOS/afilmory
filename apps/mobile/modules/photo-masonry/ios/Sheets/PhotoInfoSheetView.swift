@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PhotoInfoInspectorView: View {
-  let info: PhotoInfoSheetRecord
+  let info: PhotoInfoSheetModel
   var showsHeader = true
   var bottomContentInset: CGFloat = 0
   let onClose: () -> Void
@@ -9,11 +9,19 @@ struct PhotoInfoInspectorView: View {
   @ViewBuilder
   var body: some View {
     if showsHeader {
-      PhotoInfoSectionsList(info: info)
-        .safeAreaBar(edge: .top, spacing: 0) {
-          header
-        }
-        .scrollEdgeEffectStyle(.soft, for: .top)
+      if #available(iOS 26.0, *) {
+        PhotoInfoSectionsList(info: info)
+          .safeAreaBar(edge: .top, spacing: 0) {
+            header
+          }
+          .scrollEdgeEffectStyle(.soft, for: .top)
+      } else {
+        PhotoInfoSectionsList(info: info)
+          .safeAreaInset(edge: .top, spacing: 0) {
+            header
+              .background(.bar)
+          }
+      }
     } else {
       PhotoInfoSectionsList(info: info, bottomContentInset: bottomContentInset)
     }
@@ -21,7 +29,7 @@ struct PhotoInfoInspectorView: View {
 
   private var header: some View {
     HStack(spacing: 12) {
-      Text(info.localization.title)
+      Text("Info")
         .font(.headline)
       Spacer()
       Button(action: onClose) {
@@ -31,7 +39,7 @@ struct PhotoInfoInspectorView: View {
           .contentShape(Circle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel(info.localization.done)
+      .accessibilityLabel(String(localized: "Done"))
     }
     .padding(.horizontal, 16)
     .frame(height: 52)

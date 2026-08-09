@@ -97,7 +97,9 @@ final class PhotoDetailLoadingPillView: UIView {
   private static let ringSpacing: CGFloat = 8
   private static let lineSpacing: CGFloat = 2
 
-  private let backgroundView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+  private let backgroundView = UIVisualEffectView(
+    effect: AdaptiveGlass.effect(fallbackStyle: .systemThinMaterialDark)
+  )
   private let ringView = UIView()
   private let trackLayer = CAShapeLayer()
   private let progressLayer = CAShapeLayer()
@@ -105,8 +107,8 @@ final class PhotoDetailLoadingPillView: UIView {
   private let titleLabel = UILabel()
   private let subtitleLabel = UILabel()
 
-  private let loadingTitle = Localization.t("photo.loading.original")
-  private let failedTitle = Localization.t("photo.loading.failed")
+  private let loadingTitle = String(localized: "Loading original")
+  private let failedTitle = String(localized: "Failed to load original")
 
   private var machine = PhotoLoadPillStateMachine()
   private var pendingTick: DispatchWorkItem?

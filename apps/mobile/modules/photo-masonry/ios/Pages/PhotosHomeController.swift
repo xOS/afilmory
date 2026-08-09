@@ -1,12 +1,9 @@
-import ExpoModulesCore
 import SwiftUI
 import UIKit
 
 final class PhotosHomeController: UIViewController {
   private static let preferredItemWidthKey = "afilmory.home.preferredItemWidth"
 
-  private let appContext: AppContext?
-  private let localization = Localization.shared
   private let onRequestSignIn: () -> Void
   private let onRequestSignOut: () -> Void
   private let onRequestWorkspaceSetup: () -> Void
@@ -14,9 +11,6 @@ final class PhotosHomeController: UIViewController {
   private let onRequestAccountDeletion: () -> Void
   private let masonryView: PhotoMasonryView
   private let emptyStateView = PageEmptyStateView()
-  private let sidebarModel = PhotoSidebarModel()
-  private weak var sidebarController: UITabBarController?
-  private var sidebarBottomView: UIView?
   private var sessionObservation: AfilmorySessionObservationToken?
   private var feedObservation: PhotoFeedObservationToken?
   private var filterObservation: PhotoFeedObservationToken?
@@ -27,20 +21,18 @@ final class PhotosHomeController: UIViewController {
   private var displayedPhotos: [GalleryPhoto] = []
 
   init(
-    appContext: AppContext?,
     onRequestSignIn: @escaping () -> Void,
     onRequestSignOut: @escaping () -> Void,
     onRequestWorkspaceSetup: @escaping () -> Void,
     onRequestAccountSettings: @escaping () -> Void,
     onRequestAccountDeletion: @escaping () -> Void
   ) {
-    self.appContext = appContext
     self.onRequestSignIn = onRequestSignIn
     self.onRequestSignOut = onRequestSignOut
     self.onRequestWorkspaceSetup = onRequestWorkspaceSetup
     self.onRequestAccountSettings = onRequestAccountSettings
     self.onRequestAccountDeletion = onRequestAccountDeletion
-    masonryView = PhotoMasonryView(appContext: appContext)
+    masonryView = PhotoMasonryView(frame: .zero)
     super.init(nibName: nil, bundle: nil)
     configureMasonry()
   }
@@ -48,10 +40,6 @@ final class PhotosHomeController: UIViewController {
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) is not supported")
-  }
-
-  deinit {
-    removeSidebar()
   }
 
   override func loadView() {
@@ -81,19 +69,14 @@ final class PhotosHomeController: UIViewController {
     AfilmorySessionStore.shared.bootstrap()
   }
 
-  override func viewDidAppear(_ animated: Bool) {
-    super.viewDidAppear(animated)
-    updateSidebar()
-  }
-
   private func configureMasonry() {
     masonryView.chromeVisible = true
-    masonryView.contextMenuInfoTitle = localization.value("photo.info")
-    masonryView.contextMenuShareTitle = localization.value("photo.share")
+    masonryView.contextMenuInfoTitle = String(localized: "Photo information")
+    masonryView.contextMenuShareTitle = String(localized: "Share photo")
     masonryView.extraBottomInset = 24
     masonryView.extraTopInset = 60
     masonryView.gap = 4
-    masonryView.livePhotoAccessibilityLabel = localization.value("photo.livePhoto")
+    masonryView.livePhotoAccessibilityLabel = String(localized: "Live Photo")
     masonryView.preferredItemWidth = preferredItemWidth()
     masonryView.onNativePhotoPress = { [weak self] index in
       self?.presentPhoto(at: index)
@@ -144,7 +127,6 @@ final class PhotosHomeController: UIViewController {
       feed = nil
       PhotoFilterStore.shared.deactivateGallery()
       masonryView.setPhotos([])
-      removeSidebar()
       showSignedOut()
     case .failed:
       showSignedOut()
@@ -157,7 +139,6 @@ final class PhotosHomeController: UIViewController {
         feed = nil
         PhotoFilterStore.shared.deactivateGallery()
         masonryView.setPhotos([])
-        removeSidebar()
         showPending()
         return
       }
@@ -197,7 +178,7 @@ final class PhotosHomeController: UIViewController {
     }
     let filters = PhotoFilterStore.shared.filters
     displayedPhotos = PhotoFilterEngine.apply(filters, to: feed.photos)
-    masonryView.setPhotos(displayedPhotos.map { MasonryPhoto(photo: $0, localization: localization) })
+    masonryView.setPhotos(displayedPhotos.map(MasonryPhoto.init(photo:)))
     if displayedPhotos.isEmpty {
       showFilteredEmpty()
     } else {
@@ -216,7 +197,7 @@ final class PhotosHomeController: UIViewController {
         photos: displayedPhotos,
         startIndex: $0.0,
         endIndex: $0.1,
-        localeIdentifier: localization.language.localeIdentifier
+        localeIdentifier: PhotoDateLanguage.activeLocaleIdentifier
       )
     } ?? ""
     let city = visibleRange.flatMap {
@@ -224,7 +205,7 @@ final class PhotosHomeController: UIViewController {
     } ?? ""
     masonryView.chromeIdentityLabel = session?.activeWorkspace?.name ?? ""
     masonryView.chromeDateLabel = filtersActive
-      ? "\(displayedPhotos.count) · \(PhotoFilterEngine.summarize(filters, localization: localization))"
+      ? "\(displayedPhotos.count) · \(PhotoFilterEngine.summarize(filters))"
       : dateLabel
     masonryView.chromeDateDetail = filtersActive ? "" : city
     masonryView.chromeDateInteractive = filtersActive
@@ -236,17 +217,16 @@ final class PhotosHomeController: UIViewController {
       ? makeQueryHeaderModel(filters: filters, photos: displayedPhotos)
       : nil
     masonryView.filterAccessibilityLabel = filtersActive
-      ? localization.value("accessibility.searchAndFiltersActive", count: activeCount)
-      : localization.value("accessibility.searchAndFilters")
+      ? String(localized: "Search and filters, \(activeCount) active")
+      : String(localized: "Search and filters")
     masonryView.profileImageURL = session?.user.image ?? ""
     masonryView.profileInitial = session?.user.name.first.map { String($0).uppercased() } ?? "?"
     masonryView.profileAccessibilityLabel = session.map {
-      localization.value("accessibility.profile", arguments: ["name": $0.user.name])
-    } ?? localization.value("accessibility.profileUnknown")
+      String(localized: "Profile, \($0.user.name)")
+    } ?? String(localized: "Profile, unknown user")
     if feed.loadState != .loading {
       masonryView.setRefreshing(false)
     }
-    updateSidebar()
   }
 
   private func presentPhoto(at index: Int) {
@@ -255,8 +235,6 @@ final class PhotosHomeController: UIViewController {
       photos: displayedPhotos,
       initialIndex: index,
       gallerySlug: gallerySlug,
-      appContext: appContext,
-      localization: localization,
       onRequestSignIn: onRequestSignIn,
       sourceProvider: { [weak masonryView] photoId in
         masonryView?.visibleTransitionSourceView(for: photoId)
@@ -267,8 +245,7 @@ final class PhotosHomeController: UIViewController {
 
   private func presentFilters(
     anchor: UIView,
-    presenter: UIViewController? = nil,
-    revealAfterChange: Bool = false
+    presenter: UIViewController? = nil
   ) {
     guard let feed else { return }
     let request = makeFilterRequest(
@@ -277,170 +254,22 @@ final class PhotosHomeController: UIViewController {
     )
     let model = PhotoFilterViewModel(request: request)
     let host = UIHostingController(rootView: PhotoFilterSheetView(model: model))
-    host.navigationItem.title = request.localization.title
+    host.navigationItem.title = String(localized: "Search & Filter")
     host.navigationItem.leftBarButtonItem = UIBarButtonItem(
-      title: request.localization.cancel,
+      title: String(localized: "Cancel"),
       primaryAction: UIAction { [weak host] _ in host?.dismiss(animated: true) }
     )
     host.navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: request.localization.done,
+      title: String(localized: "Done"),
       primaryAction: UIAction { [weak host, weak model] _ in
         guard let model else { return }
         PhotoFilterStore.shared.replace(Self.filters(from: model.makeRecord()))
-        if revealAfterChange {
-          self.revealFilteredGallery()
-        }
         host?.dismiss(animated: true)
       }
     )
     let navigation = UINavigationController(rootViewController: host)
     configureSheet(navigation, anchor: anchor, size: CGSize(width: 430, height: 620))
     (presenter ?? self).present(navigation, animated: true)
-  }
-
-  private func updateSidebar() {
-    guard UIDevice.current.userInterfaceIdiom == .pad, let feed else { return }
-    guard let controller = tabBarController else { return }
-    if sidebarController !== controller {
-      removeSidebar()
-      sidebarController = controller
-    }
-    controller.sidebar.preferredLayout = .tile
-
-    let filters = PhotoFilterStore.shared.filters
-    let options = PhotoFilterEngine.buildOptions(feed.photos)
-    let quickFilters = PhotoSidebarSectionModel.quickFilters(
-      photos: feed.photos,
-      filters: filters,
-      labels: PhotoSidebarQuickFilterLabels(
-        rating4: localization.value("filter.ratingOrBetter", count: 4),
-        thisMonth: localization.value("action.date.preset.thisMonth"),
-        thisYear: localization.value("action.date.preset.thisYear")
-      )
-    )
-    let tags = PhotoSidebarSectionModel.tags(
-      options: options.tags,
-      selectedTags: filters.tags
-    )
-    sidebarModel.update(
-      sidebarRequest(
-        filters: filters,
-        quickFilters: quickFilters,
-        tags: tags
-      )
-    )
-
-    let footer = UIHostingConfiguration {
-      PhotoSidebarFooterView(
-        model: sidebarModel,
-        onFiltersPress: { [weak self] in self?.presentSidebarFilters() },
-        onQuickFilterPress: { [weak self] id in self?.toggleSidebarQuickFilter(id) },
-        onSearchChange: { [weak self] query in self?.updateSidebarSearch(query) },
-        onTagPress: { [weak self] tag in self?.toggleSidebarTag(tag) }
-      )
-    }
-    .margins(.all, 0)
-    .background(Color.clear)
-    controller.sidebar.footerContentConfiguration = footer
-
-    let bottom = UIHostingConfiguration {
-      PhotoSidebarBottomBarView(
-        model: sidebarModel,
-        onClearFilters: { [weak self] in
-          PhotoFilterStore.shared.clear()
-          self?.revealFilteredGallery()
-        },
-        onFiltersPress: { [weak self] in self?.presentSidebarFilters() }
-      )
-    }
-    .margins(.all, 0)
-    .background(Color.clear)
-    let bottomView = bottom.makeContentView()
-    bottomView.backgroundColor = .clear
-    controller.sidebar.bottomBarView = bottomView
-    sidebarBottomView = bottomView
-  }
-
-  private func removeSidebar() {
-    guard let sidebarController else {
-      sidebarBottomView = nil
-      return
-    }
-    sidebarController.sidebar.footerContentConfiguration = nil
-    if sidebarController.sidebar.bottomBarView === sidebarBottomView {
-      sidebarController.sidebar.bottomBarView = nil
-    }
-    sidebarBottomView = nil
-    self.sidebarController = nil
-  }
-
-  private func sidebarRequest(
-    filters: PhotoFilters,
-    quickFilters: [PhotoSidebarItem],
-    tags: PhotoSidebarTagItems
-  ) -> PhotoSidebarRequest {
-    let request = PhotoSidebarRequest()
-    request.activeFilterCount = PhotoFilterEngine.countActiveDimensions(filters)
-    request.ownerID = "native-photos"
-    request.query = filters.query
-    request.quickFilters = quickFilters.map(Self.sidebarRecord)
-    request.showsMoreTags = tags.hasMore
-    request.tags = tags.items.map(Self.sidebarRecord)
-    let copy = PhotoSidebarLocalizationRecord()
-    copy.clearFilters = localization.value("gallery.query.clearAll")
-    copy.filters = localization.value("action.search.unified.title")
-    copy.moreTags = localization.value("sidebar.moreTags")
-    copy.notSelected = localization.value("filter.notSelected")
-    copy.quickFilters = localization.value("sidebar.quickFilters")
-    copy.searchPlaceholder = localization.value("action.search.placeholder")
-    copy.selected = localization.value("filter.selected")
-    copy.tags = localization.value("exif.tags")
-    request.localization = copy
-    return request
-  }
-
-  private static func sidebarRecord(_ item: PhotoSidebarItem) -> PhotoSidebarItemRecord {
-    let record = PhotoSidebarItemRecord()
-    record.id = item.id
-    record.label = item.label
-    record.count = item.count
-    record.selected = item.selected
-    return record
-  }
-
-  private func toggleSidebarQuickFilter(_ id: String) {
-    var filters = PhotoFilterStore.shared.filters
-    switch PhotoSidebarQuickFilterID(rawValue: id) {
-    case .thisMonth:
-      if filters.datePreset == .thisMonth {
-        filters.datePreset = nil
-        filters.dateFrom = nil
-        filters.dateTo = nil
-      } else {
-        filters.datePreset = .thisMonth
-      }
-    case .thisYear:
-      if filters.datePreset == .thisYear {
-        filters.datePreset = nil
-        filters.dateFrom = nil
-        filters.dateTo = nil
-      } else {
-        filters.datePreset = .thisYear
-      }
-    case .rating4:
-      filters.minRating = filters.minRating == 4 ? nil : 4
-    case nil:
-      return
-    }
-    PhotoFilterStore.shared.replace(filters)
-    revealFilteredGallery()
-  }
-
-  private func updateSidebarSearch(_ query: String) {
-    var filters = PhotoFilterStore.shared.filters
-    guard filters.query != query else { return }
-    filters.query = query
-    PhotoFilterStore.shared.replace(filters)
   }
 
   private func removeQueryConstraint(_ constraint: PhotoQueryConstraint) {
@@ -462,39 +291,6 @@ final class PhotosHomeController: UIViewController {
       filters.minRating = nil
     }
     PhotoFilterStore.shared.replace(filters)
-  }
-
-  private func toggleSidebarTag(_ tag: String) {
-    var filters = PhotoFilterStore.shared.filters
-    if let index = filters.tags.firstIndex(of: tag) {
-      filters.tags.remove(at: index)
-    } else {
-      filters.tags.append(tag)
-    }
-    PhotoFilterStore.shared.replace(filters)
-    revealFilteredGallery()
-  }
-
-  private func presentSidebarFilters() {
-    guard let anchor = sidebarBottomView else { return }
-    let selectedIndex = sidebarController?.selectedIndex ?? 0
-    if selectedIndex > 1 {
-      sidebarController?.selectedIndex = 0
-    }
-    DispatchQueue.main.async { [weak self, weak anchor] in
-      guard let self, let anchor else { return }
-      let presenter = appContext?.utilities?.currentViewController()
-      presentFilters(
-        anchor: anchor,
-        presenter: presenter,
-        revealAfterChange: true
-      )
-    }
-  }
-
-  private func revealFilteredGallery() {
-    guard let sidebarController, sidebarController.selectedIndex > 1 else { return }
-    sidebarController.selectedIndex = 0
   }
 
   private func presentProfile(anchor: UIView) {
@@ -537,20 +333,15 @@ final class PhotosHomeController: UIViewController {
       present(controller, animated: true)
       return
     }
-    guard action == "info", let appContext else { return }
+    guard action == "info" else { return }
     let model = PhotoInfoModel.build(
       photo: photo,
-      localization: localization,
-      localeIdentifier: localization.language.localeIdentifier
+      localeIdentifier: PhotoDateLanguage.activeLocaleIdentifier
     )
-    guard let info = PhotoInfoSheetRecord.decode(
-      json: model.detailJSON(localization: localization),
-      appContext: appContext
-    ) else { return }
-    let host = UIHostingController(rootView: PhotoInfoSectionsList(info: info))
-    host.navigationItem.title = info.localization.title
+    let host = UIHostingController(rootView: PhotoInfoSectionsList(info: model))
+    host.navigationItem.title = String(localized: "Info")
     host.navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: info.localization.done,
+      title: String(localized: "Done"),
       primaryAction: UIAction { [weak host] _ in host?.dismiss(animated: true) }
     )
     let navigation = UINavigationController(rootViewController: host)
@@ -562,48 +353,14 @@ final class PhotosHomeController: UIViewController {
     filters: PhotoFilters,
     options: PhotoFilterOptions
   ) -> PhotoFilterSheetRequest {
-    let request = PhotoFilterSheetRequest()
+    var request = PhotoFilterSheetRequest()
     request.filters = Self.record(from: filters)
-    let optionRecord = PhotoFilterOptionsRecord()
+    var optionRecord = PhotoFilterOptionsRecord()
     optionRecord.tags = options.tags.map(Self.record)
     optionRecord.cameras = options.cameras.map(Self.record)
     optionRecord.lenses = options.lenses.map(Self.record)
     optionRecord.ratedCount = options.ratedCount
     request.options = optionRecord
-    let copy = PhotoFilterLocalizationRecord()
-    copy.all = localization.value("filter.all")
-    copy.any = localization.value("filter.any")
-    copy.anyDate = localization.value("filter.anyDate")
-    copy.anyRating = localization.value("filter.anyRating")
-    copy.camera = localization.value("exif.camera")
-    copy.cancel = localization.value("common.cancel")
-    copy.customRange = localization.value("filter.customRange")
-    copy.date = localization.value("action.date.label")
-    copy.datePresets = DatePreset.allCases.map { preset in
-      let record = PhotoFilterDatePresetRecord()
-      record.value = preset.rawValue
-      record.label = localization.value(Self.datePresetKey(preset))
-      return record
-    }
-    copy.done = localization.value("common.done")
-    copy.from = localization.value("action.date.from")
-    copy.lens = localization.value("exif.lens")
-    copy.match = localization.value("filter.match")
-    copy.minimumRating = localization.value("filter.minimumRating")
-    copy.notSelected = localization.value("filter.notSelected")
-    copy.range = localization.value("filter.range")
-    copy.rating = localization.value("exif.rating")
-    copy.ratingOptions = (1...5).map {
-      localization.value("filter.ratingOrBetter", count: $0)
-    }
-    copy.reset = localization.value("filter.reset")
-    copy.search = localization.value("action.search.title")
-    copy.searchPlaceholder = localization.value("action.search.placeholder")
-    copy.selected = localization.value("filter.selected")
-    copy.tags = localization.value("exif.tags")
-    copy.title = localization.value("action.search.unified.title")
-    copy.to = localization.value("action.date.to")
-    request.localization = copy
     return request
   }
 
@@ -633,23 +390,22 @@ final class PhotosHomeController: UIViewController {
       )
     }
     if filters.dateFrom != nil || filters.dateTo != nil {
-      let key = filters.datePreset.map(Self.datePresetKey) ?? "filter.dates"
       chips.append(
         PhotoQueryHeaderChip(
           id: "date",
-          title: localization.value(key),
+          title: filters.datePreset?.label ?? String(localized: "Dates"),
           constraint: .date
         )
       )
     }
 
     return PhotoQueryHeaderModel(
-      resultText: localization.value("gallery.query.results", count: photos.count),
-      headline: PhotoFilterEngine.summarize(filters, localization: localization),
-      editTitle: localization.value("gallery.query.editShort"),
-      editAccessibilityLabel: localization.value("gallery.query.edit"),
-      clearTitle: localization.value("gallery.query.clearShort"),
-      clearAccessibilityLabel: localization.value("gallery.query.clearAll"),
+      resultText: String(localized: "\(photos.count) matching photos"),
+      headline: PhotoFilterEngine.summarize(filters),
+      editTitle: String(localized: "Edit"),
+      editAccessibilityLabel: String(localized: "Edit search and filters"),
+      clearTitle: String(localized: "Clear"),
+      clearAccessibilityLabel: String(localized: "Clear search and filters"),
       photos: photos.prefix(12).map {
         PhotoQueryHeaderPhoto(id: $0.id, url: $0.thumbnailUrl, thumbHash: $0.thumbHash)
       },
@@ -663,15 +419,15 @@ final class PhotosHomeController: UIViewController {
     photos: [GalleryPhoto]
   ) -> ProfileSheetRecord {
     let stats = ProfileStats.collect(photos)
-    var statsParts = [localization.value("profile.stats.photos", count: stats.photoCount)]
+    var statsParts = [String(localized: "\(stats.photoCount) photos")]
     if stats.cameraCount > 0 {
-      statsParts.append(localization.value("profile.stats.cameras", count: stats.cameraCount))
+      statsParts.append(String(localized: "\(stats.cameraCount) cameras"))
     }
     if stats.lensCount > 0 {
-      statsParts.append(localization.value("profile.stats.lenses", count: stats.lensCount))
+      statsParts.append(String(localized: "\(stats.lensCount) lenses"))
     }
     if let yearSpan = stats.yearSpan { statsParts.append(yearSpan) }
-    let profile = ProfileSheetRecord()
+    var profile = ProfileSheetRecord()
     profile.userName = session.user.name
     profile.avatarUrl = session.user.image ?? ""
     profile.avatarInitial = session.user.name.first.map { String($0).uppercased() } ?? "?"
@@ -681,30 +437,12 @@ final class PhotosHomeController: UIViewController {
     } ?? ""
     profile.statsLine = photos.isEmpty ? "" : statsParts.joined(separator: " · ")
     profile.strip = photos.prefix(12).map { photo in
-      let item = ProfileStripItemRecord()
+      var item = ProfileStripItemRecord()
       item.url = photo.thumbnailUrl
       item.thumbHash = photo.thumbHash
       item.aspectRatio = photo.aspectRatio
       return item
     }
-    let copy = ProfileLocalizationRecord()
-    copy.cacheCleared = localization.value("profile.cacheCleared")
-    copy.accountSettings = localization.value("profile.accountSettings")
-    copy.cancel = localization.value("common.cancel")
-    copy.clearCache = localization.value("profile.clearCache")
-    copy.done = localization.value("common.done")
-    copy.openWeb = localization.value("common.openGalleryWeb")
-    copy.signOut = localization.value("common.signOut")
-    copy.signOutConfirmTitle = localization.value("profile.signOutConfirmTitle")
-    copy.deleteAccount = localization.value("account.deletion.action")
-    copy.sponsorDescription = localization.value("profile.sponsor.description")
-    copy.sponsorFailedMessage = localization.value("profile.sponsor.failedMessage")
-    copy.sponsorFailedTitle = localization.value("profile.sponsor.failedTitle")
-    copy.sponsorPending = localization.value("profile.sponsor.pending")
-    copy.sponsorThanks = localization.value("profile.sponsor.thanks")
-    copy.sponsorTitle = localization.value("profile.sponsor.title")
-    copy.sponsorUnavailable = localization.value("profile.sponsor.unavailable")
-    profile.localization = copy
     return profile
   }
 
@@ -745,9 +483,9 @@ final class PhotosHomeController: UIViewController {
     showEmptyState(
       PageEmptyStateContent(
         symbolName: "photo.on.rectangle",
-        title: localization.value("gallery.yours.title"),
-        subtitle: localization.value("gallery.yours.subtitle"),
-        primaryAction: PageEmptyStateAction(title: localization.value("common.signIn")) { [weak self] in
+        title: String(localized: "Your gallery"),
+        subtitle: String(localized: "Sign in with your workspace to see your own photos here."),
+        primaryAction: PageEmptyStateAction(title: String(localized: "Sign in")) { [weak self] in
           self?.onRequestSignIn()
         }
       )
@@ -758,12 +496,12 @@ final class PhotosHomeController: UIViewController {
     showEmptyState(
       PageEmptyStateContent(
         symbolName: "clock",
-        title: localization.value("gallery.workspace.pending.title"),
-        subtitle: localization.value("gallery.workspace.pending.subtitle"),
-        primaryAction: PageEmptyStateAction(title: localization.value("workspace.setup.submit")) { [weak self] in
+        title: String(localized: "Set up your workspace"),
+        subtitle: String(localized: "Create a workspace to publish and manage your gallery, or open account settings."),
+        primaryAction: PageEmptyStateAction(title: String(localized: "Create workspace")) { [weak self] in
           self?.onRequestWorkspaceSetup()
         },
-        secondaryAction: PageEmptyStateAction(title: localization.value("account.settings.title")) { [weak self] in
+        secondaryAction: PageEmptyStateAction(title: String(localized: "Account settings")) { [weak self] in
           self?.onRequestAccountSettings()
         }
       )
@@ -774,9 +512,9 @@ final class PhotosHomeController: UIViewController {
     showEmptyState(
       PageEmptyStateContent(
         symbolName: "exclamationmark.triangle",
-        title: localization.value("gallery.failed.photos"),
-        subtitle: localization.value("gallery.failed.detail"),
-        primaryAction: PageEmptyStateAction(title: localization.value("common.retry")) { [weak self] in
+        title: String(localized: "Failed to load photos"),
+        subtitle: String(localized: "Check your connection and try again."),
+        primaryAction: PageEmptyStateAction(title: String(localized: "Retry")) { [weak self] in
           guard let slug = self?.gallerySlug else { return }
           PhotoFeedStore.shared.load(.manifest(slug), force: true)
         }
@@ -788,8 +526,8 @@ final class PhotosHomeController: UIViewController {
     emptyStateView.isHidden = true
     var configuration = UIContentUnavailableConfiguration.empty()
     configuration.image = UIImage(systemName: "photo.on.rectangle.angled")
-    configuration.text = localization.value("gallery.empty.title")
-    configuration.secondaryText = localization.value("gallery.empty.subtitle")
+    configuration.text = String(localized: "No photos yet")
+    configuration.secondaryText = String(localized: "Upload photos from the web dashboard and they will appear here.")
     contentUnavailableConfiguration = configuration
   }
 
@@ -797,9 +535,9 @@ final class PhotosHomeController: UIViewController {
     showEmptyState(
       PageEmptyStateContent(
         symbolName: "magnifyingglass",
-        title: localization.value("gallery.empty.filtered"),
+        title: String(localized: "No photos match this search and filters"),
         subtitle: nil,
-        primaryAction: PageEmptyStateAction(title: localization.value("gallery.query.clearAll")) {
+        primaryAction: PageEmptyStateAction(title: String(localized: "Clear search and filters")) {
           PhotoFilterStore.shared.clear()
         }
       )
@@ -812,7 +550,7 @@ final class PhotosHomeController: UIViewController {
   }
 
   private static func record(from filters: PhotoFilters) -> PhotoFiltersRecord {
-    let record = PhotoFiltersRecord()
+    var record = PhotoFiltersRecord()
     record.query = filters.query
     record.tags = filters.tags
     record.tagMode = filters.tagMode.rawValue
@@ -826,7 +564,7 @@ final class PhotosHomeController: UIViewController {
   }
 
   private static func record(_ option: PhotoFilterOption) -> PhotoFilterOptionRecord {
-    let record = PhotoFilterOptionRecord()
+    var record = PhotoFilterOptionRecord()
     record.value = option.value
     record.count = option.count
     return record
@@ -844,16 +582,5 @@ final class PhotosHomeController: UIViewController {
       lenses: record.lenses,
       minRating: record.minRating
     )
-  }
-
-  private static func datePresetKey(_ preset: DatePreset) -> String {
-    switch preset {
-    case .last7: "action.date.preset.last7"
-    case .last30: "action.date.preset.last30"
-    case .last90: "action.date.preset.last90"
-    case .thisMonth: "action.date.preset.thisMonth"
-    case .thisYear: "action.date.preset.thisYear"
-    case .lastYear: "action.date.preset.lastYear"
-    }
   }
 }

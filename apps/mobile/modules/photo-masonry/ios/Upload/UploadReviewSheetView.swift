@@ -16,7 +16,6 @@ enum UploadReviewOutcome {
 }
 
 struct UploadReviewSheetView: View {
-  let localization: UploadReviewLocalizationRecord
   let suggestedTags: [String]
   @State private var items: [UploadReviewItem]
   @State private var tags: [String]
@@ -30,13 +29,11 @@ struct UploadReviewSheetView: View {
     items: [UploadReviewItem],
     initialTags: [String],
     suggestedTags: [String],
-    localization: UploadReviewLocalizationRecord,
     onFinish: @escaping (UploadReviewOutcome) -> Void
   ) {
     self._items = State(initialValue: items)
     self._tags = State(initialValue: initialTags)
     self.suggestedTags = suggestedTags
-    self.localization = localization
     self.onFinish = onFinish
   }
 
@@ -48,7 +45,7 @@ struct UploadReviewSheetView: View {
     VStack(spacing: 0) {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-          Text(localization.summary(count: items.count))
+          Text("\(items.count) items")
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
@@ -56,7 +53,7 @@ struct UploadReviewSheetView: View {
             ForEach(items) { item in
               UploadReviewThumbnail(
                 item: item,
-                removeLabel: localization.remove,
+                removeLabel: String(localized: "Remove"),
                 onRemove: { remove(item) }
               )
             }
@@ -71,16 +68,16 @@ struct UploadReviewSheetView: View {
       Divider()
 
       HStack(spacing: 12) {
-        Button(localization.cancel) { onFinish(.cancel) }
-          .buttonStyle(.glass)
+        Button(String(localized: "Cancel")) { onFinish(.cancel) }
+          .uploadReviewSecondaryButtonStyle()
           .controlSize(.large)
 
         Button {
           onFinish(.start(itemIds: items.map(\.id), tags: tags))
         } label: {
-          Text(localization.start(count: items.count)).frame(maxWidth: .infinity)
+          Text("Upload \(items.count)").frame(maxWidth: .infinity)
         }
-        .buttonStyle(.glassProminent)
+        .uploadReviewPrimaryButtonStyle()
         .controlSize(.large)
         .disabled(items.isEmpty)
       }
@@ -103,12 +100,12 @@ struct UploadReviewSheetView: View {
             .foregroundStyle(.secondary)
         )
     }
-    .accessibilityLabel(localization.addMore)
+    .accessibilityLabel(String(localized: "Add more"))
   }
 
   private var tagSection: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(localization.tagsLabel)
+      Text("TAGS — THESE BECOME THE FOLDER")
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.tertiary)
         .textCase(.uppercase)
@@ -119,7 +116,7 @@ struct UploadReviewSheetView: View {
         }
       }
 
-      TextField(localization.tagsPlaceholder, text: $draft)
+      TextField(String(localized: "Add a tag, comma separated"), text: $draft)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .focused($draftFocused)
@@ -154,6 +151,26 @@ struct UploadReviewSheetView: View {
       }
     }
     draft = ""
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func uploadReviewSecondaryButtonStyle() -> some View {
+    if #available(iOS 26.0, *) {
+      buttonStyle(.glass)
+    } else {
+      buttonStyle(.bordered)
+    }
+  }
+
+  @ViewBuilder
+  func uploadReviewPrimaryButtonStyle() -> some View {
+    if #available(iOS 26.0, *) {
+      buttonStyle(.glassProminent)
+    } else {
+      buttonStyle(.borderedProminent)
+    }
   }
 }
 
