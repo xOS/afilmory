@@ -80,6 +80,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
   private var lastViewportSize = CGSize.zero
   private var wasZoomed = false
   private var externalBadgeAlpha: CGFloat = 1
+  private var pinchDismissalBouncesZoom: Bool?
 
   var onZoomStateChange: ((Bool) -> Void)?
   var onLivePhotoPlaybackStateChange: ((Bool) -> Void)?
@@ -198,6 +199,7 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     livePhotoBadge.isHidden = true
     livePhotoBadge.alpha = 1
     externalBadgeAlpha = 1
+    endPinchDismissal()
     scrollView.setZoomScale(1, animated: false)
     scrollView.panGestureRecognizer.isEnabled = false
   }
@@ -396,6 +398,43 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
 
   func setOpeningPlaceholderImage(_ image: UIImage) {
     previewImageView.image = image
+  }
+
+  func configureExternalDismissGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+    scrollView.panGestureRecognizer.require(toFail: gestureRecognizer)
+  }
+
+  func imageFrame(in view: UIView) -> CGRect? {
+    guard imageContainerView.bounds.width > 0, imageContainerView.bounds.height > 0 else {
+      return nil
+    }
+    return imageContainerView.convert(imageContainerView.bounds, to: view)
+  }
+
+  var currentZoomScale: CGFloat {
+    scrollView.zoomScale
+  }
+
+  func beginPinchDismissal() {
+    if pinchDismissalBouncesZoom == nil {
+      pinchDismissalBouncesZoom = scrollView.bouncesZoom
+    }
+    scrollView.bouncesZoom = false
+    maintainPinchDismissal()
+  }
+
+  func maintainPinchDismissal() {
+    guard pinchDismissalBouncesZoom != nil else { return }
+    if abs(scrollView.zoomScale - scrollView.minimumZoomScale) > 0.001 {
+      scrollView.setZoomScale(scrollView.minimumZoomScale, animated: false)
+    }
+    centerImage()
+  }
+
+  func endPinchDismissal() {
+    guard let bouncesZoom = pinchDismissalBouncesZoom else { return }
+    pinchDismissalBouncesZoom = nil
+    scrollView.bouncesZoom = bouncesZoom
   }
 
   // Looping modes never finish on their own, so hiding the badge while they run

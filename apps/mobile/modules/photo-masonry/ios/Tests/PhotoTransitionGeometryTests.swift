@@ -20,6 +20,75 @@ final class PhotoTransitionGeometryTests: XCTestCase {
     XCTAssertEqual(state.transform.scale, 0.68, accuracy: 0.0001)
   }
 
+  func testPinchDismissalScalesAroundItsCentroid() {
+    let state = PhotoTransitionGeometry.dismissalPinchState(
+      scale: 0.84,
+      anchor: CGPoint(x: 100, y: 200),
+      location: CGPoint(x: 120, y: 260),
+      viewportCenter: CGPoint(x: 200, y: 400)
+    )
+    XCTAssertEqual(state.progress, 0.5, accuracy: 0.0001)
+    XCTAssertEqual(state.transform.scale, 0.84, accuracy: 0.0001)
+    XCTAssertEqual(state.transform.translation.x, 4, accuracy: 0.0001)
+    XCTAssertEqual(state.transform.translation.y, 28, accuracy: 0.0001)
+  }
+
+  func testPinchDismissalIncludesDownwardCentroidTravel() {
+    let state = PhotoTransitionGeometry.dismissalPinchState(
+      scale: 1,
+      anchor: CGPoint(x: 200, y: 200),
+      location: CGPoint(x: 210, y: 370),
+      viewportCenter: CGPoint(x: 200, y: 400)
+    )
+    XCTAssertEqual(state.progress, 0.5, accuracy: 0.0001)
+    XCTAssertEqual(state.transform.translation, CGPoint(x: 10, y: 170))
+  }
+
+  func testDismissalCommitDecisionsUseProgressAndMomentum() {
+    XCTAssertTrue(
+      PhotoTransitionGeometry.shouldCommitDragDismissal(
+        progress: 0.46,
+        translationY: 40,
+        velocityY: 0
+      )
+    )
+    XCTAssertTrue(
+      PhotoTransitionGeometry.shouldCommitDragDismissal(
+        progress: 0.2,
+        translationY: 120,
+        velocityY: 1_300
+      )
+    )
+    XCTAssertFalse(
+      PhotoTransitionGeometry.shouldCommitDragDismissal(
+        progress: 0.2,
+        translationY: 80,
+        velocityY: 1_300
+      )
+    )
+    XCTAssertTrue(
+      PhotoTransitionGeometry.shouldCommitPinchDismissal(
+        progress: 0.5,
+        scale: 0.84,
+        velocity: 0
+      )
+    )
+    XCTAssertTrue(
+      PhotoTransitionGeometry.shouldCommitPinchDismissal(
+        progress: 0.2,
+        scale: 0.9,
+        velocity: -1.5
+      )
+    )
+    XCTAssertFalse(
+      PhotoTransitionGeometry.shouldCommitPinchDismissal(
+        progress: 0.2,
+        scale: 0.95,
+        velocity: -1.5
+      )
+    )
+  }
+
   func testPortraitTransform() throws {
     let result = try XCTUnwrap(
       PhotoTransitionGeometry.viewportTransform(

@@ -6,6 +6,8 @@
 
 > **Partly superseded by `2026-08-03-photo-transition-native-rebuild-design.md`.** Rows 16, 17, 21, 23 and 27 of the decision table below — the animation-less route transition, the opening window snapshot, the absent system interactive dismiss, the painted placeholder slot and the presenter handoff — exist only to survive React driving the navigation. Once the detail view controller is presented natively they are deleted and replaced by standard UIKit custom transitions with a live presenter. Every other row, including all of the visual design and the commit rule, still holds.
 
+> **Gesture amendment (2026-08-11).** The earlier zoom gate is removed after direct comparison with the iOS Photos app. A downward one-finger drag may begin at any zoom scale and preserves the current zoomed crop during the transition. A non-cancelling pinch tracker recognizes simultaneously with `UIScrollView` so the same touch sequence can zoom from an arbitrary scale to fit and continue directly into interactive dismissal.
+
 ## Problem
 
 The iOS 18+ zoom transition treats the complete `RNSScreen` as the shared element. On opening it scales the entire destination view from the thumbnail, including backdrop and chrome; on interactive dismissal it shrinks the same complete page. This cannot express the Photos behavior: the presenter remains stationary, the selected photo alone moves between source and fullscreen geometry, and the backdrop only cross-fades. The route transition and the visual photo transition therefore require separate ownership.
@@ -19,12 +21,12 @@ The iOS 18+ zoom transition treats the complete `RNSScreen` as the shared elemen
 | Opening snapshot | Capture the complete presenter synchronously at press time and retain it above the window until `PhotoDetailView` is ready, preventing navigation or React mounting from exposing an intermediate screen |
 | Opening photo | Reuse the already-decoded source-cell image as the viewer placeholder, then animate only `mediaViewport` from source geometry to identity |
 | Opening choreography | Backdrop remains full-bleed and fades 0→1 independently; detail chrome appears only during the final 0.16s of the photo's 0.42s spring |
-| Drag tracking | Own `UIPanGestureRecognizer` on `PhotoDetailView`; transforms **only** `mediaViewport` (translate with finger, scale 1→0.68 by progress) |
+| Interactive tracking | Own one-finger pan and non-cancelling pinch-tracker recognizers on `PhotoDetailView`. The tracker recognizes simultaneously with the current cell's `UIScrollView` pinch and preserves its full cumulative scale. Both dismissal inputs transform **only** `mediaViewport`; pinch ownership is handed from inner zoom to dismissal when its effective scale crosses below fit |
 | System interactive dismiss | Absent because the route has no zoom transition; the local detail pan is the only interactive dismiss owner |
 | Backdrop | Single full-bleed black `backgroundView` at the bottom of `PhotoDetailView`; alpha = 1 − progress during the drag, never transformed |
 | Grid placeholder | The masonry keeps a blank slot where the previewed photo came from — painted onto the presenter snapshot at capture time from the same rect the commit animation targets |
 | Chrome fade | Instant (~0.15s ease-out) on gesture begin via `PhotoDetailChromeVisibility.dismissing` |
-| Commit rule | progress > 0.45 (of 340 pt), or downward velocity > 1200 pt/s with ≥100 pt travelled — anything less springs back |
+| Commit rule | Pan: progress > 0.45 (of 340 pt), or downward velocity > 1200 pt/s with ≥100 pt travelled. Pinch: scale/centroid progress > 0.45, or inward velocity < −1.25 while scale < 0.92. Anything less springs back |
 | Commit animation | Photo flies into the blank slot with a projected release-velocity spring (0.26–0.42s); masonry cells preserve aspect ratio so the aspect-fit rect maps exactly onto the cell. If the pager moved to another photo, fall back to drifting out along the gesture while fading |
 | Presenter handoff | At landing, atomically replace the moving photo with the complete frozen grid, then retain that snapshot above the `RNScreens` hierarchy until the live presenter has rendered stably. A source-cell replica bridges the final compositor commit before removal |
 | Snapshot release | Clear the snapshot's opaque black backing atomically before cross-fading its grid content. Never fade the backing and content together, which creates a transient full-screen luminance dip |
@@ -47,12 +49,16 @@ The source tap creates a transition session before React pushes the detail route
 - **Handoff:** after the photo reaches identity, remove the frozen presenter and expose the live detail hierarchy in the same state.
 - **Fallback:** if no valid transition session exists, reveal the detail view without a shared-element animation. Reduce Motion also applies the final values directly.
 
-### Drag gesture (`PhotoDetailView`)
+### Interactive dismissal (`PhotoDetailView`)
 
-`dismissPanGestureRecognizer` begins only when: `interactiveDismissEnabled`, inspector closed (`progress ≤ 0.001`), photo not zoomed, no Live Photo hold, vertical dominance (|dy| > |dx| × 1.12), and downward. Chrome subtrees don't receive it (same exclusion as the immersive tap). The pager's pan requires it to fail (`configureExternalDismissGesture`).
+`dismissPanGestureRecognizer` begins when: `interactiveDismissEnabled`, inspector closed (`progress ≤ 0.001`), no Live Photo hold, vertical dominance (|dy| > |dx| × 1.12), and downward. Zoom is deliberately not a gate. The pager and each zooming scroll view's pan require the dismiss pan to fail, so a downward drag dismisses while other directions retain their existing pan behavior.
 
-- **began:** `visibility.dismissing = true`; chrome fades in 0.15s; reaction rail closes.
-- **changed:** `mediaViewport.transform = translate(tx, ty·rubberBandIfUpward) → scale(1 − 0.32·progress)`; `backgroundView.alpha = 1 − progress`. `layoutSubviews` skips `inspector.reapplyProgress()` while dismissing — frame writes under a transform are undefined.
+`PhotoTransitionInteraction` installs a non-cancelling pinch tracker on `PhotoDetailView` and permits simultaneous recognition only with another pinch recognizer. This tracker observes touch scale without modifying the viewer while `UIScrollView` remains the sole visual zoom owner at or above fit. Keeping an independent cumulative scale is required because `UIScrollView` consumes contraction at its minimum zoom boundary. Once the tracked effective scale crosses below fit, the cell is clamped to fit, paging is disabled, and the same uninterrupted touch sequence drives the outer interactive dismissal. The outer scale is anchored at the handoff centroid and includes later centroid translation.
+
+- **began:** For pan, dismissal begins immediately. For pinch, dismissal begins only at the below-fit handoff. `visibility.dismissing = true`; chrome fades in 0.15s; reaction rail closes.
+- **changed (pan):** `mediaViewport.transform = translate(tx, ty·rubberBandIfUpward) → scale(1 − 0.32·progress)`; `backgroundView.alpha = 1 − progress`. A zoomed image remains zoomed and cropped inside the transformed viewport.
+- **changed (pinch):** scale the viewport from 1 toward 0.48 around the handoff centroid and add centroid movement. Progress is the greater of inward-scale progress and downward-centroid progress; `backgroundView.alpha = 1 − progress`.
+- **layout:** `layoutSubviews` skips `inspector.reapplyProgress()` while dismissing — frame writes under a transform are undefined.
 - **ended, commit:** project the release velocity toward the target slot and spring the viewport from its current transformed state into that slot. At landing, reveal the slot in the frozen presenter, hide the moving viewport in the same transaction, and request an animation-less route pop. The frozen presenter is promoted to the host `UIWindow` during the pop so `RNScreens` child reordering cannot expose an empty container; it is released only after the live presenter is stable.
 - **ended, cancel:** project the release velocity toward identity, spring only the viewport transform, ease the backdrop independently to 1, and restore chrome after a short phase delay (respects `userHidden` / `zoomed`). Reduce Motion applies values directly.
 
@@ -68,7 +74,8 @@ The source tap creates a transition session before React pushes the detail route
 ## Edge cases
 
 - **Info panel open:** inspector owns vertical pans; the dismiss pan refuses (`progress ≤ 0.001` gate).
-- **Zoomed image / Live Photo hold:** refused by the begin gate, same rules as before.
+- **Zoomed image:** downward pan is accepted. The transition target is derived from the current transformed image frame, preserving the visible crop instead of jumping to fit at gesture begin.
+- **Live Photo hold:** refused by the begin gate so playback and dismissal do not compete.
 - **Immersive mode:** chrome alphas already 0; `dismissing` is a no-op on top; cancel restores the `userHidden` state.
 - **Horizontal paging:** unchanged — vertical-dominant drags never begin the pager pan, and the pager requires the dismiss pan to fail.
 
@@ -82,5 +89,7 @@ On the simulator, verify these paths:
 4. Long/fast drag — commit: photo continues from the release velocity into its thumbnail, then the frozen presenter hands off to the live grid without a black frame or black source cell.
 5. Tap Back — use the same photo-only close path, finish the route pop, and allow the same source photo to open again immediately.
 6. Repeat open/close cycles and inspect the recording for any full-screen luminance dip.
+7. Zoom in, pan the image away from center, then drag downward with one finger — dismissal begins without resetting to fit; early release cancels and a committed release lands in the source cell.
+8. From fit, pinch inward — crossing below fit continues as an image-only dismissal around the fingers. Repeat from a zoomed state and verify the same gesture first zooms back to fit, then continues below fit without a discontinuity.
 
 Run `pnpm --filter @afilmory/mobile type-check` and compile the iOS application after native changes.

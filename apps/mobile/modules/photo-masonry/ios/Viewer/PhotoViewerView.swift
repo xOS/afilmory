@@ -37,8 +37,10 @@ final class PhotoViewerView: UIView {
   private var hasPositionedInitialPhoto = false
   private var reportedZoomState = false
   private var externalTapGestureRecognizer: UITapGestureRecognizer?
+  private weak var externalDismissGestureRecognizer: UIPanGestureRecognizer?
   private var prefetchTokens: [Int: SDWebImagePrefetchToken] = [:]
   private var liveBadgeAlpha: CGFloat = 1
+  private var pinchDismissalActive = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -237,14 +239,18 @@ final class PhotoViewerView: UIView {
   private func deactivateVisibleCells() {
     for case let cell as PhotoViewerCell in collectionView.visibleCells {
       cell.setActive(false)
+      cell.endPinchDismissal()
     }
+    pinchDismissalActive = false
     collectionView.isScrollEnabled = true
   }
 
   private func updatePagingEnabled() {
     let currentCell = currentCell()
     let zoomed = currentCell?.isZoomed ?? false
-    collectionView.isScrollEnabled = !zoomed && !(currentCell?.blocksPaging ?? false)
+    collectionView.isScrollEnabled = !pinchDismissalActive
+      && !zoomed
+      && !(currentCell?.blocksPaging ?? false)
     guard zoomed != reportedZoomState else { return }
     reportedZoomState = zoomed
     onNativeZoomChange?(zoomed)
@@ -296,7 +302,11 @@ final class PhotoViewerView: UIView {
   }
 
   func configureExternalDismissGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+    externalDismissGestureRecognizer = gestureRecognizer
     collectionView.panGestureRecognizer.require(toFail: gestureRecognizer)
+    for case let cell as PhotoViewerCell in collectionView.visibleCells {
+      cell.configureExternalDismissGesture(gestureRecognizer)
+    }
   }
 
   func currentPhotoId() -> String? {
@@ -305,6 +315,9 @@ final class PhotoViewerView: UIView {
   }
 
   func currentImageFrame() -> CGRect? {
+    if let frame = currentCell()?.imageFrame(in: self), frame.width > 0, frame.height > 0 {
+      return frame
+    }
     guard photos.indices.contains(currentIndex), bounds.width > 0, bounds.height > 0 else {
       return nil
     }
@@ -323,6 +336,26 @@ final class PhotoViewerView: UIView {
     externalTapGestureRecognizer = gestureRecognizer
   }
 
+  func currentZoomScale() -> CGFloat {
+    currentCell()?.currentZoomScale ?? 1
+  }
+
+  func beginPinchDismissal() {
+    pinchDismissalActive = true
+    currentCell()?.beginPinchDismissal()
+    updatePagingEnabled()
+  }
+
+  func maintainPinchDismissal() {
+    currentCell()?.maintainPinchDismissal()
+  }
+
+  func endPinchDismissal() {
+    currentCell()?.endPinchDismissal()
+    pinchDismissalActive = false
+    updatePagingEnabled()
+  }
+
   func setLiveBadgeAlpha(_ alpha: CGFloat) {
     liveBadgeAlpha = alpha
     for case let cell as PhotoViewerCell in collectionView.visibleCells {
@@ -332,6 +365,10 @@ final class PhotoViewerView: UIView {
 
   func allowsInfoGesture() -> Bool {
     !(currentCell()?.isZoomed ?? false) && !(currentCell()?.blocksPaging ?? false)
+  }
+
+  func allowsDismissGesture() -> Bool {
+    !(currentCell()?.blocksPaging ?? false)
   }
 
   func mediaBottomInset(in viewportSize: CGSize) -> CGFloat {
@@ -389,6 +426,9 @@ extension PhotoViewerView: UICollectionViewDataSource {
     cell.setLiveBadgeAlpha(liveBadgeAlpha)
     if let externalTapGestureRecognizer {
       externalTapGestureRecognizer.require(toFail: cell.doubleTapGestureRecognizer)
+    }
+    if let externalDismissGestureRecognizer {
+      cell.configureExternalDismissGesture(externalDismissGestureRecognizer)
     }
     return cell
   }

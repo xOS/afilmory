@@ -16,6 +16,10 @@ struct PhotoDismissDragState: Equatable, Sendable {
 }
 
 enum PhotoTransitionGeometry {
+  static let dismissCommitProgress: CGFloat = 0.45
+  static let dismissCommitVelocity: CGFloat = 1_200
+  static let dismissCommitMinimumTranslation: CGFloat = 100
+
   static func dismissalDragState(
     translation: CGPoint,
     origin: PhotoTransitionTransform = PhotoTransitionTransform(
@@ -39,6 +43,60 @@ enum PhotoTransitionGeometry {
         translation: resolvedTranslation
       )
     )
+  }
+
+  static func dismissalPinchState(
+    scale: CGFloat,
+    anchor: CGPoint,
+    location: CGPoint,
+    viewportCenter: CGPoint,
+    distance: CGFloat = 340,
+    commitScale: CGFloat = 0.68,
+    minimumScale: CGFloat = 0.48
+  ) -> PhotoDismissDragState {
+    let resolvedScale = min(max(scale, minimumScale), 1)
+    let centroidTranslation = CGPoint(
+      x: location.x - anchor.x,
+      y: location.y - anchor.y
+    )
+    let anchorOffset = CGPoint(
+      x: anchor.x - viewportCenter.x,
+      y: anchor.y - viewportCenter.y
+    )
+    let resolvedTranslation = CGPoint(
+      x: centroidTranslation.x + (1 - resolvedScale) * anchorOffset.x,
+      y: centroidTranslation.y + (1 - resolvedScale) * anchorOffset.y
+    )
+    let scaleDistance = max(1 - commitScale, 0.01)
+    let scaleProgress = (1 - resolvedScale) / scaleDistance
+    let translationProgress = max(resolvedTranslation.y, 0) / max(distance, 1)
+    let progress = min(max(max(scaleProgress, translationProgress), 0), 1)
+    return PhotoDismissDragState(
+      progress: progress,
+      transform: PhotoTransitionTransform(
+        scale: resolvedScale,
+        translation: resolvedTranslation
+      )
+    )
+  }
+
+  static func shouldCommitDragDismissal(
+    progress: CGFloat,
+    translationY: CGFloat,
+    velocityY: CGFloat
+  ) -> Bool {
+    progress > dismissCommitProgress
+      || (velocityY > dismissCommitVelocity
+        && translationY > dismissCommitMinimumTranslation)
+  }
+
+  static func shouldCommitPinchDismissal(
+    progress: CGFloat,
+    scale: CGFloat,
+    velocity: CGFloat
+  ) -> Bool {
+    progress > dismissCommitProgress
+      || (velocity < -1.25 && scale < 0.92)
   }
 
   static func viewportTransform(

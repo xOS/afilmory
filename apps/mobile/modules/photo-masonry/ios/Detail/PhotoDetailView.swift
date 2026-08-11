@@ -235,6 +235,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   }
 
   func completePresentedTransition() {
+    viewer.endPinchDismissal()
     dismissalMediaAnimator?.stopAnimation(true)
     dismissalBackdropAnimator?.stopAnimation(true)
     dismissalChromeAnimator?.stopAnimation(true)
@@ -281,6 +282,12 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
       translation: translation,
       origin: dismissalGestureOrigin
     )
+    return updateViewControllerDismissal(state: state)
+  }
+
+  @discardableResult
+  func updateViewControllerDismissal(state: PhotoDismissDragState) -> CGFloat {
+    guard visibility.dismissing else { return 0 }
     dismissalState = state.transform
     mediaViewport.transform = state.transform.affineTransform
     mediaViewport.alpha = 1
@@ -520,11 +527,27 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     !visibility.dismissing
       && viewer.interactiveDismissEnabled
       && inspector.progress <= 0.001
-      && viewer.allowsInfoGesture()
+      && viewer.allowsDismissGesture()
   }
 
   func configureExternalDismissGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
     viewer.configureExternalDismissGesture(gestureRecognizer)
+  }
+
+  func currentViewerZoomScale() -> CGFloat {
+    viewer.currentZoomScale()
+  }
+
+  func beginViewerPinchDismissal() {
+    viewer.beginPinchDismissal()
+  }
+
+  func maintainViewerPinchDismissal() {
+    viewer.maintainPinchDismissal()
+  }
+
+  func endViewerPinchDismissal() {
+    viewer.endPinchDismissal()
   }
 
   private func configureChrome() {
