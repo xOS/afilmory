@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repo already has detailed `AGENTS.md` files. Read the one closest to the code you are touching before making non-trivial changes:
 
 - `AGENTS.md` (root) — full commands list, monorepo architecture, manifest/data flow, i18n rules.
-- `apps/web/AGENTS.md` — Glassmorphic Depth design system used by the SPA (color/opacity rules, blur, shadows, hover via `data-highlighted`).
+- `DESIGN.md` (root) — **the normative design system for `apps/web` + `packages/ui`**: UIKit colour tokens, material/blur roles, radius, typography, spring motion, z-index tiers, layout, iconography, and an explicit list of files that violate the system (§13) and must not be copied. Derived from shipped code. The `afilmory-web-design` skill is its fast path.
+- `apps/web/AGENTS.md` — thin pointer to `DESIGN.md` plus the SPA's red lines and folder structure.
 - `be/AGENTS.md` — the NestJS-style Hono framework: modules, controllers, providers, decorators, DI via `tsyringe`, request-scoped context via `AsyncLocalStorage`. **Stale on package names**: it says `@afilmory/framework`, but the framework was extracted to npm as `@tsuki-hono/{core,common,openapi,event-emitter}`. The concepts still apply; the import paths don't.
 - `be/apps/core/AGENTS.md` — backend core service architecture.
 - `DEVELOPMENT.md` — self-host quick start and config field reference (`builder.config.ts`, `config.json`).
@@ -112,7 +113,7 @@ Key implications when changing things:
 - **`packages/builder`** is the only place that talks to storage providers (S3/B2/GitHub/Eagle/local). It is configured by `builder.config.ts` (infrastructure) which is separate from `site.config.ts` + `config.json` (presentation/branding).
 - **`be/`** uses a NestJS-inspired Hono framework (`@tsuki-hono/core`): `@Module`, `@Controller`, `@Get/@Post/...`, `@injectable()`, request context via `AsyncLocalStorage`. Don't reach for raw Hono primitives in feature code — use the framework decorators (see `be/AGENTS.md`).
 - **`apps/ssr` is a thin host**, not a backend. Its job is to serve the SPA and provide OG/SEO/manifest injection. Heavy logic belongs in `be/apps/core` or `packages/builder`.
-- **Two separate design systems**: `apps/web` uses the Glassmorphic Depth system (see `apps/web/AGENTS.md`); `be/apps/dashboard` is a linear, data-first admin UI. Don't mix the two.
+- **Two separate design systems**: `apps/web` + `packages/ui` follow the dark, material-and-blur system specified in root `DESIGN.md`; `be/apps/dashboard` is a linear, data-first admin UI. Don't mix the two.
 
 ### Workspace Map
 
@@ -155,7 +156,7 @@ Key implications when changing things:
 - **Pages are thin routing shells.** Real UI/logic lives under `modules/<domain>/**` in `apps/web`.
 - **State isolation over prop drilling.** For deep subtrees, lift handlers into colocated Jotai/Zustand stores or contexts; don't thread props through layers.
 - **Push state down**, not up. Feature-local stores/providers; switching tabs should unmount unused logic.
-- **Tailwind colors must use the Apple UIKit palette** (`text-text-secondary`, `bg-fill`, `bg-material-thick`, `border-accent/20`, …). See `.cursor/rules/color.mdc`. Avoid raw hex/inline styles unless `color-mix()` is unavoidable.
+- **Tailwind colors must use the Apple UIKit palette** (`text-text-secondary`, `bg-fill`, `bg-material-thick`, `border-accent/20`, …). Full rules in root `DESIGN.md` §2; `.cursor/rules/color.mdc` has the token list. No raw hex or `gray-*`/`zinc-*` ramps for chrome; `color-mix()` in an inline style is only for multi-stop gradients and layered shadows.
 - **i18n: flat keys with `.` separators**, no nested objects. Two namespaces under `locales/`: `app/` (SPA) with `en, zh-CN, zh-HK, zh-TW, jp, ko`, and `dashboard/` (en + zh-CN only). Edit `en.json` of the relevant namespace first; ESLint auto-strips keys missing from English in other locales. **Never let a key be both a leaf string and a parent path** (`a.b` cannot coexist with `a.b.c`); the build flattens dots into nested objects and will collide. Use `_one`/`_other` for plurals.
 - **The iOS app does not use `locales/`.** It localizes natively through String Catalogs — `apps/mobile/NativeApp/Resources/Localizable.xcstrings` (keys are the English source text, auto-extracted from `String(localized:)` / `Text(_:)` at build time), `ExifValues.xcstrings` (dotted keys for EXIF values looked up dynamically), and `apps/mobile/targets/share/Localizable.xcstrings` for the share extension.
 - **No bare global `location`** — an ESLint `no-restricted-globals` rule forbids it (the router instance differs between Electron and browser). Use `useLocation()` or `getReadonlyRoute()`.
