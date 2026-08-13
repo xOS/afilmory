@@ -85,6 +85,22 @@ struct AccountSettingsView: View {
         }
         .buttonStyle(.plain)
         .disabled(busy)
+        if AfilmoryBuildConfiguration.supportsStoreKitBilling {
+          Divider().padding(.leading, 16)
+          Button {
+            Task { await SubscriptionStore().manageSubscriptions() }
+          } label: {
+            HStack {
+              Text("Manage subscription")
+              Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 50)
+            .contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+          .disabled(busy)
+        }
         Divider().padding(.leading, 16)
         Button {
           Task { await inspectDeletion() }
