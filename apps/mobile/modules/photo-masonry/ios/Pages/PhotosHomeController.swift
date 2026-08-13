@@ -326,11 +326,13 @@ final class PhotosHomeController: UIViewController {
 
   private func performContextAction(_ action: String, photoId: String) {
     guard let photo = displayedPhotos.first(where: { $0.id == photoId }) else { return }
-    if action == "share", let url = URL(string: photo.originalUrl) {
-      let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-      controller.popoverPresentationController?.sourceView = masonryView
-      controller.popoverPresentationController?.sourceRect = masonryView.bounds
-      present(controller, animated: true)
+    if action == "share" {
+      PhotoShareActivity.present(
+        photoId: photo.id,
+        gallerySlug: gallerySlug,
+        from: self,
+        sourceView: masonryView
+      )
       return
     }
     guard action == "info" else { return }

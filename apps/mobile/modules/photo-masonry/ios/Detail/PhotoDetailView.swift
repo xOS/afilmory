@@ -35,6 +35,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   private var currentIndex = 0
   private var initialIndex = 0
   private var photos: [MasonryPhoto] = []
+  private var gallerySlug: String?
   private var metadataByID: [String: PhotoDetailMetadata] = [:]
   private var strings = PhotoDetailStrings()
   private var commentCount = -1
@@ -113,6 +114,10 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     bottomScrim.alpha = alpha
     loadingPillHost.alpha = alpha
     viewer.setLiveBadgeAlpha(alpha)
+  }
+
+  func setGallerySlug(_ slug: String?) {
+    gallerySlug = slug
   }
 
   func setPhotos(_ photos: [MasonryPhoto]) {
@@ -797,19 +802,11 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
           let presenter = nearestViewController
     else { return }
 
-    let photo = photos[currentIndex]
-    let title = currentMetadata?.title ?? ""
-    let activityItems: [Any]
-    if let url = URL(string: photo.originalUrl), !photo.originalUrl.isEmpty {
-      activityItems = [url]
-    } else if !title.isEmpty {
-      activityItems = [title]
-    } else {
-      return
-    }
-
-    let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    controller.popoverPresentationController?.barButtonItem = toolbar.shareBarButtonItem
-    presenter.present(controller, animated: true)
+    PhotoShareActivity.present(
+      photoId: photos[currentIndex].id,
+      gallerySlug: gallerySlug,
+      from: presenter,
+      barButtonItem: toolbar.shareBarButtonItem
+    )
   }
 }

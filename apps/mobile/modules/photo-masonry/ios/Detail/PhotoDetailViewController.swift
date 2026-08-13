@@ -119,6 +119,7 @@ final class PhotoDetailViewController: UIViewController {
   }
 
   private func configureDetailView() {
+    detailView.setGallerySlug(gallerySlug)
     detailView.setPhotos(photos.map(MasonryPhoto.init(photo:)))
     detailView.setInitialIndex(initialIndex)
     detailView.setStrings(detailStrings())
