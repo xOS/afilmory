@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 
-import test from 'vitest'
+import { it } from 'vitest'
 
 import { canAccessDashboard } from './api/auth'
 import { camelCaseKeys } from './case'
 
-test('camelCaseKeys converts nested snake_case keys', () => {
+it('camelCaseKeys converts nested snake_case keys', () => {
   assert.deepEqual(
     camelCaseKeys({
       requested_membership: { id: 'm1', role: 'owner', status: 'active' },
@@ -18,7 +18,7 @@ test('camelCaseKeys converts nested snake_case keys', () => {
   )
 })
 
-test('camelCaseKeys leaves camelCase payloads unchanged', () => {
+it('camelCaseKeys leaves camelCase payloads unchanged', () => {
   const payload = {
     requestedMembership: { id: 'm1', role: 'admin', status: 'active' },
   }
@@ -26,8 +26,11 @@ test('camelCaseKeys leaves camelCase payloads unchanged', () => {
   assert.deepEqual(camelCaseKeys(payload), payload)
 })
 
-test('camelCaseKeys restores dashboard membership from the session API payload', () => {
-  const session = camelCaseKeys({
+it('camelCaseKeys restores dashboard membership from the session API payload', () => {
+  const session = camelCaseKeys<{
+    user: { role: string }
+    requestedMembership: { id: string, role: 'owner', status: 'active' }
+  }>({
     user: { role: 'user' },
     requested_membership: { id: 'm1', role: 'owner', status: 'active' },
   })
