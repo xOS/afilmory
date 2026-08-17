@@ -38,6 +38,8 @@ targets:
         buildPhase: resources
       - path: assets/icons/Afilmory.icon
         buildPhase: resources
+      - path: assets/icons/AfilmoryLocal.icon
+        buildPhase: resources
       - path: modules/photo-masonry/ios
         excludes:
           - Tests/**
@@ -114,7 +116,7 @@ targets:
           AFILMORY_APP_VARIANT: local
           AFILMORY_DISPLAY_NAME: Afilmory Local
           AFILMORY_URL_SCHEME: afilmory-local
-          ASSETCATALOG_COMPILER_APPICON_NAME: AppIconLocal
+          ASSETCATALOG_COMPILER_APPICON_NAME: AfilmoryLocal
           CODE_SIGN_ENTITLEMENTS: NativeApp/AfilmoryLocal.entitlements
           PRODUCT_BUNDLE_IDENTIFIER: app.afilmory.local
           PRODUCT_NAME: Afilmory
