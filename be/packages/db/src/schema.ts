@@ -718,6 +718,7 @@ export const photoAssets = pgTable(
   t => [
     unique('uq_photo_asset_tenant_storage_key').on(t.tenantId, t.storageKey),
     unique('uq_photo_asset_tenant_photo_id').on(t.tenantId, t.photoId),
+    index('idx_photo_asset_tenant_synced').on(t.tenantId, t.syncedAt),
   ],
 )
 

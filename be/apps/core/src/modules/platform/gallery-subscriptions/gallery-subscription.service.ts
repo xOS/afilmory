@@ -10,7 +10,7 @@ import {
 import { DbAccessor } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
 import { normalizeDate } from '@core/helpers/normalize.helper'
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
 import { evaluateGallerySubscription } from './gallery-subscription.policy'
@@ -18,6 +18,8 @@ import type { GallerySubscriptionSummary, SubscriptionTarget } from './gallery-s
 import { assembleSubscriptionSummaries } from './gallery-subscription-list.policy'
 import { toGalleryPhotoPreview } from './gallery-subscription-preview'
 import type { GalleryPhotoPreview } from './gallery-subscription-timeline.policy'
+import { clusterTimelineEvents, TIMELINE_WINDOW_DAYS } from './gallery-subscription-timeline.policy'
+import { parseTimelineQuery } from './gallery-subscription-timeline.query'
 
 export type { GallerySubscriptionSummary }
 
@@ -41,6 +43,49 @@ export class GallerySubscriptionService {
       photoCounts,
       photos,
     })
+  }
+
+  async listTimelineForUser(userId: string, query: { cursor?: string, limit: number, timeZone: string }) {
+    const parsed = parseTimelineQuery(query)
+    const context = await this.loadEligibleTargets(userId)
+    const tenantIds = Object.entries(context.targets)
+      .filter(([tenantId, target]) => {
+        return evaluateGallerySubscription(
+          { banned: target.banned, slug: target.slug, status: target.status },
+          context.memberTenantIds.has(tenantId),
+        ).allowed
+      })
+      .map(([tenantId]) => tenantId)
+
+    const since = new Date(Date.now() - TIMELINE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+    const { photos } = await this.loadSubscriptionPhotos(tenantIds, since)
+    const clustered = clusterTimelineEvents({
+      photos: Object.entries(photos).flatMap(([tenantId, items]) => items.map(preview => ({ tenantId, preview }))),
+      timeZone: parsed.timeZone,
+      limit: parsed.limit,
+      cursor: parsed.cursor,
+    })
+
+    return {
+      events: clustered.events.flatMap((event) => {
+        const target = context.targets[event.tenantId]
+        if (!target) {
+          return []
+        }
+        return [
+          {
+            ...event,
+            gallery: {
+              id: event.tenantId,
+              name: target.name,
+              slug: target.slug,
+              author: target.author,
+            },
+          },
+        ]
+      }),
+      nextCursor: clustered.nextCursor,
+    }
   }
 
   async loadEligibleTargets(userId: string): Promise<{
@@ -148,7 +193,10 @@ export class GallerySubscriptionService {
     }
   }
 
-  async loadSubscriptionPhotos(tenantIds: string[]): Promise<{
+  async loadSubscriptionPhotos(
+    tenantIds: string[],
+    since?: Date,
+  ): Promise<{
     photoCounts: Record<string, number>
     photos: Record<string, GalleryPhotoPreview[]>
   }> {
@@ -167,7 +215,13 @@ export class GallerySubscriptionService {
         manifest: photoAssets.manifest,
       })
       .from(photoAssets)
-      .where(and(inArray(photoAssets.tenantId, tenantIds), inArray(photoAssets.syncStatus, ['synced', 'conflict'])))
+      .where(
+        and(
+          inArray(photoAssets.tenantId, tenantIds),
+          inArray(photoAssets.syncStatus, ['synced', 'conflict']),
+          since ? gte(photoAssets.syncedAt, since.toISOString()) : undefined,
+        ),
+      )
 
     for (const row of rows) {
       photoCounts[row.tenantId] = (photoCounts[row.tenantId] ?? 0) + 1

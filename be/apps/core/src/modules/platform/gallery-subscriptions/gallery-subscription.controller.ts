@@ -4,9 +4,9 @@ import { SkipTenantGuard } from '@core/decorators/skip-tenant.decorator'
 import { BizException, ErrorCode } from '@core/errors'
 import { RequireAuth } from '@core/guards/roles.decorator'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
-import { Controller, Delete, Get, HttpContext, Param, Put } from '@tsuki-hono/common'
+import { Controller, Delete, Get, HttpContext, Param, Put, Query } from '@tsuki-hono/common'
 
-import { GallerySubscriptionTargetDto } from './gallery-subscription.dto'
+import { GallerySubscriptionTargetDto, GallerySubscriptionTimelineQueryDto } from './gallery-subscription.dto'
 import { GallerySubscriptionService } from './gallery-subscription.service'
 
 @Controller('gallery-subscriptions')
@@ -21,6 +21,11 @@ export class GallerySubscriptionController {
   async list() {
     const userId = this.requireUserId()
     return { subscriptions: await this.subscriptions.listForUser(userId) }
+  }
+
+  @Get('/timeline')
+  async timeline(@Query() query: GallerySubscriptionTimelineQueryDto) {
+    return await this.subscriptions.listTimelineForUser(this.requireUserId(), query)
   }
 
   @Put('/:tenantId')
