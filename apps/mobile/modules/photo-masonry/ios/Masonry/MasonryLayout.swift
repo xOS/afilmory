@@ -10,7 +10,7 @@ private func lerp(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
 }
 
 final class MasonryLayout: UICollectionViewLayout {
-  var gap: CGFloat = 4 {
+  var gap: CGFloat = 2 {
     didSet { frameCache.removeAll() }
   }
 

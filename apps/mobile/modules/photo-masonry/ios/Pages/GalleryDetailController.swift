@@ -47,7 +47,7 @@ final class GalleryDetailController: UIViewController {
     masonryView.contextMenuShareTitle = String(localized: "Share photo")
     masonryView.defaultColumnCount = 2
     masonryView.extraBottomInset = 96
-    masonryView.gap = 4
+    masonryView.gap = 2
     masonryView.livePhotoAccessibilityLabel = String(localized: "Live Photo")
     masonryView.onNativePhotoPress = { [weak self] index in
       self?.presentPhoto(at: index)

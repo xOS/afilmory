@@ -96,7 +96,7 @@ final class StudioLibraryController: UIViewController {
     masonryView.contextMenuSelectTitle = String(localized: "Select")
     masonryView.contextMenuShareTitle = String(localized: "Share photo")
     masonryView.extraBottomInset = 20
-    masonryView.gap = 3
+    masonryView.gap = 2
     masonryView.livePhotoAccessibilityLabel = String(localized: "Live Photo")
     masonryView.selectionEnabled = true
     masonryView.onNativePhotoPress = { [weak self] index in

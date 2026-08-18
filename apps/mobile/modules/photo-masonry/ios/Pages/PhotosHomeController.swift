@@ -75,7 +75,7 @@ final class PhotosHomeController: UIViewController {
     masonryView.contextMenuShareTitle = String(localized: "Share photo")
     masonryView.extraBottomInset = 24
     masonryView.extraTopInset = 60
-    masonryView.gap = 4
+    masonryView.gap = 2
     masonryView.livePhotoAccessibilityLabel = String(localized: "Live Photo")
     masonryView.preferredItemWidth = preferredItemWidth()
     masonryView.onNativePhotoPress = { [weak self] index in

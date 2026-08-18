@@ -50,7 +50,7 @@ final class PhotoMasonryView: UIView {
     didSet { applyPreferredItemWidthIfPossible() }
   }
 
-  var gap: CGFloat = 4 {
+  var gap: CGFloat = 2 {
     didSet {
       layout.gap = gap
       layout.invalidateLayout()
