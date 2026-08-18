@@ -538,9 +538,7 @@ final class ExploreDirectoryController: UIViewController {
     if !activeQuery.isEmpty {
       return GallerySearchSummaryView.preferredHeight
     }
-    return notificationBannerState == .hidden
-      ? 0
-      : GalleryNotificationBannerView.preferredHeight
+    return 0
   }
 
   private func errorConfiguration() -> UIContentUnavailableConfiguration {
