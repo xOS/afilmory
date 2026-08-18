@@ -16,6 +16,9 @@ export interface SiteConfig {
   mapStyle?: string
   mapProjection?: 'globe' | 'mercator'
   beian?: BeianConfig
+  telemetry?: {
+    vibeloft?: boolean
+  }
 }
 
 /**
@@ -102,6 +105,9 @@ const defaultConfig: SiteConfig = {
     name: 'Afilmory',
     url: 'https://afilmory.art/',
     avatar: 'https://cdn.jsdelivr.net/gh/Afilmory/Afilmory@main/logo.jpg',
+  },
+  telemetry: {
+    vibeloft: true,
   },
 }
 export const siteConfig = merge(defaultConfig, userConfig) as SiteConfig
