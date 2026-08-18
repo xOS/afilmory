@@ -4,6 +4,8 @@ import UIKit
 final class GalleryDetailController: UIViewController {
   private let onRequestSignIn: () -> Void
   private let slug: String
+  private var focusPhotoID: String?
+  private var didPresentFocusedPhoto = false
   private let masonryView: PhotoMasonryView
   private var feed: PhotoFeed!
   private var observation: PhotoFeedObservationToken?
@@ -11,10 +13,12 @@ final class GalleryDetailController: UIViewController {
   init(
     slug: String,
     title: String,
-    onRequestSignIn: @escaping () -> Void
+    onRequestSignIn: @escaping () -> Void,
+    focusPhotoID: String? = nil
   ) {
     self.slug = slug
     self.onRequestSignIn = onRequestSignIn
+    self.focusPhotoID = focusPhotoID
     masonryView = PhotoMasonryView(frame: .zero)
     super.init(nibName: nil, bundle: nil)
     self.title = title
@@ -84,6 +88,7 @@ final class GalleryDetailController: UIViewController {
     }
     masonryView.setPhotos(feed.photos.map(MasonryPhoto.init(photo:)))
     masonryView.setRefreshing(false)
+    presentFocusedPhotoIfNeeded()
     if feed.photos.isEmpty {
       var configuration = UIContentUnavailableConfiguration.empty()
       configuration.image = UIImage(systemName: "photo.on.rectangle.angled")
@@ -92,6 +97,20 @@ final class GalleryDetailController: UIViewController {
       contentUnavailableConfiguration = configuration
     } else {
       contentUnavailableConfiguration = nil
+    }
+  }
+
+  private func presentFocusedPhotoIfNeeded() {
+    guard !didPresentFocusedPhoto, let focusPhotoID else { return }
+    if let index = feed.photos.firstIndex(where: { $0.id == focusPhotoID }) {
+      didPresentFocusedPhoto = true
+      self.focusPhotoID = nil
+      presentPhoto(at: index)
+      return
+    }
+    if feed.loadState == .loaded || feed.loadState == .failed {
+      didPresentFocusedPhoto = true
+      self.focusPhotoID = nil
     }
   }
 
