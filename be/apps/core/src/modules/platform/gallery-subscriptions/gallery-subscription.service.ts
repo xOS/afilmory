@@ -1,14 +1,29 @@
-import { gallerySubscriptions, tenantMemberships, tenants } from '@afilmory/db'
+import {
+  authUsers,
+  gallerySubscriptions,
+  photoAssets,
+  settings,
+  tenantDomains,
+  tenantMemberships,
+  tenants,
+} from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
-import { and, desc, eq } from 'drizzle-orm'
+import { normalizeDate } from '@core/helpers/normalize.helper'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
 import { evaluateGallerySubscription } from './gallery-subscription.policy'
+import type { GallerySubscriptionSummary, SubscriptionTarget } from './gallery-subscription-list.policy'
+import { assembleSubscriptionSummaries } from './gallery-subscription-list.policy'
+import { toGalleryPhotoPreview } from './gallery-subscription-preview'
+import type { GalleryPhotoPreview } from './gallery-subscription-timeline.policy'
 
-export interface GallerySubscriptionSummary {
-  tenantId: string
+export type { GallerySubscriptionSummary }
+
+export type GallerySubscriptionRecord = {
   createdAt: string
+  tenantId: string
 }
 
 @injectable()
@@ -16,18 +31,167 @@ export class GallerySubscriptionService {
   constructor(private readonly dbAccessor: DbAccessor) {}
 
   async listForUser(userId: string): Promise<GallerySubscriptionSummary[]> {
+    const context = await this.loadEligibleTargets(userId)
+    if (context.subscriptions.length === 0) {
+      return []
+    }
+    const { photoCounts, photos } = await this.loadSubscriptionPhotos(Object.keys(context.targets))
+    return assembleSubscriptionSummaries({
+      ...context,
+      photoCounts,
+      photos,
+    })
+  }
+
+  async loadEligibleTargets(userId: string): Promise<{
+    memberTenantIds: Set<string>
+    subscriptions: GallerySubscriptionRecord[]
+    targets: Record<string, SubscriptionTarget>
+  }> {
     const db = this.dbAccessor.get()
-    return await db
+    const subscriptions = await db
       .select({
         tenantId: gallerySubscriptions.targetTenantId,
         createdAt: gallerySubscriptions.createdAt,
       })
       .from(gallerySubscriptions)
       .where(eq(gallerySubscriptions.subscriberUserId, userId))
-      .orderBy(desc(gallerySubscriptions.createdAt))
+
+    if (subscriptions.length === 0) {
+      return { memberTenantIds: new Set(), subscriptions: [], targets: {} }
+    }
+
+    const tenantIds = subscriptions.map(item => item.tenantId)
+    const [tenantRows, siteNames, authors, domains, memberships] = await Promise.all([
+      db
+        .select({
+          id: tenants.id,
+          name: tenants.name,
+          slug: tenants.slug,
+          banned: tenants.banned,
+          status: tenants.status,
+        })
+        .from(tenants)
+        .where(inArray(tenants.id, tenantIds)),
+      db
+        .select({
+          tenantId: settings.tenantId,
+          value: settings.value,
+        })
+        .from(settings)
+        .where(and(inArray(settings.tenantId, tenantIds), eq(settings.key, 'site.name'))),
+      db
+        .select({
+          tenantId: tenantMemberships.tenantId,
+          name: authUsers.name,
+          image: authUsers.image,
+        })
+        .from(authUsers)
+        .innerJoin(tenantMemberships, eq(tenantMemberships.userId, authUsers.id))
+        .where(and(inArray(tenantMemberships.tenantId, tenantIds), eq(tenantMemberships.status, 'active')))
+        .orderBy(
+          sql`case when ${tenantMemberships.role} = 'owner' then 0 when ${tenantMemberships.role} = 'admin' then 1 else 2 end`,
+          asc(authUsers.createdAt),
+        ),
+      db
+        .select({
+          tenantId: tenantDomains.tenantId,
+          domain: tenantDomains.domain,
+        })
+        .from(tenantDomains)
+        .where(and(inArray(tenantDomains.tenantId, tenantIds), eq(tenantDomains.status, 'verified'))),
+      db
+        .select({ tenantId: tenantMemberships.tenantId })
+        .from(tenantMemberships)
+        .where(
+          and(
+            eq(tenantMemberships.userId, userId),
+            eq(tenantMemberships.status, 'active'),
+            inArray(tenantMemberships.tenantId, tenantIds),
+          ),
+        ),
+    ])
+
+    const nameByTenant = new Map(siteNames.map(row => [row.tenantId, row.value]))
+    const authorByTenant = new Map<string, { avatar: string | null, name: string }>()
+    for (const author of authors) {
+      if (!authorByTenant.has(author.tenantId)) {
+        authorByTenant.set(author.tenantId, { name: author.name, avatar: author.image ?? null })
+      }
+    }
+    const domainByTenant = new Map<string, string>()
+    for (const domain of domains) {
+      if (!domainByTenant.has(domain.tenantId)) {
+        domainByTenant.set(domain.tenantId, domain.domain)
+      }
+    }
+
+    const targets: Record<string, SubscriptionTarget> = {}
+    for (const tenant of tenantRows) {
+      targets[tenant.id] = {
+        banned: tenant.banned,
+        slug: tenant.slug,
+        status: tenant.status,
+        name: nameByTenant.get(tenant.id) || tenant.name,
+        domain: domainByTenant.get(tenant.id) ?? null,
+        author: authorByTenant.get(tenant.id) ?? null,
+      }
+    }
+
+    return {
+      subscriptions: subscriptions.map(item => ({
+        tenantId: item.tenantId,
+        createdAt: normalizeDate(item.createdAt) ?? item.createdAt,
+      })),
+      targets,
+      memberTenantIds: new Set(memberships.map(item => item.tenantId)),
+    }
   }
 
-  async subscribe(userId: string, targetTenantId: string): Promise<GallerySubscriptionSummary> {
+  async loadSubscriptionPhotos(tenantIds: string[]): Promise<{
+    photoCounts: Record<string, number>
+    photos: Record<string, GalleryPhotoPreview[]>
+  }> {
+    const photoCounts: Record<string, number> = {}
+    const photos: Record<string, GalleryPhotoPreview[]> = {}
+    if (tenantIds.length === 0) {
+      return { photoCounts, photos }
+    }
+
+    const db = this.dbAccessor.get()
+    const rows = await db
+      .select({
+        tenantId: photoAssets.tenantId,
+        photoId: photoAssets.photoId,
+        syncedAt: photoAssets.syncedAt,
+        manifest: photoAssets.manifest,
+      })
+      .from(photoAssets)
+      .where(and(inArray(photoAssets.tenantId, tenantIds), inArray(photoAssets.syncStatus, ['synced', 'conflict'])))
+
+    for (const row of rows) {
+      photoCounts[row.tenantId] = (photoCounts[row.tenantId] ?? 0) + 1
+      const preview = toGalleryPhotoPreview({
+        photoId: row.photoId,
+        syncedAt: normalizeDate(row.syncedAt) ?? String(row.syncedAt),
+        manifest: row.manifest?.data,
+      })
+      if (!preview) {
+        continue
+      }
+      const bucket = photos[row.tenantId]
+      if (bucket) {
+        bucket.push(preview)
+      }
+      else {
+        photos[row.tenantId] = [preview]
+      }
+    }
+
+    return { photoCounts, photos }
+  }
+
+  async subscribe(userId: string, targetTenantId: string): Promise<GallerySubscriptionRecord> {
     const db = this.dbAccessor.get()
     const [[target], [activeMembership]] = await Promise.all([
       db
