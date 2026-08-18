@@ -238,7 +238,7 @@ final class GalleriesController: UIViewController {
       do {
         let origin = try ApiEnvironmentStore.shared.galleryOrigin(slug: gallery.slug)
         let apiBase = try ApiEnvironmentStore.shared.galleryAPIBaseURL(slug: gallery.slug)
-        let body = try APIEndpoint.jsonBody(GalleryCoverSearchRequest(limit: 3, sort: "desc"))
+        let body = try APIEndpoint.jsonBody(GalleryCoverSearchRequest(limit: 6, sort: "desc"))
         let endpoint = APIEndpoint(
           baseURL: .explicit(apiBase.absoluteString),
           path: "manifest/photos/search",

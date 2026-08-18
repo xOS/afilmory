@@ -4,17 +4,16 @@ import UIKit
 final class GalleryCardCell: UICollectionViewCell {
   static let reuseIdentifier = "GalleryCardCell"
 
-  private let primaryCover = GalleryCoverView()
-  private let secondaryTopCover = GalleryCoverView()
-  private let secondaryBottomCover = GalleryCoverView()
   private let avatarView = UIImageView()
   private let avatarFallback = UILabel()
   private let nameLabel = UILabel()
   private let descriptionLabel = UILabel()
+  private let filmstrip = GalleryFilmstripView()
   private let photoCountLabel = UILabel()
   private let subscriptionButton = UIButton(type: .system)
   private var tagLabels: [InsetLabel] = []
   private var onSubscriptionToggle: (() -> Void)?
+  private var onPhotoTap: ((String) -> Void)?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -24,8 +23,6 @@ final class GalleryCardCell: UICollectionViewCell {
     contentView.layer.cornerCurve = .continuous
     contentView.layer.cornerRadius = 16
     contentView.clipsToBounds = true
-
-    [primaryCover, secondaryTopCover, secondaryBottomCover].forEach(contentView.addSubview)
 
     avatarView.contentMode = .scaleAspectFill
     avatarView.clipsToBounds = true
@@ -60,6 +57,7 @@ final class GalleryCardCell: UICollectionViewCell {
     subscriptionButton.titleLabel?.numberOfLines = 1
     subscriptionButton.titleLabel?.lineBreakMode = .byTruncatingTail
     contentView.addSubview(subscriptionButton)
+    contentView.addSubview(filmstrip)
 
     addInteraction(UIPointerInteraction(delegate: self))
   }
@@ -72,27 +70,8 @@ final class GalleryCardCell: UICollectionViewCell {
   override func layoutSubviews() {
     super.layoutSubviews()
     let width = contentView.bounds.width
-    let coverHeight = width * 9 / 16
-    let primaryWidth = (width - 2) * 2 / 3
-    let secondaryWidth = width - primaryWidth - 2
-    let secondaryHeight = (coverHeight - 2) / 2
-
-    primaryCover.frame = CGRect(x: 0, y: 0, width: primaryWidth, height: coverHeight)
-    secondaryTopCover.frame = CGRect(
-      x: primaryWidth + 2,
-      y: 0,
-      width: secondaryWidth,
-      height: secondaryHeight
-    )
-    secondaryBottomCover.frame = CGRect(
-      x: primaryWidth + 2,
-      y: secondaryHeight + 2,
-      width: secondaryWidth,
-      height: secondaryHeight
-    )
-
     let contentX: CGFloat = 14
-    let identityY = coverHeight + 14
+    let identityY: CGFloat = 14
     let avatarSize: CGFloat = 36
     avatarView.frame = CGRect(x: contentX, y: identityY, width: avatarSize, height: avatarSize)
     avatarFallback.frame = avatarView.frame
@@ -125,7 +104,15 @@ final class GalleryCardCell: UICollectionViewCell {
     nameLabel.frame = CGRect(x: textX, y: identityY, width: textWidth, height: 20)
     descriptionLabel.frame = CGRect(x: textX, y: identityY + 21, width: textWidth, height: 17)
 
-    let metaY = identityY + avatarSize + 10
+    let stripY = identityY + avatarSize + 8
+    filmstrip.frame = CGRect(
+      x: contentX,
+      y: stripY,
+      width: width - contentX * 2,
+      height: GalleryFilmstripView.itemHeight
+    )
+
+    let metaY = filmstrip.frame.maxY + 10
     photoCountLabel.sizeToFit()
     photoCountLabel.frame = CGRect(
       x: contentX,
@@ -164,9 +151,8 @@ final class GalleryCardCell: UICollectionViewCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
-    primaryCover.prepareForReuse()
-    secondaryTopCover.prepareForReuse()
-    secondaryBottomCover.prepareForReuse()
+    filmstrip.prepareForReuse()
+    onPhotoTap = nil
     avatarView.sd_cancelCurrentImageLoad()
     avatarView.image = nil
     avatarFallback.isHidden = false
@@ -193,7 +179,8 @@ final class GalleryCardCell: UICollectionViewCell {
     subscribedTitle: String,
     unsubscribeTitle: String,
     accessibilityLabel: String,
-    onSubscriptionToggle: @escaping () -> Void
+    onSubscriptionToggle: @escaping () -> Void,
+    onPhotoTap: ((String) -> Void)? = nil
   ) {
     contentView.isAccessibilityElement = true
     contentView.accessibilityLabel = accessibilityLabel
@@ -203,6 +190,8 @@ final class GalleryCardCell: UICollectionViewCell {
     descriptionLabel.isHidden = gallery.description?.trimmingToNil == nil
     photoCountLabel.text = photoCount
     self.onSubscriptionToggle = onSubscriptionToggle
+    self.onPhotoTap = onPhotoTap
+    filmstrip.configure(items: (covers ?? []).map(GalleryFilmstripItem.init(cover:)), onSelect: onPhotoTap)
     configureSubscriptionButton(
       state: subscriptionState,
       subscribeTitle: subscribeTitle,
@@ -228,11 +217,6 @@ final class GalleryCardCell: UICollectionViewCell {
       avatarView.image = nil
       avatarFallback.isHidden = false
     }
-
-    let resolvedCovers = covers ?? []
-    primaryCover.configure(photo: resolvedCovers[safe: 0])
-    secondaryTopCover.configure(photo: resolvedCovers[safe: 1])
-    secondaryBottomCover.configure(photo: resolvedCovers[safe: 2])
 
     tagLabels.forEach { $0.removeFromSuperview() }
     tagLabels = gallery.tags.prefix(3).map { tag in
@@ -310,8 +294,8 @@ final class GalleryCardCell: UICollectionViewCell {
     ]
   }
 
-  static func preferredHeight(for width: CGFloat) -> CGFloat {
-    width * 9 / 16 + 98
+  static func preferredHeight(for _: CGFloat) -> CGFloat {
+    14 + 36 + 8 + GalleryFilmstripView.itemHeight + 10 + 22 + 14
   }
 }
 
@@ -321,58 +305,6 @@ extension GalleryCardCell: UIPointerInteractionDelegate {
     styleFor region: UIPointerRegion
   ) -> UIPointerStyle? {
     UIPointerStyle(effect: .lift(UITargetedPreview(view: contentView)))
-  }
-}
-
-private final class GalleryCoverView: UIView {
-  private let imageView = UIImageView()
-  private let liveBadge = UIImageView()
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    backgroundColor = .tertiarySystemFill
-    clipsToBounds = true
-    imageView.contentMode = .scaleAspectFill
-    imageView.clipsToBounds = true
-    imageView.sd_imageTransition = .fade(duration: 0.2)
-    addSubview(imageView)
-    liveBadge.image = LivePhotoBadgeArtwork.overContent
-    liveBadge.contentMode = .center
-    liveBadge.isHidden = true
-    addSubview(liveBadge)
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) is not supported")
-  }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    imageView.frame = bounds
-    let badgeSize = liveBadge.image?.size ?? CGSize(width: 24, height: 24)
-    liveBadge.frame = CGRect(origin: CGPoint(x: 6, y: 6), size: badgeSize)
-  }
-
-  func configure(photo: GalleryCoverPhoto?) {
-    imageView.sd_cancelCurrentImageLoad()
-    imageView.image = nil
-    guard let photo else {
-      liveBadge.isHidden = true
-      return
-    }
-    liveBadge.isHidden = !photo.isLivePhoto
-    imageView.sd_setImage(
-      with: URL(string: photo.thumbnailUrl),
-      placeholderImage: ThumbHashCache.image(forHex: photo.thumbHash),
-      options: [.retryFailed]
-    )
-  }
-
-  func prepareForReuse() {
-    imageView.sd_cancelCurrentImageLoad()
-    imageView.image = nil
-    liveBadge.isHidden = true
   }
 }
 
@@ -396,8 +328,3 @@ private final class InsetLabel: UILabel {
   }
 }
 
-private extension Collection {
-  subscript(safe index: Index) -> Element? {
-    indices.contains(index) ? self[index] : nil
-  }
-}
