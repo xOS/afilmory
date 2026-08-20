@@ -1,19 +1,27 @@
 import UIKit
 
-final class GalleriesController: UIViewController {
+final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearchControllerDelegate {
   private let onRequestSignIn: () -> Void
-  private let segmentControl = UISegmentedControl(items: [
-    String(localized: "Timeline"),
-    String(localized: "Following"),
-    String(localized: "Explore"),
-  ])
+  private let sectionRail = ExploreSectionRailView()
+  private let pagerScrollView = ExplorePagerScrollView()
   private let directory: ExploreDirectoryController
   private let following: FollowingGalleriesController
   private let timeline: GalleryTimelineController
+  private lazy var searchController = makeSearchController()
   private var currentSegment: ExploreSegment = .explore
+  private var previousPagerWidth: CGFloat = 0
+  private var programmaticSegment: ExploreSegment?
   private var userHasChosen = false
   private var sessionObservation: AfilmorySessionObservationToken?
   private var lastGalleryRouteRequestID: String?
+
+  private var orderedPages: [(segment: ExploreSegment, controller: UIViewController)] {
+    [
+      (.timeline, timeline),
+      (.following, following),
+      (.explore, directory),
+    ]
+  }
 
   init(onRequestSignIn: @escaping () -> Void) {
     self.onRequestSignIn = onRequestSignIn
@@ -61,35 +69,74 @@ final class GalleriesController: UIViewController {
 
   func selectExploreSegment() {
     userHasChosen = true
-    show(.explore)
+    show(.explore, animated: true)
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .systemGroupedBackground
-    segmentControl.selectedSegmentIndex = ExploreSegment.explore.rawValue
-    segmentControl.addAction(
-      UIAction { [weak self] _ in
-        guard let self else { return }
-        userHasChosen = true
-        show(ExploreSegment(rawValue: segmentControl.selectedSegmentIndex) ?? .explore)
-      },
-      for: .valueChanged
-    )
-    addChild(directory)
-    addChild(following)
-    addChild(timeline)
-    for child in [directory, following, timeline] {
-      child.view.translatesAutoresizingMaskIntoConstraints = false
-      view.addSubview(child.view)
-      NSLayoutConstraint.activate([
-        child.view.topAnchor.constraint(equalTo: view.topAnchor),
-        child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-        child.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        child.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-      ])
-      child.didMove(toParent: self)
+    navigationItem.largeTitleDisplayMode = .never
+    navigationItem.backButtonTitle = String(localized: "Explore")
+    if #available(iOS 26.0, *) {
+      navigationItem.searchBarPlacementAllowsToolbarIntegration = false
+      navigationItem.preferredSearchBarPlacement = .integratedButton
+    } else {
+      navigationItem.preferredSearchBarPlacement = .stacked
     }
+    navigationItem.searchController = searchController
+
+    sectionRail.onSelect = { [weak self] segment in
+      guard let self else { return }
+      userHasChosen = true
+      show(segment, animated: true)
+    }
+
+    pagerScrollView.translatesAutoresizingMaskIntoConstraints = false
+    pagerScrollView.backgroundColor = .systemGroupedBackground
+    pagerScrollView.contentInsetAdjustmentBehavior = .never
+    pagerScrollView.delegate = self
+    pagerScrollView.isDirectionalLockEnabled = true
+    pagerScrollView.isPagingEnabled = true
+    pagerScrollView.isScrollEnabled = false
+    pagerScrollView.showsHorizontalScrollIndicator = false
+    pagerScrollView.showsVerticalScrollIndicator = false
+    pagerScrollView.accessibilityIdentifier = "explore.pageContainer"
+    view.addSubview(pagerScrollView)
+
+    NSLayoutConstraint.activate([
+      pagerScrollView.topAnchor.constraint(equalTo: view.topAnchor),
+      pagerScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      pagerScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+    ])
+
+    var previousPageView: UIView?
+    for page in orderedPages {
+      let child = page.controller
+      addChild(child)
+      child.view.translatesAutoresizingMaskIntoConstraints = false
+      pagerScrollView.addSubview(child.view)
+      var constraints = [
+        child.view.topAnchor.constraint(equalTo: pagerScrollView.contentLayoutGuide.topAnchor),
+        child.view.bottomAnchor.constraint(equalTo: pagerScrollView.contentLayoutGuide.bottomAnchor),
+        child.view.widthAnchor.constraint(equalTo: pagerScrollView.frameLayoutGuide.widthAnchor),
+        child.view.heightAnchor.constraint(equalTo: pagerScrollView.frameLayoutGuide.heightAnchor),
+      ]
+      if let previousPageView {
+        constraints.append(child.view.leadingAnchor.constraint(equalTo: previousPageView.trailingAnchor))
+      } else {
+        constraints.append(child.view.leadingAnchor.constraint(equalTo: pagerScrollView.contentLayoutGuide.leadingAnchor))
+      }
+      NSLayoutConstraint.activate(constraints)
+      child.didMove(toParent: self)
+      previousPageView = child.view
+    }
+    if let previousPageView {
+      previousPageView.trailingAnchor.constraint(
+        equalTo: pagerScrollView.contentLayoutGuide.trailingAnchor
+      ).isActive = true
+    }
+
     sessionObservation = AfilmorySessionStore.shared.observe { [weak self] state in
       DispatchQueue.main.async {
         self?.handleSession(state)
@@ -103,23 +150,78 @@ final class GalleriesController: UIViewController {
     applyDefaultSegmentIfNeeded()
   }
 
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let width = pagerScrollView.bounds.width
+    guard width > 0, abs(width - previousPagerWidth) >= 0.5 else { return }
+    previousPagerWidth = width
+    guard !pagerScrollView.isDragging, !pagerScrollView.isDecelerating else { return }
+    pagerScrollView.setContentOffset(
+      CGPoint(x: CGFloat(currentSegment.rawValue) * width, y: 0),
+      animated: false
+    )
+    sectionRail.setSelected(currentSegment)
+  }
+
   private func handleSession(_ state: AfilmorySessionState) {
     switch state {
     case .signedOut:
       navigationItem.rightBarButtonItem = signInItem()
-      navigationItem.titleView = nil
       userHasChosen = false
-      show(.explore)
+      setSectionRailVisible(false)
+      show(.explore, animated: false)
     case .loading, .failed:
       navigationItem.rightBarButtonItem = nil
-      navigationItem.titleView = nil
       userHasChosen = false
-      show(.explore)
+      setSectionRailVisible(false)
+      show(.explore, animated: false)
     case .signedIn:
       navigationItem.rightBarButtonItem = nil
-      navigationItem.titleView = segmentControl
+      setSectionRailVisible(true)
       applyDefaultSegmentIfNeeded()
     }
+  }
+
+  private func setSectionRailVisible(_ isVisible: Bool) {
+    pagerScrollView.isScrollEnabled = isVisible
+    if isVisible {
+      if navigationItem.leftBarButtonItem?.customView !== sectionRail {
+        let item = UIBarButtonItem(customView: sectionRail)
+        if #available(iOS 26.0, *) {
+          item.hidesSharedBackground = true
+        }
+        navigationItem.leftBarButtonItem = item
+      }
+      navigationItem.title = nil
+    } else {
+      navigationItem.leftBarButtonItem = nil
+      navigationItem.title = String(localized: "Explore")
+    }
+  }
+
+  private func makeSearchController() -> UISearchController {
+    let controller = UISearchController(searchResultsController: nil)
+    controller.obscuresBackgroundDuringPresentation = false
+    controller.searchResultsUpdater = directory
+    controller.delegate = self
+    controller.searchBar.placeholder = String(localized: "Search galleries")
+    controller.searchBar.autocapitalizationType = .none
+    controller.searchBar.autocorrectionType = .no
+    controller.searchBar.accessibilityIdentifier = "explore.discover.search"
+    return controller
+  }
+
+  private func resetSearchIfLeavingDiscover(for segment: ExploreSegment) {
+    guard segment != .explore, searchController.isActive || searchController.searchBar.text?.isEmpty == false else { return }
+    searchController.isActive = false
+    searchController.searchBar.text = nil
+    directory.clearSearchQuery()
+  }
+
+  func willPresentSearchController(_ searchController: UISearchController) {
+    guard currentSegment != .explore else { return }
+    userHasChosen = true
+    show(.explore, animated: true)
   }
 
   private func signInItem() -> UIBarButtonItem {
@@ -139,12 +241,15 @@ final class GalleriesController: UIViewController {
 
   private func applyDefaultSegmentIfNeeded() {
     guard case .signedIn(let session) = AfilmorySessionStore.shared.current().state else {
-      show(.explore)
+      show(.explore, animated: false)
       return
     }
     if !userHasChosen {
       let cached = GallerySubscriptionStore.shared.cachedHasSubscriptions(userId: session.user.id)
-      show(resolveExploreDefaultSegment(isSignedIn: true, cachedHasSubscriptions: cached))
+      show(
+        resolveExploreDefaultSegment(isSignedIn: true, cachedHasSubscriptions: cached),
+        animated: false
+      )
     }
     Task { @MainActor [weak self] in
       guard let self else { return }
@@ -155,7 +260,8 @@ final class GalleriesController: UIViewController {
             current: currentSegment,
             userHasChosen: false,
             hasSubscriptions: GallerySubscriptionStore.shared.hasSubscriptions
-          )
+          ),
+          animated: false
         )
       }
       following.reloadFromStore()
@@ -178,18 +284,27 @@ final class GalleriesController: UIViewController {
     }
   }
 
-  private func show(_ segment: ExploreSegment) {
+  private func show(_ segment: ExploreSegment, animated: Bool) {
+    let changed = currentSegment != segment
     currentSegment = segment
-    segmentControl.selectedSegmentIndex = segment.rawValue
-    directory.view.isHidden = segment != .explore
-    following.view.isHidden = segment != .following
-    timeline.view.isHidden = segment != .timeline
-    if segment == .explore {
-      navigationItem.searchController = directory.searchController
-      navigationItem.hidesSearchBarWhenScrolling = false
-    } else if navigationItem.searchController === directory.searchController {
-      navigationItem.searchController = nil
+    programmaticSegment = animated ? segment : nil
+
+    let width = pagerScrollView.bounds.width
+    let targetOffset = CGPoint(x: CGFloat(segment.rawValue) * width, y: 0)
+    if animated, width > 0, viewIfLoaded?.window != nil {
+      pagerScrollView.setContentOffset(targetOffset, animated: true)
+    } else {
+      pagerScrollView.setContentOffset(targetOffset, animated: false)
+      sectionRail.setSelected(segment)
+      resetSearchIfLeavingDiscover(for: segment)
+      programmaticSegment = nil
     }
+
+    guard changed else { return }
+    activate(segment)
+  }
+
+  private func activate(_ segment: ExploreSegment) {
     if segment == .timeline {
       Task { @MainActor [weak self] in
         await GalleryTimelineStore.shared.refresh(timeZone: TimeZone.current.identifier)
@@ -198,6 +313,50 @@ final class GalleriesController: UIViewController {
     }
     if segment == .following {
       following.reloadFromStore()
+    }
+  }
+
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    guard scrollView === pagerScrollView else { return }
+    programmaticSegment = nil
+    userHasChosen = true
+    sectionRail.beginInteractiveTransition()
+    searchController.searchBar.resignFirstResponder()
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    guard scrollView === pagerScrollView, scrollView.bounds.width > 0 else { return }
+    sectionRail.setSelectionProgress(scrollView.contentOffset.x / scrollView.bounds.width)
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    guard scrollView === pagerScrollView else { return }
+    commitPagerPosition()
+  }
+
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    guard scrollView === pagerScrollView, !decelerate else { return }
+    commitPagerPosition()
+  }
+
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    guard scrollView === pagerScrollView else { return }
+    commitPagerPosition()
+  }
+
+  private func commitPagerPosition() {
+    let resolved = resolveExploreSegment(
+      pageOffsetX: pagerScrollView.contentOffset.x,
+      pageWidth: pagerScrollView.bounds.width,
+      fallback: programmaticSegment ?? currentSegment
+    )
+    let changed = currentSegment != resolved
+    currentSegment = resolved
+    programmaticSegment = nil
+    sectionRail.setSelected(resolved)
+    resetSearchIfLeavingDiscover(for: resolved)
+    if changed {
+      activate(resolved)
     }
   }
 
@@ -211,5 +370,18 @@ final class GalleriesController: UIViewController {
       ),
       animated: viewIfLoaded?.window != nil
     )
+  }
+}
+
+final class ExplorePagerScrollView: UIScrollView {
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard gestureRecognizer === panGestureRecognizer,
+          let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer
+    else {
+      return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+    let velocity = panGestureRecognizer.velocity(in: self)
+    guard abs(velocity.x) > abs(velocity.y) else { return false }
+    return super.gestureRecognizerShouldBegin(gestureRecognizer)
   }
 }

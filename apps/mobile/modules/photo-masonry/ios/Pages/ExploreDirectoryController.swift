@@ -62,7 +62,6 @@ final class ExploreDirectoryController: UIViewController {
   private let layout = UICollectionViewFlowLayout()
   private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
   private let refreshControl = UIRefreshControl()
-  let searchController = UISearchController(searchResultsController: nil)
   private var galleries: [FeaturedGallery] = []
   private var coverCache: [String: [GalleryCoverPhoto]] = [:]
   private var coverTasks: [String: Task<Void, Never>] = [:]
@@ -108,6 +107,10 @@ final class ExploreDirectoryController: UIViewController {
     )
   }
 
+  func clearSearchQuery() {
+    updateSearchQuery(nil)
+  }
+
   deinit {
     loadTask?.cancel()
     searchDebounceTask?.cancel()
@@ -141,17 +144,17 @@ final class ExploreDirectoryController: UIViewController {
       forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
       withReuseIdentifier: GallerySearchSummaryView.reuseIdentifier
     )
-    searchController.searchResultsUpdater = self
-    searchController.obscuresBackgroundDuringPresentation = false
-    searchController.searchBar.placeholder = String(localized: "Search galleries")
-    searchController.searchBar.autocapitalizationType = .none
-    searchController.searchBar.autocorrectionType = .no
-    definesPresentationContext = true
     refreshControl.addTarget(self, action: #selector(refresh), for: .valueChanged)
     collectionView.refreshControl = refreshControl
-    collectionView.frame = view.bounds
-    collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+    collectionView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(collectionView)
+    NSLayoutConstraint.activate([
+      collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+      collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+    ])
     sessionObservation = AfilmorySessionStore.shared.observe { [weak self] state in
       DispatchQueue.main.async {
         self?.handleSession(state)
@@ -522,7 +525,7 @@ final class ExploreDirectoryController: UIViewController {
     let itemWidth = floor((availableWidth - CGFloat(columns - 1) * gap) / CGFloat(columns))
     layout.minimumInteritemSpacing = gap
     layout.minimumLineSpacing = gap
-    layout.sectionInset = UIEdgeInsets(top: 12, left: horizontalPadding, bottom: 120, right: horizontalPadding)
+    layout.sectionInset = UIEdgeInsets(top: 12, left: horizontalPadding, bottom: 16, right: horizontalPadding)
     layout.headerReferenceSize = headerHeight == 0
       ? .zero
       : CGSize(width: width, height: headerHeight)
@@ -676,8 +679,13 @@ extension ExploreDirectoryController: UICollectionViewDataSource, UICollectionVi
 
 extension ExploreDirectoryController: UISearchResultsUpdating {
   func updateSearchResults(for searchController: UISearchController) {
-    let query = searchController.searchBar.text?
-      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    updateSearchQuery(searchController.searchBar.text)
+  }
+}
+
+extension ExploreDirectoryController {
+  fileprivate func updateSearchQuery(_ text: String?) {
+    let query = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard query != activeQuery else { return }
 
     activeQuery = query

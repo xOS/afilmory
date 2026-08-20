@@ -33,4 +33,17 @@ final class ExploreSegmentPolicyTests: XCTestCase {
       .explore
     )
   }
+
+  func testHorizontalPageOffsetResolvesTheNearestSection() {
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 0, pageWidth: 390, fallback: .explore), .timeline)
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 390, pageWidth: 390, fallback: .explore), .following)
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 780, pageWidth: 390, fallback: .timeline), .explore)
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 585, pageWidth: 390, fallback: .timeline), .explore)
+  }
+
+  func testHorizontalPageOffsetClampsAndPreservesFallbackWithoutLayout() {
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: -200, pageWidth: 390, fallback: .following), .timeline)
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 1_500, pageWidth: 390, fallback: .following), .explore)
+    XCTAssertEqual(resolveExploreSegment(pageOffsetX: 500, pageWidth: 0, fallback: .following), .following)
+  }
 }

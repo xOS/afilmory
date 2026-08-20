@@ -60,8 +60,8 @@ final class AfilmoryTabBarController: UITabBarController, UITabBarControllerDele
 
   private func applyMinimizeBehavior() {
     if #available(iOS 26.0, *) {
-      let isStudio = selectedIndex == 3
-      tabBarMinimizeBehavior = isStudio ? .never : .onScrollDown
+      let keepsTabBarExpanded = selectedIndex == 2 || selectedIndex == 3
+      tabBarMinimizeBehavior = keepsTabBarExpanded ? .never : .onScrollDown
     }
   }
 

@@ -36,7 +36,9 @@ final class GalleryFilmstripView: UIView {
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    scrollView.alwaysBounceHorizontal = true
+    scrollView.alwaysBounceHorizontal = false
+    scrollView.isDirectionalLockEnabled = true
+    scrollView.scrollsToTop = false
     scrollView.showsHorizontalScrollIndicator = false
     scrollView.showsVerticalScrollIndicator = false
     addSubview(scrollView)
@@ -55,7 +57,9 @@ final class GalleryFilmstripView: UIView {
       tile.frame = CGRect(x: x, y: 0, width: Self.itemWidth, height: Self.itemHeight)
       x += Self.itemWidth + Self.itemSpacing
     }
-    scrollView.contentSize = CGSize(width: max(0, x - Self.itemSpacing), height: bounds.height)
+    let contentWidth = max(0, x - Self.itemSpacing)
+    scrollView.contentSize = CGSize(width: contentWidth, height: bounds.height)
+    scrollView.isScrollEnabled = contentWidth > bounds.width + 0.5
   }
 
   func configure(items: [GalleryFilmstripItem], onSelect: ((String) -> Void)?) {

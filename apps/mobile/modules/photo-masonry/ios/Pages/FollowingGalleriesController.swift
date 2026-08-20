@@ -118,12 +118,14 @@ final class FollowingGalleriesController: UIViewController, UICollectionViewData
         )
       },
       photoCount: String(localized: "\(item.gallery.photoCount) photos"),
-      subscriptionState: .hidden,
+      subscriptionState: .subscribed,
       subscribeTitle: String(localized: "Subscribe"),
       subscribedTitle: String(localized: "Subscribed"),
       unsubscribeTitle: String(localized: "Unsubscribe"),
       accessibilityLabel: String(localized: "Open \(item.gallery.name)"),
-      onSubscriptionToggle: {},
+      onSubscriptionToggle: { [weak self] in
+        self?.unsubscribe(item)
+      },
       onPhotoTap: { [weak self] photoID in
         self?.onOpenGallery(item.gallery.slug, item.gallery.name, photoID)
       }
@@ -135,18 +137,6 @@ final class FollowingGalleriesController: UIViewController, UICollectionViewData
     collectionView.deselectItem(at: indexPath, animated: true)
     let item = items[indexPath.item]
     onOpenGallery(item.gallery.slug, item.gallery.name, nil)
-  }
-
-  func collectionView(
-    _ collectionView: UICollectionView,
-    leadingSwipeActionsConfigurationForItemAt indexPath: IndexPath
-  ) -> UISwipeActionsConfiguration? {
-    let item = items[indexPath.item]
-    let action = UIContextualAction(style: .destructive, title: String(localized: "Unsubscribe")) { [weak self] _, _, done in
-      self?.unsubscribe(item)
-      done(true)
-    }
-    return UISwipeActionsConfiguration(actions: [action])
   }
 
   func collectionView(
@@ -202,7 +192,7 @@ final class FollowingGalleriesController: UIViewController, UICollectionViewData
     let itemWidth = floor((availableWidth - CGFloat(columns - 1) * gap) / CGFloat(columns))
     layout.minimumInteritemSpacing = gap
     layout.minimumLineSpacing = gap
-    layout.sectionInset = UIEdgeInsets(top: 12, left: horizontalPadding, bottom: 120, right: horizontalPadding)
+    layout.sectionInset = UIEdgeInsets(top: 12, left: horizontalPadding, bottom: 16, right: horizontalPadding)
     layout.itemSize = CGSize(width: itemWidth, height: GalleryCardCell.preferredHeight(for: itemWidth))
     layout.invalidateLayout()
   }
