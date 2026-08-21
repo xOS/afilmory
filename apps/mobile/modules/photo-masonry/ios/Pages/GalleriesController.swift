@@ -14,6 +14,8 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   private var userHasChosen = false
   private var sessionObservation: AfilmorySessionObservationToken?
   private var lastGalleryRouteRequestID: String?
+  private let signInBar = ExploreSignInBar()
+  private var pagerBottomConstraint: NSLayoutConstraint?
 
   private var orderedPages: [(segment: ExploreSegment, controller: UIViewController)] {
     [
@@ -103,11 +105,20 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
     pagerScrollView.accessibilityIdentifier = "explore.pageContainer"
     view.addSubview(pagerScrollView)
 
+    signInBar.translatesAutoresizingMaskIntoConstraints = false
+    signInBar.onSignIn = { [weak self] in self?.requestSignIn() }
+    view.addSubview(signInBar)
+
+    let pagerBottom = pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+    pagerBottomConstraint = pagerBottom
     NSLayoutConstraint.activate([
       pagerScrollView.topAnchor.constraint(equalTo: view.topAnchor),
       pagerScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       pagerScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      pagerBottom,
+      signInBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      signInBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      signInBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
     ])
 
     var previousPageView: UIView?
@@ -166,20 +177,30 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   private func handleSession(_ state: AfilmorySessionState) {
     switch state {
     case .signedOut:
-      navigationItem.rightBarButtonItem = signInItem()
       userHasChosen = false
+      setSignInBarVisible(true)
       setSectionRailVisible(false)
       show(.explore, animated: false)
     case .loading, .failed:
-      navigationItem.rightBarButtonItem = nil
       userHasChosen = false
+      setSignInBarVisible(false)
       setSectionRailVisible(false)
       show(.explore, animated: false)
     case .signedIn:
-      navigationItem.rightBarButtonItem = nil
+      setSignInBarVisible(false)
       setSectionRailVisible(true)
       applyDefaultSegmentIfNeeded()
     }
+  }
+
+  private func setSignInBarVisible(_ isVisible: Bool) {
+    signInBar.isHidden = !isVisible
+    pagerBottomConstraint?.isActive = false
+    let pagerBottom = isVisible
+      ? pagerScrollView.bottomAnchor.constraint(equalTo: signInBar.topAnchor)
+      : pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+    pagerBottomConstraint = pagerBottom
+    pagerBottom.isActive = true
   }
 
   private func setSectionRailVisible(_ isVisible: Bool) {
@@ -224,18 +245,7 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
     show(.explore, animated: true)
   }
 
-  private func signInItem() -> UIBarButtonItem {
-    let item = UIBarButtonItem(
-      title: String(localized: "Sign in"),
-      style: .plain,
-      target: self,
-      action: #selector(requestSignIn)
-    )
-    item.accessibilityIdentifier = "explore.signIn"
-    return item
-  }
-
-  @objc private func requestSignIn() {
+  private func requestSignIn() {
     onRequestSignIn()
   }
 

@@ -1,15 +1,31 @@
-import SDWebImage
 import SwiftUI
 
-private struct ShowcaseCoverRequest: Encodable {
-  let limit: Int
-  let sort: String
+private struct ShowcasePhoto: Identifiable, Hashable {
+  let id: String
+  let assetName: String
+  let aspectRatio: CGFloat
+}
+
+private enum SignInShowcaseLibrary {
+  static let photos: [ShowcasePhoto] = [
+    ShowcasePhoto(id: "DSCF0842", assetName: "signin-DSCF0842", aspectRatio: 2.0 / 3.0),
+    ShowcasePhoto(id: "IMG_0030", assetName: "signin-IMG_0030", aspectRatio: 3.0 / 2.0),
+    ShowcasePhoto(id: "IMG_5469", assetName: "signin-IMG_5469", aspectRatio: 4.0 / 3.0),
+    ShowcasePhoto(id: "DSCF0420", assetName: "signin-DSCF0420", aspectRatio: 2.0 / 3.0),
+    ShowcasePhoto(id: "DSCF2853", assetName: "signin-DSCF2853", aspectRatio: 3.0 / 2.0),
+    ShowcasePhoto(id: "IMG_5484", assetName: "signin-IMG_5484", aspectRatio: 4.0 / 3.0),
+    ShowcasePhoto(id: "DSCF0436", assetName: "signin-DSCF0436", aspectRatio: 2.0 / 3.0),
+    ShowcasePhoto(id: "DSCF2848", assetName: "signin-DSCF2848", aspectRatio: 3.0 / 2.0),
+    ShowcasePhoto(id: "DSCF2851", assetName: "signin-DSCF2851", aspectRatio: 3.0 / 2.0),
+    ShowcasePhoto(id: "IMG_1401", assetName: "signin-IMG_1401", aspectRatio: 3.0 / 4.0),
+    ShowcasePhoto(id: "DSCF2850", assetName: "signin-DSCF2850", aspectRatio: 3.0 / 2.0),
+  ]
 }
 
 private struct ShowcaseColumn: Identifiable {
   struct Item: Identifiable {
     let id: String
-    let photo: GalleryCoverPhoto
+    let photo: ShowcasePhoto
     let height: CGFloat
   }
 
@@ -25,7 +41,6 @@ struct SignInShowcaseView: View {
   private static let gap: CGFloat = 6
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var photos: [GalleryCoverPhoto] = []
 
   var body: some View {
     GeometryReader { geometry in
@@ -46,13 +61,11 @@ struct SignInShowcaseView: View {
       }
     }
     .allowsHitTesting(false)
-    .task {
-      guard photos.isEmpty else { return }
-      photos = (try? await Self.loadPhotos()) ?? []
-    }
+    .accessibilityHidden(true)
   }
 
   private func buildColumns(size: CGSize) -> [ShowcaseColumn] {
+    let photos = SignInShowcaseLibrary.photos
     guard !photos.isEmpty, size.width > 0, size.height > 0 else { return [] }
     let width = (size.width - Self.gap * CGFloat(Self.columnCount - 1)) / CGFloat(Self.columnCount)
     let assigned = (0..<Self.columnCount).map { column in
@@ -88,59 +101,6 @@ struct SignInShowcaseView: View {
         width: width
       )
     }
-  }
-
-  private static func loadPhotos() async throws -> [GalleryCoverPhoto] {
-    let directory: FeaturedGalleriesEnvelope = try await AfilmoryAPI.shared.request(
-      APIEndpoint(baseURL: .platform, path: "gallery-directory")
-    )
-    let galleries = Array(directory.galleries.prefix(4))
-    let batches = await withTaskGroup(of: (Int, [GalleryCoverPhoto]).self) { group in
-      for (index, gallery) in galleries.enumerated() {
-        group.addTask {
-          do {
-            let apiBase = try ApiEnvironmentStore.shared.galleryAPIBaseURL(slug: gallery.slug)
-            let response: ManifestEnvelope = try await AfilmoryAPI.shared.request(
-              APIEndpoint(
-                baseURL: .explicit(apiBase.absoluteString),
-                path: "manifest/photos/search",
-                method: .post,
-                body: try APIEndpoint.jsonBody(ShowcaseCoverRequest(limit: 8, sort: "desc"))
-              )
-            )
-            let covers = response.data.compactMap { photo -> GalleryCoverPhoto? in
-              guard let thumbnailURL = photo.thumbnailUrl?.trimmingToNil else { return nil }
-              let width = photo.width ?? 0
-              let height = photo.height ?? 0
-              return GalleryCoverPhoto(
-                id: photo.id,
-                thumbnailUrl: thumbnailURL,
-                thumbHash: photo.thumbHash,
-                aspectRatio: photo.aspectRatio ?? (width > 0 && height > 0 ? width / height : 1),
-                isLivePhoto: photo.video?.object?["type"]?.string == "live-photo"
-              )
-            }
-            return (index, covers)
-          } catch {
-            return (index, [])
-          }
-        }
-      }
-      var result: [(Int, [GalleryCoverPhoto])] = []
-      for await batch in group {
-        result.append(batch)
-      }
-      return result.sorted { $0.0 < $1.0 }.map(\.1)
-    }
-
-    var pool: [GalleryCoverPhoto] = []
-    for index in 0..<8 where pool.count < 24 {
-      for batch in batches where batch.indices.contains(index) {
-        pool.append(batch[index])
-        if pool.count == 24 { break }
-      }
-    }
-    return pool
   }
 }
 
@@ -192,124 +152,13 @@ private struct ShowcaseColumnView: View {
   private var content: some View {
     VStack(spacing: 6) {
       ForEach(column.items) { item in
-        ShowcaseRemoteImage(
-          url: URL(string: item.photo.thumbnailUrl),
-          thumbHash: item.photo.thumbHash,
-          displaySize: CGSize(width: column.width, height: item.height)
-        )
+        Image(item.photo.assetName)
+          .resizable()
+          .scaledToFill()
           .frame(width: column.width, height: item.height)
-          .background(Color(uiColor: .secondarySystemBackground))
+          .clipped()
           .clipShape(.rect(cornerRadius: 6, style: .continuous))
       }
     }
-  }
-}
-
-private struct ShowcaseRemoteImage: UIViewRepresentable {
-  let url: URL?
-  let thumbHash: String?
-  let displaySize: CGSize
-
-  func makeUIView(context _: Context) -> ShowcaseCrossfadeImageView {
-    ShowcaseCrossfadeImageView()
-  }
-
-  func updateUIView(_ view: ShowcaseCrossfadeImageView, context _: Context) {
-    view.setImage(
-      url: url,
-      placeholder: ThumbHashCache.image(forHex: thumbHash),
-      displaySize: displaySize
-    )
-  }
-
-  static func dismantleUIView(_ view: ShowcaseCrossfadeImageView, coordinator _: Void) {
-    view.cancelLoad()
-  }
-}
-
-private final class ShowcaseCrossfadeImageView: UIView {
-  private let placeholderView = UIImageView()
-  private let imageView = UIImageView()
-  private var representedPixelSize = CGSize.zero
-  private var representedURL: URL?
-  private var requestVersion = 0
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    clipsToBounds = true
-    isAccessibilityElement = false
-    for view in [placeholderView, imageView] {
-      view.contentMode = .scaleAspectFill
-      view.clipsToBounds = true
-      addSubview(view)
-    }
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) is not supported")
-  }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    placeholderView.frame = bounds
-    imageView.frame = bounds
-  }
-
-  func setImage(url: URL?, placeholder: UIImage?, displaySize: CGSize) {
-    let scale = max(traitCollection.displayScale, 1)
-    let pixelSize = CGSize(
-      width: ceil(max(displaySize.width, 1) * scale),
-      height: ceil(max(displaySize.height, 1) * scale)
-    )
-    guard representedURL != url || representedPixelSize != pixelSize else {
-      if imageView.image == nil {
-        placeholderView.image = placeholder
-      }
-      return
-    }
-
-    representedURL = url
-    representedPixelSize = pixelSize
-    requestVersion &+= 1
-    let currentRequestVersion = requestVersion
-    imageView.sd_cancelCurrentImageLoad()
-    placeholderView.image = placeholder
-    placeholderView.alpha = 1
-    imageView.image = nil
-    imageView.alpha = 0
-
-    guard let url else { return }
-    imageView.sd_setImage(
-      with: url,
-      placeholderImage: nil,
-      options: [.retryFailed, .scaleDownLargeImages],
-      context: [.imageThumbnailPixelSize: NSValue(cgSize: pixelSize)],
-      progress: nil,
-      completed: { [weak self] image, _, _, completedURL in
-        guard let self,
-              currentRequestVersion == self.requestVersion,
-              completedURL == self.representedURL,
-              image != nil
-        else { return }
-        self.imageView.alpha = 0
-        UIView.animate(
-          withDuration: 0.2,
-          delay: 0,
-          options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
-        ) {
-          self.imageView.alpha = 1
-        }
-      }
-    )
-  }
-
-  func cancelLoad() {
-    requestVersion &+= 1
-    representedURL = nil
-    representedPixelSize = .zero
-    imageView.sd_cancelCurrentImageLoad()
-    placeholderView.image = nil
-    imageView.image = nil
   }
 }
