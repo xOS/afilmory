@@ -9,7 +9,7 @@ final class ExploreSectionRailView: UIView {
   private var selectionPosition = CGFloat(ExploreSegment.explore.rawValue)
 
   private static let railHeight: CGFloat = 44
-  private static let segmentPadding: CGFloat = 14
+  private static let segmentPadding: CGFloat = 18
 
   override init(frame: CGRect) {
     control = LiquidGlassSegmentedControl(items: [
@@ -22,7 +22,7 @@ final class ExploreSectionRailView: UIView {
     accessibilityIdentifier = "explore.sectionRail"
 
     control.selectedSegmentIndex = ExploreSegment.explore.rawValue
-    control.apportionsSegmentWidthsByContent = true
+    control.apportionsSegmentWidthsByContent = false
     control.translatesAutoresizingMaskIntoConstraints = false
     applySegmentMetrics()
     control.addAction(
@@ -61,6 +61,11 @@ final class ExploreSectionRailView: UIView {
       let width = ceil((title as NSString).size(withAttributes: [.font: font]).width)
       control.setWidth(width + Self.segmentPadding * 2, forSegmentAt: index)
     }
+    invalidateIntrinsicContentSize()
+  }
+
+  override var intrinsicContentSize: CGSize {
+    CGSize(width: control.intrinsicContentSize.width, height: Self.railHeight)
   }
 
   @available(*, unavailable)
