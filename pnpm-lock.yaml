@@ -71,6 +71,8 @@ overrides:
   vite@<8.0.16: ^8.0.16
   '@babel/core@<7.29.6': ^7.29.6
 
+packageExtensionsChecksum: sha256-Q2I6EuhlBAx40LXQdMrqSxI9eAq4A3JqPOESCcY+36g=
+
 importers:
 
   .:
@@ -644,7 +646,7 @@ importers:
         version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       swiper:
         specifier: 12.2.0
-        version: 12.2.0
+        version: 12.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       swr:
         specifier: 2.4.1
         version: 2.4.1(react@19.2.7)
@@ -11639,6 +11641,9 @@ packages:
   swiper@12.2.0:
     resolution: {integrity: sha512-K8uXsBZU6ME97Ia3xbBge8IRCnR1lOmIILzvY/jGVic7dSTQ530s3uO8RvXbPUtkkXLWIwmZLRPbtDxRWVAFdg==}
     engines: {node: '>= 4.7.0'}
+    peerDependencies:
+      react: '*'
+      react-dom: '*'
 
   swr@2.4.1:
     resolution: {integrity: sha512-2CC6CiKQtEwaEeNiqWTAw9PGykW8SR5zZX8MZk6TeAvEAnVS7Visz8WzphqgtQ8v2xz/4Q5K+j+SeMaKXeeQIA==}
@@ -23937,7 +23942,10 @@ snapshots:
       picocolors: 1.1.1
       sax: 1.6.1
 
-  swiper@12.2.0: {}
+  swiper@12.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   swr@2.4.1(react@19.2.7):
     dependencies:
