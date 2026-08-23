@@ -418,6 +418,13 @@ final class PhotoViewerCell: UICollectionViewCell, UIGestureRecognizerDelegate, 
     return imageContainerView.convert(imageContainerView.bounds, to: view)
   }
 
+  var transitionImage: UIImage? {
+    if detailImageView.alpha > 0.01, let image = detailImageView.image {
+      return image
+    }
+    return previewImageView.image
+  }
+
   var currentZoomScale: CGFloat {
     scrollView.zoomScale
   }

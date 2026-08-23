@@ -10,6 +10,12 @@ struct PhotoTransitionTransform: Equatable, Sendable {
   }
 }
 
+struct PhotoTransitionTarget: Equatable, Sendable {
+  let imageFrame: CGRect
+  let targetRect: CGRect
+  let targetCornerRadius: CGFloat
+}
+
 struct PhotoDismissDragState: Equatable, Sendable {
   let progress: CGFloat
   let transform: PhotoTransitionTransform
@@ -123,6 +129,29 @@ enum PhotoTransitionGeometry {
     return PhotoTransitionTransform(scale: scale, translation: translation)
   }
 
+  static func aspectFillContentsRect(
+    imageSize: CGSize,
+    viewportSize: CGSize
+  ) -> CGRect? {
+    guard imageSize.width > 0,
+          imageSize.height > 0,
+          viewportSize.width > 0,
+          viewportSize.height > 0
+    else { return nil }
+    let scale = max(
+      viewportSize.width / imageSize.width,
+      viewportSize.height / imageSize.height
+    )
+    let visibleWidth = min(1, viewportSize.width / (imageSize.width * scale))
+    let visibleHeight = min(1, viewportSize.height / (imageSize.height * scale))
+    return CGRect(
+      x: (1 - visibleWidth) / 2,
+      y: (1 - visibleHeight) / 2,
+      width: visibleWidth,
+      height: visibleHeight
+    )
+  }
+
   static func aspectFitRect(aspectRatio: CGFloat, in bounds: CGRect) -> CGRect? {
     guard aspectRatio > 0, bounds.width > 0, bounds.height > 0 else { return nil }
     let width = min(bounds.width, bounds.height * aspectRatio)
@@ -133,5 +162,16 @@ enum PhotoTransitionGeometry {
       width: width,
       height: height
     )
+  }
+
+  static func transformedRect(
+    _ rect: CGRect,
+    by transform: PhotoTransitionTransform,
+    around center: CGPoint
+  ) -> CGRect {
+    rect
+      .offsetBy(dx: -center.x, dy: -center.y)
+      .applying(transform.affineTransform)
+      .offsetBy(dx: center.x, dy: center.y)
   }
 }

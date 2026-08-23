@@ -132,6 +132,48 @@ final class PhotoTransitionGeometryTests: XCTestCase {
     XCTAssertTrue(result.translation.y.isFinite)
   }
 
+  func testDismissTargetMapsCropWindowOntoAspectFillCell() throws {
+    let imageSize = CGSize(width: 402, height: 268)
+    let cellSize = CGSize(width: 92, height: 116)
+    let crop = try XCTUnwrap(
+      PhotoTransitionGeometry.aspectFillContentsRect(
+        imageSize: imageSize,
+        viewportSize: cellSize
+      )
+    )
+    let scale = max(cellSize.width / imageSize.width, cellSize.height / imageSize.height)
+    let visibleImageSize = CGSize(
+      width: imageSize.width * scale * crop.width,
+      height: imageSize.height * scale * crop.height
+    )
+
+    XCTAssertEqual(crop.midX, 0.5, accuracy: 0.0001)
+    XCTAssertEqual(crop.midY, 0.5, accuracy: 0.0001)
+    XCTAssertLessThan(crop.width, 1)
+    XCTAssertEqual(crop.height, 1, accuracy: 0.0001)
+    XCTAssertEqual(visibleImageSize.width, cellSize.width, accuracy: 0.0001)
+    XCTAssertEqual(visibleImageSize.height, cellSize.height, accuracy: 0.0001)
+  }
+
+  func testInteractiveDismissImageFrameFollowsDragTransform() {
+    let imageFrame = CGRect(x: 0, y: 303, width: 402, height: 268)
+    let viewportCenter = CGPoint(x: 201, y: 437)
+    let drag = PhotoTransitionGeometry.dismissalDragState(
+      translation: CGPoint(x: 18, y: 170)
+    )
+
+    let transformed = PhotoTransitionGeometry.transformedRect(
+      imageFrame,
+      by: drag.transform,
+      around: viewportCenter
+    )
+
+    XCTAssertEqual(transformed.midX, imageFrame.midX + 18, accuracy: 0.0001)
+    XCTAssertEqual(transformed.midY, imageFrame.midY + 170, accuracy: 0.0001)
+    XCTAssertEqual(transformed.width, imageFrame.width * drag.transform.scale, accuracy: 0.0001)
+    XCTAssertEqual(transformed.height, imageFrame.height * drag.transform.scale, accuracy: 0.0001)
+  }
+
   func testZeroSizeReturnsNil() {
     XCTAssertNil(
       PhotoTransitionGeometry.viewportTransform(
@@ -143,4 +185,5 @@ final class PhotoTransitionGeometryTests: XCTestCase {
     )
     XCTAssertNil(PhotoTransitionGeometry.aspectFitRect(aspectRatio: 0, in: CGRect(x: 0, y: 0, width: 10, height: 10)))
   }
+
 }

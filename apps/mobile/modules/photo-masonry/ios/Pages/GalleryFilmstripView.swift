@@ -87,12 +87,20 @@ final class GalleryFilmstripView: UIView {
     onSelect = nil
     tiles.forEach { $0.prepareForReuse() }
   }
+
+  func transitionSourceView(for photoID: String) -> UIView? {
+    tiles.first(where: { $0.photoID == photoID })?.transitionSourceView
+  }
 }
 
 private final class GalleryFilmstripTile: UIButton {
   private let photoView = UIImageView()
   private let liveBadge = UIImageView()
   private(set) var photoID: String?
+
+  var transitionSourceView: UIView {
+    photoView
+  }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -102,6 +110,8 @@ private final class GalleryFilmstripTile: UIButton {
     backgroundColor = .tertiarySystemFill
     photoView.contentMode = .scaleAspectFill
     photoView.clipsToBounds = true
+    photoView.layer.cornerCurve = .continuous
+    photoView.layer.cornerRadius = 8
     photoView.isUserInteractionEnabled = false
     photoView.sd_imageTransition = .fade(duration: 0.2)
     addSubview(photoView)

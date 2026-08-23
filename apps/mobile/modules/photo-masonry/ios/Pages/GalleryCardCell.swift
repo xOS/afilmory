@@ -101,7 +101,10 @@ final class GalleryCardCell: UICollectionViewCell {
       ? width - contentX
       : subscriptionButton.frame.minX - 10
     let textWidth = max(0, textRight - textX)
-    nameLabel.frame = CGRect(x: textX, y: identityY, width: textWidth, height: 20)
+    let nameY = descriptionLabel.isHidden
+      ? identityY + (avatarSize - 20) / 2
+      : identityY
+    nameLabel.frame = CGRect(x: textX, y: nameY, width: textWidth, height: 20)
     descriptionLabel.frame = CGRect(x: textX, y: identityY + 21, width: textWidth, height: 17)
 
     let stripY = identityY + avatarSize + 8
@@ -297,6 +300,10 @@ final class GalleryCardCell: UICollectionViewCell {
   static func preferredHeight(for _: CGFloat) -> CGFloat {
     14 + 36 + 8 + GalleryFilmstripView.itemHeight + 10 + 22 + 14
   }
+
+  func transitionSourceView(for photoID: String) -> UIView? {
+    filmstrip.transitionSourceView(for: photoID)
+  }
 }
 
 extension GalleryCardCell: UIPointerInteractionDelegate {
@@ -327,4 +334,3 @@ private final class InsetLabel: UILabel {
     )
   }
 }
-

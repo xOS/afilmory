@@ -165,17 +165,33 @@ final class PhotoTransitionAnimator: NSObject, UIViewControllerAnimatedTransitio
     sourceView = source
     source?.isHidden = true
     let sourceRect = source.map { $0.convert($0.bounds, to: detailView) }
+    let target = sourceRect.flatMap {
+      detailView.transitionTarget(
+        targetRect: $0,
+        targetCornerRadius: source?.layer.cornerRadius ?? 0
+      )
+    }
     let targetTransform = sourceRect.flatMap(detailView.transitionTransform)
       ?? offscreenTransform(for: detailView)
     let fadesMedia = source == nil
+    detailView.prepareDismissalTransition(target: target)
 
     let animator = UIViewPropertyAnimator(duration: 0.36, dampingRatio: 0.92) {
-      detailView.applyTransition(
-        mediaTransform: targetTransform,
-        mediaAlpha: fadesMedia ? 0 : 1,
-        backdropAlpha: 0,
-        chromeAlpha: 0
-      )
+      if let target {
+        detailView.applyDismissalTransition(
+          target: target,
+          mediaAlpha: 1,
+          backdropAlpha: 0,
+          chromeAlpha: 0
+        )
+      } else {
+        detailView.applyTransition(
+          mediaTransform: targetTransform,
+          mediaAlpha: fadesMedia ? 0 : 1,
+          backdropAlpha: 0,
+          chromeAlpha: 0
+        )
+      }
     }
     animator.addCompletion { [weak self] position in
       let completed = position == .end && !transitionContext.transitionWasCancelled

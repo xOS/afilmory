@@ -328,6 +328,10 @@ final class PhotoViewerView: UIView {
     return PhotoTransitionGeometry.aspectFitRect(aspectRatio: width / height, in: bounds)
   }
 
+  func currentTransitionImage() -> UIImage? {
+    currentCell()?.transitionImage
+  }
+
   func setOpeningPlaceholderImage(_ image: UIImage) {
     currentCell()?.setOpeningPlaceholderImage(image)
   }

@@ -14,8 +14,29 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   private var userHasChosen = false
   private var sessionObservation: AfilmorySessionObservationToken?
   private var lastGalleryRouteRequestID: String?
-  private let signInBar = ExploreSignInBar()
-  private var pagerBottomConstraint: NSLayoutConstraint?
+  private var isVisitorChromeVisible = false
+
+  private lazy var signInItem: UIBarButtonItem = {
+    let item = UIBarButtonItem(
+      title: String(localized: "Sign in"),
+      primaryAction: UIAction { [weak self] _ in self?.requestSignIn() }
+    )
+    if #available(iOS 26.0, *) {
+      item.style = .prominent
+    }
+    return item
+  }()
+
+  private lazy var visitorTitleItem: UIBarButtonItem = {
+    let label = UILabel()
+    label.text = String(localized: "Explore")
+    label.font = .systemFont(ofSize: 17, weight: .semibold)
+    let item = UIBarButtonItem(customView: label)
+    if #available(iOS 26.0, *) {
+      item.hidesSharedBackground = true
+    }
+    return item
+  }()
 
   private var orderedPages: [(segment: ExploreSegment, controller: UIViewController)] {
     [
@@ -80,8 +101,8 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
     navigationItem.largeTitleDisplayMode = .never
     navigationItem.backButtonTitle = String(localized: "Explore")
     if #available(iOS 26.0, *) {
-      navigationItem.searchBarPlacementAllowsToolbarIntegration = false
-      navigationItem.preferredSearchBarPlacement = .integratedButton
+      navigationItem.preferredSearchBarPlacement = .integrated
+      toolbarItems = [navigationItem.searchBarPlacementBarButtonItem]
     } else {
       navigationItem.preferredSearchBarPlacement = .stacked
     }
@@ -105,20 +126,11 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
     pagerScrollView.accessibilityIdentifier = "explore.pageContainer"
     view.addSubview(pagerScrollView)
 
-    signInBar.translatesAutoresizingMaskIntoConstraints = false
-    signInBar.onSignIn = { [weak self] in self?.requestSignIn() }
-    view.addSubview(signInBar)
-
-    let pagerBottom = pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-    pagerBottomConstraint = pagerBottom
     NSLayoutConstraint.activate([
       pagerScrollView.topAnchor.constraint(equalTo: view.topAnchor),
       pagerScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       pagerScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      pagerBottom,
-      signInBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      signInBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      signInBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
     ])
 
     var previousPageView: UIView?
@@ -158,7 +170,13 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
+    navigationController?.setToolbarHidden(!isVisitorChromeVisible, animated: animated)
     applyDefaultSegmentIfNeeded()
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    navigationController?.setToolbarHidden(true, animated: animated)
   }
 
   override func viewDidLayoutSubviews() {
@@ -194,13 +212,12 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   }
 
   private func setSignInBarVisible(_ isVisible: Bool) {
-    signInBar.isHidden = !isVisible
-    pagerBottomConstraint?.isActive = false
-    let pagerBottom = isVisible
-      ? pagerScrollView.bottomAnchor.constraint(equalTo: signInBar.topAnchor)
-      : pagerScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-    pagerBottomConstraint = pagerBottom
-    pagerBottom.isActive = true
+    isVisitorChromeVisible = isVisible
+    navigationItem.rightBarButtonItem = isVisible ? signInItem : nil
+    if #available(iOS 26.0, *) {
+      navigationItem.preferredSearchBarPlacement = isVisible ? .integrated : .integratedButton
+    }
+    navigationController?.setToolbarHidden(!isVisible, animated: false)
   }
 
   private func setSectionRailVisible(_ isVisible: Bool) {
@@ -214,6 +231,9 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
         navigationItem.leftBarButtonItem = item
       }
       navigationItem.title = nil
+    } else if #available(iOS 26.0, *) {
+      navigationItem.leftBarButtonItem = visitorTitleItem
+      navigationItem.title = nil
     } else {
       navigationItem.leftBarButtonItem = nil
       navigationItem.title = String(localized: "Explore")
@@ -223,6 +243,7 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   private func makeSearchController() -> UISearchController {
     let controller = UISearchController(searchResultsController: nil)
     controller.obscuresBackgroundDuringPresentation = false
+    controller.hidesNavigationBarDuringPresentation = false
     controller.searchResultsUpdater = directory
     controller.delegate = self
     controller.searchBar.placeholder = String(localized: "Search galleries")

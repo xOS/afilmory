@@ -22,6 +22,7 @@ final class PhotoTransitionInteraction: UIPercentDrivenInteractiveTransition,
   private weak var viewController: PhotoDetailViewController?
   private weak var detailView: PhotoDetailView?
   private weak var sourceView: UIView?
+  private var sourceTarget: PhotoTransitionTarget?
   private(set) var isInteracting = false
   private(set) var translation = CGPoint.zero
   private(set) var velocity = CGPoint.zero
@@ -170,8 +171,14 @@ final class PhotoTransitionInteraction: UIPercentDrivenInteractiveTransition,
     wantsInteractiveStart = true
     completionSpeed = 1
     sourceView = viewController?.transitionSourceView()
+    sourceTarget = sourceView.flatMap {
+      detailView.transitionTarget(
+        targetRect: $0.convert($0.bounds, to: detailView),
+        targetCornerRadius: $0.layer.cornerRadius
+      )
+    }
     sourceView?.isHidden = true
-    detailView.beginViewControllerDismissal()
+    detailView.beginViewControllerDismissal(target: sourceTarget)
     viewController?.dismiss(animated: true)
     return true
   }
@@ -238,14 +245,13 @@ final class PhotoTransitionInteraction: UIPercentDrivenInteractiveTransition,
 
   private func commitDismissal(detailView: PhotoDetailView, velocity: CGPoint) {
     let source = sourceView
-    let target = source.flatMap {
-      detailView.transitionGeometry(targetRect: $0.convert($0.bounds, to: detailView))
-    }
+    let target = sourceTarget
     detailView.commitViewControllerDismissal(target: target, velocity: velocity) { [weak self] in
       source?.isHidden = false
       guard let self else { return }
       completionSpeed = 1_000
       finish()
+      sourceTarget = nil
       if sourceView === source {
         sourceView = nil
       }
@@ -258,6 +264,7 @@ final class PhotoTransitionInteraction: UIPercentDrivenInteractiveTransition,
     detailView.cancelViewControllerDismissal(velocity: velocity) { [weak self] in
       guard let self, gestureGeneration == generation else { return }
       source?.isHidden = false
+      sourceTarget = nil
       if sourceView === source {
         sourceView = nil
       }

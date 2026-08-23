@@ -47,6 +47,8 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   private var dismissalMediaAnimator: UIViewPropertyAnimator?
   private var dismissalBackdropAnimator: UIViewPropertyAnimator?
   private var dismissalChromeAnimator: UIViewPropertyAnimator?
+  private var dismissalTransitionView: PhotoDismissalTransitionView?
+  private var dismissalTransitionTarget: PhotoTransitionTarget?
   private var dismissalGestureOrigin = PhotoTransitionTransform(scale: 1, translation: .zero)
   private var dismissalState = PhotoTransitionTransform(scale: 1, translation: .zero)
   private var dismissalGeneration = 0
@@ -208,6 +210,22 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     )
   }
 
+  func transitionTarget(
+    targetRect: CGRect,
+    targetCornerRadius: CGFloat
+  ) -> PhotoTransitionTarget? {
+    layoutIfNeeded()
+    viewer.layoutIfNeeded()
+    guard viewer.currentTransitionImage() != nil,
+          let imageFrame = viewer.currentImageFrame()
+    else { return nil }
+    return PhotoTransitionTarget(
+      imageFrame: viewer.convert(imageFrame, to: self),
+      targetRect: targetRect,
+      targetCornerRadius: max(targetCornerRadius, 0)
+    )
+  }
+
   func transitionTransform(targetRect: CGRect) -> CGAffineTransform? {
     transitionGeometry(targetRect: targetRect)?.affineTransform
   }
@@ -247,6 +265,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     dismissalMediaAnimator = nil
     dismissalBackdropAnimator = nil
     dismissalChromeAnimator = nil
+    clearDismissalTransition()
     visibility.dismissing = false
     dismissalGestureOrigin = PhotoTransitionTransform(scale: 1, translation: .zero)
     dismissalState = dismissalGestureOrigin
@@ -257,13 +276,15 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     isUserInteractionEnabled = true
   }
 
-  func beginViewControllerDismissal() {
+  func beginViewControllerDismissal(target: PhotoTransitionTarget?) {
     dismissalGeneration += 1
     visibility.dismissing = true
     settleDismissalAnimationsAtCurrentPosition()
+    clearDismissalTransition()
     mediaViewport.alpha = 1
     dismissalGestureOrigin = transitionState(from: mediaViewport.transform)
     dismissalState = dismissalGestureOrigin
+    prepareDismissalTransition(target: target)
     setReactionRailPresented(false, animated: true)
     let changes = visibilityChanges()
     guard !UIAccessibility.isReduceMotionEnabled else {
@@ -294,21 +315,34 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   func updateViewControllerDismissal(state: PhotoDismissDragState) -> CGFloat {
     guard visibility.dismissing else { return 0 }
     dismissalState = state.transform
-    mediaViewport.transform = state.transform.affineTransform
-    mediaViewport.alpha = 1
+    if let target = dismissalTransitionTarget {
+      dismissalTransitionView?.apply(
+        imageViewport: PhotoTransitionGeometry.transformedRect(
+          target.imageFrame,
+          by: state.transform,
+          around: mediaViewport.center
+        ),
+        fitMode: .contain,
+        cornerRadius: 0
+      )
+    } else {
+      mediaViewport.transform = state.transform.affineTransform
+      mediaViewport.alpha = 1
+    }
     backgroundView.alpha = 1 - state.progress
     return state.progress
   }
 
   func commitViewControllerDismissal(
-    target: PhotoTransitionTransform?,
+    target: PhotoTransitionTarget?,
     velocity: CGPoint,
     completion: @escaping () -> Void
   ) {
     let generation = dismissalGeneration
     guard !UIAccessibility.isReduceMotionEnabled else {
       if let target {
-        mediaViewport.transform = target.affineTransform
+        prepareDismissalTransition(target: target)
+        applyDismissalTarget(target)
       }
       backgroundView.alpha = 0
       mediaViewport.alpha = 0
@@ -317,14 +351,20 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     }
 
     if let target {
+      prepareDismissalTransition(target: target)
+      let currentImageFrame = PhotoTransitionGeometry.transformedRect(
+        target.imageFrame,
+        by: dismissalState,
+        around: mediaViewport.center
+      )
       let duration = dismissalSettlingDuration(
-        from: dismissalState.translation,
-        to: target.translation,
+        from: CGPoint(x: currentImageFrame.midX, y: currentImageFrame.midY),
+        to: CGPoint(x: target.targetRect.midX, y: target.targetRect.midY),
         velocity: velocity
       )
       let springVelocity = normalizedSpringVelocity(
-        from: dismissalState.translation,
-        to: target.translation,
+        from: CGPoint(x: currentImageFrame.midX, y: currentImageFrame.midY),
+        to: CGPoint(x: target.targetRect.midX, y: target.targetRect.midY),
         velocity: velocity
       )
       let timing = UISpringTimingParameters(
@@ -333,7 +373,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
       )
       let animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
       animator.addAnimations { [self] in
-        mediaViewport.transform = target.affineTransform
+        applyDismissalTarget(target)
       }
       animator.addCompletion { [weak self, weak animator] position in
         guard let self,
@@ -343,7 +383,6 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
         else { return }
         dismissalMediaAnimator = nil
         UIView.performWithoutAnimation {
-          self.mediaViewport.alpha = 0
           completion()
           self.layoutIfNeeded()
         }
@@ -358,7 +397,6 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
         guard self?.dismissalBackdropAnimator === backdropAnimator else { return }
         self?.dismissalBackdropAnimator = nil
       }
-      dismissalState = target
       dismissalMediaAnimator = animator
       dismissalBackdropAnimator = backdropAnimator
       animator.startAnimation()
@@ -423,6 +461,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
       mediaViewport.transform = .identity
       mediaViewport.alpha = 1
       backgroundView.alpha = 1
+      clearDismissalTransition()
       visibilityChanges()()
       completion()
       return
@@ -434,8 +473,16 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     )
     let mediaAnimator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
     mediaAnimator.addAnimations { [self] in
-      mediaViewport.transform = .identity
-      mediaViewport.alpha = 1
+      if let target = dismissalTransitionTarget {
+        dismissalTransitionView?.apply(
+          imageViewport: target.imageFrame,
+          fitMode: .contain,
+          cornerRadius: 0
+        )
+      } else {
+        mediaViewport.transform = .identity
+        mediaViewport.alpha = 1
+      }
     }
     mediaAnimator.addCompletion { [weak self, weak mediaAnimator] position in
       guard let self,
@@ -445,8 +492,11 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
             position == .end
       else { return }
       dismissalMediaAnimator = nil
+      clearDismissalTransition()
       dismissalGestureOrigin = PhotoTransitionTransform(scale: 1, translation: .zero)
       dismissalState = dismissalGestureOrigin
+      mediaViewport.transform = .identity
+      mediaViewport.alpha = 1
       completion()
     }
     let backdropAnimator = UIViewPropertyAnimator(
@@ -484,6 +534,55 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     dismissalMediaAnimator = nil
     dismissalBackdropAnimator = nil
     dismissalChromeAnimator = nil
+  }
+
+  func prepareDismissalTransition(target: PhotoTransitionTarget?) {
+    if dismissalTransitionView != nil, let target {
+      dismissalTransitionTarget = target
+      return
+    }
+    clearDismissalTransition()
+    guard let target,
+          let image = viewer.currentTransitionImage()
+    else { return }
+    let transitionView = PhotoDismissalTransitionView(
+      image: image,
+      frame: bounds,
+      imageViewport: target.imageFrame,
+      fitMode: .contain,
+      cornerRadius: 0
+    )
+    transitionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    insertSubview(transitionView, aboveSubview: mediaViewport)
+    dismissalTransitionView = transitionView
+    dismissalTransitionTarget = target
+    mediaViewport.alpha = 0
+  }
+
+  func applyDismissalTransition(
+    target: PhotoTransitionTarget,
+    mediaAlpha: CGFloat,
+    backdropAlpha: CGFloat,
+    chromeAlpha: CGFloat
+  ) {
+    applyDismissalTarget(target)
+    dismissalTransitionView?.alpha = mediaAlpha
+    backgroundView.alpha = backdropAlpha
+    setOpeningChromeAlpha(chromeAlpha)
+  }
+
+  private func applyDismissalTarget(_ target: PhotoTransitionTarget) {
+    dismissalTransitionView?.apply(
+      imageViewport: target.targetRect,
+      fitMode: .cover,
+      cornerRadius: target.targetCornerRadius
+    )
+  }
+
+  private func clearDismissalTransition() {
+    dismissalTransitionView?.removeFromSuperview()
+    dismissalTransitionView = nil
+    dismissalTransitionTarget = nil
   }
 
   private func settleAnimatorAtCurrentPosition(_ animator: UIViewPropertyAnimator?) {
@@ -812,5 +911,64 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
       from: presenter,
       barButtonItem: toolbar.shareBarButtonItem
     )
+  }
+}
+
+private final class PhotoDismissalTransitionView: UIView {
+  enum FitMode {
+    case contain
+    case cover
+  }
+
+  private let imageView = UIImageView()
+  private let imageSize: CGSize
+
+  init(
+    image: UIImage,
+    frame: CGRect,
+    imageViewport: CGRect,
+    fitMode: FitMode,
+    cornerRadius: CGFloat
+  ) {
+    imageSize = image.size
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    imageView.image = image
+    imageView.contentMode = .scaleToFill
+    imageView.clipsToBounds = true
+    imageView.layer.cornerCurve = .continuous
+    addSubview(imageView)
+    apply(
+      imageViewport: imageViewport,
+      fitMode: fitMode,
+      cornerRadius: cornerRadius
+    )
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is not supported")
+  }
+
+  func apply(
+    imageViewport: CGRect,
+    fitMode: FitMode,
+    cornerRadius: CGFloat
+  ) {
+    switch fitMode {
+    case .contain:
+      imageView.frame = PhotoTransitionGeometry.aspectFitRect(
+        aspectRatio: imageSize.width / max(imageSize.height, 1),
+        in: imageViewport
+      ) ?? imageViewport
+      imageView.layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+    case .cover:
+      imageView.frame = imageViewport
+      imageView.layer.contentsRect = PhotoTransitionGeometry.aspectFillContentsRect(
+        imageSize: imageSize,
+        viewportSize: imageViewport.size
+      ) ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
+    imageView.layer.cornerRadius = max(cornerRadius, 0)
   }
 }
