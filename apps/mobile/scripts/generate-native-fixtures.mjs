@@ -6,7 +6,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
-const fixtureDirectory = resolve(scriptDirectory, '../modules/photo-masonry/ios/Tests/Fixtures')
+const fixtureDirectory = resolve(scriptDirectory, '../Tests/Fixtures')
 const languages = ['en', 'zh-CN', 'zh-HK', 'zh-TW', 'jp', 'ko']
 const port = Number(process.env.AFILMORY_FIXTURE_PORT ?? 43991)
 

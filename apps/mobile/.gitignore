@@ -37,4 +37,4 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-/modules/photo-masonry/ios/Resources/Locales/
+/Afilmory/Resources/Locales/

@@ -34,7 +34,7 @@ There is no lint/format/type-check step for Swift here — `native:test` and a S
 
 `project.yml` is the source of truth. `Afilmory.xcodeproj` is generated output **but is committed** — regenerate it and commit the diff; never hand-edit it or add files through the Xcode UI.
 
-Sources are directory globs (`NativeApp`, `modules/photo-masonry/ios` minus `Tests/**`), so nesting new subdirectories is free — but **adding or deleting a `.swift` file requires `native:generate`** before Xcode sees it. (This replaces the old `pod install` requirement.)
+Sources are **filesystem-synchronized folders** (Xcode 16 buildable folders, `projectFormat: xcode16_0`): `Afilmory`, `Tests`, `targets/share`, `targets/widgets` are `type: syncedFolder` roots, so Xcode discovers files straight from disk — adding, deleting, or moving a `.swift` file needs **no** regeneration or Xcode UI action. Run `native:generate` only when `project.yml` itself changes (targets, settings, packages, plist properties).
 
 Dependencies: SwiftPM only — SDWebImage, pinned to an exact version in `project.yml`.
 
@@ -52,10 +52,14 @@ The variant flows `project.yml` build settings → `Info.plist` (`AfilmoryAppVar
 
 ## Source layout
 
-Both roots compile into the **same** `Afilmory` target; the split is historical (`photo-masonry` was once an Expo module) and is not a module boundary.
+Everything app-side lives under a single `Afilmory/` root (the old `NativeApp` + `modules/photo-masonry/ios` split was historical and has been merged in), organized feature-first.
 
-- `NativeApp/` — app shell (`App/`), `Authentication/`, `Studio/` (SwiftUI screens + `NativeStudioAPI`), `Routing/` (deep links), `Design/` (`AdaptiveGlass`, `NativeControls`), `Resources/` (String Catalogs, asset catalogs).
-- `modules/photo-masonry/ios/` — everything gallery-side plus the shared infrastructure every screen depends on: `Core/` (`AfilmoryAPI`, `APIEndpoint`, `AfilmorySessionStore`, `AfilmoryBuildConfiguration`, `ThumbHash`), `Session/`, `Data/`, `Persistence/`, then feature folders (`Masonry/`, `Detail/`, `Viewer/`, `Comments/`, `Upload/`, `Sheets/`, `Pages/`, `Filters/`, `Map/`, `Transition/`, `Push/`, `Models/`).
+- `Afilmory/App/` — entry + shell: `AppDelegate`, `SceneDelegate`, `ApplicationCoordinator`, `AfilmoryTabBarController`, `LoadingViewController`, `GalleryRouteRequest` (deep links).
+- `Afilmory/Features/` — one folder per feature: `Masonry/`, `Detail/`, `Viewer/`, `Comments/`, `Upload/`, `Map/`, `Filters/`, `Pages/` (Photos/Explore/Studio home controllers), `Studio/` (SwiftUI screens + `NativeStudioAPI`), `Authentication/`, `Billing/`, `Sharing/`, `Sheets/`.
+- `Afilmory/Core/` — non-UI infrastructure: `Networking/` (`AfilmoryAPI`, `APIEndpoint`, `APIError`), `Session/` (`AfilmorySessionStore`), `Data/`, `Persistence/`, `Push/`, `Models/`, plus `AfilmoryBuildConfiguration` and `ThumbHash` at its root.
+- `Afilmory/DesignSystem/` — `AdaptiveGlass`, `NativeControls`, `LiquidGlassSegmentedControl`, shared UIKit extensions, and `Transition/` (photo transition animators).
+- `Afilmory/Resources/` — String Catalogs, asset catalogs.
+- `Tests/` — the `AfilmoryTests` unit-test bundle (plus `Tests/Fixtures/`).
 - `targets/share/` and `targets/widgets/` — separate app-extension targets. They do **not** see app-target code; the share extension re-declares its own `group.app.afilmory` constant and its own String Catalog.
 
 ## Runtime architecture
@@ -88,8 +92,8 @@ The API environment can be overridden at runtime **only in Debug builds** (`allo
 
 String Catalogs only; there is no runtime locale loader and the iOS app does **not** consume the repo's `locales/` JSON.
 
-- `NativeApp/Resources/Localizable.xcstrings` — keys are the English source text, auto-extracted from `String(localized:)` / `Text(_:)` at build time.
-- `NativeApp/Resources/ExifValues.xcstrings` — dotted keys (`<prefix>.<slugified-value>`) resolved dynamically in `PhotoInfoFormatters.translatedExifValue` via `Bundle.main.localizedString(forKey:value:table:)`. **These are not auto-extracted** — add entries by hand, and note the slugging rules (lowercase, `&`→`and`, non-alphanumerics→`-`).
+- `Afilmory/Resources/Localizable.xcstrings` — keys are the English source text, auto-extracted from `String(localized:)` / `Text(_:)` at build time.
+- `Afilmory/Resources/ExifValues.xcstrings` — dotted keys (`<prefix>.<slugified-value>`) resolved dynamically in `PhotoInfoFormatters.translatedExifValue` via `Bundle.main.localizedString(forKey:value:table:)`. **These are not auto-extracted** — add entries by hand, and note the slugging rules (lowercase, `&`→`and`, non-alphanumerics→`-`).
 - `targets/share/Localizable.xcstrings` — the share extension's own catalog.
 
 Shipping languages are declared in `project.yml` (`CFBundleLocalizations`): en, zh-Hans, zh-Hant, zh-HK, ja, ko.
@@ -102,6 +106,6 @@ Gotcha that still applies: `UIGlassEffect.isInteractive = true` swallows touches
 
 ## Tests
 
-XCTest with `@testable import Afilmory`, in `modules/photo-masonry/ios/Tests` (excluded from the app target, built into `AfilmoryTests`). They are behavior/logic tests — decoding, state machines, cache repositories, geometry, formatters — not UI tests.
+XCTest with `@testable import Afilmory`, in `Tests/` (its own synced folder, built into `AfilmoryTests` only). They are behavior/logic tests — decoding, state machines, cache repositories, geometry, formatters — not UI tests.
 
 `Tests/Fixtures/*.json` are **golden fixtures captured from the web TypeScript implementation**: the Swift EXIF/header/info formatters and filter engine must reproduce the web app's output byte-for-byte across all six languages. Treat a fixture mismatch as a port bug, not a fixture to update. `scripts/generate-native-fixtures.mjs` is the receiving half of that capture; its producer half lived in the deleted RN app, so the checked-in fixtures are currently the only source.

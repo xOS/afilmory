@@ -1,6 +1,7 @@
 name: Afilmory
 
 options:
+  projectFormat: xcode16_0
   deploymentTarget:
     iOS: "18.0"
   developmentLanguage: en
@@ -33,18 +34,14 @@ targets:
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: NativeApp
+      - path: Afilmory
+        type: syncedFolder
       - path: assets/images/google-g.png
         buildPhase: resources
       - path: assets/icons/Afilmory.icon
         buildPhase: resources
       - path: assets/icons/AfilmoryLocal.icon
         buildPhase: resources
-      - path: modules/photo-masonry/ios
-        excludes:
-          - Tests/**
-    resources:
-      - path: NativeApp/Resources
     dependencies:
       - package: SDWebImage
         product: SDWebImage
@@ -53,7 +50,7 @@ targets:
       - target: AfilmoryWidgets
         embed: true
     info:
-      path: NativeApp/Info.plist
+      path: Afilmory/Info.plist
       properties:
         AfilmoryAppGroupIdentifier: "$(AFILMORY_APP_GROUP_IDENTIFIER)"
         AfilmoryAppVariant: "$(AFILMORY_APP_VARIANT)"
@@ -117,7 +114,7 @@ targets:
           AFILMORY_DISPLAY_NAME: Afilmory Local
           AFILMORY_URL_SCHEME: afilmory-local
           ASSETCATALOG_COMPILER_APPICON_NAME: AfilmoryLocal
-          CODE_SIGN_ENTITLEMENTS: NativeApp/AfilmoryLocal.entitlements
+          CODE_SIGN_ENTITLEMENTS: Afilmory/AfilmoryLocal.entitlements
           PRODUCT_BUNDLE_IDENTIFIER: app.afilmory.local
           PRODUCT_NAME: Afilmory
         Release:
@@ -127,7 +124,7 @@ targets:
           AFILMORY_DISPLAY_NAME: Afilmory
           AFILMORY_URL_SCHEME: afilmory
           ASSETCATALOG_COMPILER_APPICON_NAME: Afilmory
-          CODE_SIGN_ENTITLEMENTS: NativeApp/Afilmory.entitlements
+          CODE_SIGN_ENTITLEMENTS: Afilmory/Afilmory.entitlements
           PRODUCT_BUNDLE_IDENTIFIER: app.afilmory
           PRODUCT_NAME: Afilmory
 
@@ -137,8 +134,7 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: targets/share
-    resources:
-      - path: targets/share/Localizable.xcstrings
+        type: syncedFolder
     info:
       path: targets/share/Info.plist
       properties:
@@ -159,7 +155,7 @@ targets:
         SKIP_INSTALL: YES
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: NativeApp/AfilmoryLocal.entitlements
+          CODE_SIGN_ENTITLEMENTS: Afilmory/AfilmoryLocal.entitlements
           PRODUCT_BUNDLE_IDENTIFIER: app.afilmory.local.share
         Release:
           CODE_SIGN_ENTITLEMENTS: targets/share/AfilmoryShare.entitlements
@@ -171,8 +167,7 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: targets/widgets
-    resources:
-      - path: targets/widgets/Assets.xcassets
+        type: syncedFolder
     info:
       path: targets/widgets/Info.plist
       properties:
@@ -198,7 +193,8 @@ targets:
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: modules/photo-masonry/ios/Tests
+      - path: Tests
+        type: syncedFolder
     dependencies:
       - target: Afilmory
     settings:

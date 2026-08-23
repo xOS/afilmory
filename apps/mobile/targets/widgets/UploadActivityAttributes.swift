@@ -2,7 +2,7 @@ import ActivityKit
 
 // ActivityKit matches activities across processes by the attribute type's name
 // and Codable shape, so this struct is duplicated verbatim in
-// modules/photo-masonry/ios/UploadActivityAttributes.swift — keep both in sync.
+// Afilmory/Features/Upload/UploadActivityAttributes.swift — keep both in sync.
 struct UploadActivityAttributes: ActivityAttributes {
   struct ContentState: Codable, Hashable {
     var done: Int
