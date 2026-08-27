@@ -16,6 +16,11 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   private var lastGalleryRouteRequestID: String?
   private var isVisitorChromeVisible = false
 
+  private var showsVisitorToolbar: Bool {
+    guard #available(iOS 26.0, *) else { return false }
+    return isVisitorChromeVisible
+  }
+
   private lazy var signInItem: UIBarButtonItem = {
     let item = UIBarButtonItem(
       title: String(localized: "Sign in"),
@@ -170,7 +175,7 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
-    navigationController?.setToolbarHidden(!isVisitorChromeVisible, animated: animated)
+    navigationController?.setToolbarHidden(!showsVisitorToolbar, animated: animated)
     applyDefaultSegmentIfNeeded()
   }
 
@@ -217,7 +222,7 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
     if #available(iOS 26.0, *) {
       navigationItem.preferredSearchBarPlacement = isVisible ? .integrated : .integratedButton
     }
-    navigationController?.setToolbarHidden(!isVisible, animated: false)
+    navigationController?.setToolbarHidden(!showsVisitorToolbar, animated: false)
   }
 
   private func setSectionRailVisible(_ isVisible: Bool) {
