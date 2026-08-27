@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { AppStoreBillingService } from './app-store-billing.service'
 
 describe('app store billing service', () => {
-  it('reconciles a verified sandbox purchase on the production service', async () => {
+  it.each([
+    { applied: false, environment: 'Sandbox' },
+    { applied: true, environment: 'Production' },
+  ])('acknowledges $environment purchases with applied=$applied', async ({ applied, environment }) => {
     const subject = {
       appAccountToken: '134a1ab0-6c0b-4244-8d4a-e17151985731',
       billingOwnerUserId: 'user-1',
@@ -32,7 +35,7 @@ describe('app store billing service', () => {
     const signedData = {
       verifyTransaction: vi.fn().mockResolvedValue({
         appAccountToken: subject.appAccountToken,
-        environment: 'Sandbox',
+        environment,
         expiresDate: Date.now() + 60_000,
         originalTransactionId: 'original-1',
         productId: 'app.afilmory.subscription.pro',
@@ -61,10 +64,18 @@ describe('app store billing service', () => {
         signedTransactionInfo: 'sandbox-jws',
         tenantId: 'tenant-1',
       }),
-    ).resolves.toMatchObject({ status: 'active', tenantId: 'tenant-1', transactionId: 'transaction-1' })
-    expect(catalog.findOfferByProduct).toHaveBeenCalledWith('app_store', 'sandbox', 'app.afilmory.subscription.pro')
-    expect(entitlements.reconcileSubscription).toHaveBeenCalledWith(
-      expect.objectContaining({ environment: 'sandbox', tenantId: 'tenant-1' }),
+    ).resolves.toMatchObject({
+      applied,
+      status: 'active',
+      tenantId: 'tenant-1',
+      transactionId: 'transaction-1',
+    })
+    expect(catalog.findOfferByProduct).toHaveBeenCalledWith(
+      'app_store',
+      environment.toLowerCase(),
+      'app.afilmory.subscription.pro',
     )
+    expect(providerEvents.track).toHaveBeenCalledOnce()
+    expect(entitlements.reconcileSubscription).toHaveBeenCalledTimes(applied ? 1 : 0)
   })
 })
