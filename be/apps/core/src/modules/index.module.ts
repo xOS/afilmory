@@ -27,6 +27,7 @@ import { CacheModule } from './infrastructure/cache/cache.module'
 import { DataSyncModule } from './infrastructure/data-sync/data-sync.module'
 import { HealthModule } from './infrastructure/health/health.module'
 import { StaticWebModule } from './infrastructure/static-web/static-web.module'
+import { WellKnownModule } from './infrastructure/well-known/well-known.module'
 import { MailModule } from './mail/mail.module'
 import { AccountDeletionModule } from './platform/account-deletion/account-deletion.module'
 import { ActivityModule } from './platform/activity/activity.module'
@@ -85,6 +86,7 @@ function createEventModuleOptions(redis: RedisAccessor) {
     FeedModule,
     OgModule,
     AppInitializationModule,
+    WellKnownModule,
 
     // This must be last
     StaticWebModule,

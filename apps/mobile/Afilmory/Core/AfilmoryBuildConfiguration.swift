@@ -47,4 +47,15 @@ enum AfilmoryBuildConfiguration {
       false
     #endif
   }
+
+  static var isTestFlight: Bool {
+    #if targetEnvironment(simulator)
+      false
+    #elseif DEBUG
+      false
+    #else
+      guard variant == .production else { return false }
+      return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    #endif
+  }
 }

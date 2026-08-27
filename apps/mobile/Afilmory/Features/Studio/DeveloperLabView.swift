@@ -43,6 +43,12 @@ struct DeveloperLabView: View {
           subtitle: "Native comments sheet on demo data — verify bubbles and the send animation."
         )
         commentsCard
+        sectionHeading(
+          eyebrow: "TESTFLIGHT",
+          title: "App Store support prompt",
+          subtitle: "Preview the alert TestFlight testers see after the app is live."
+        )
+        appStorePromptCard
       }
       .padding(.horizontal, 18)
       .padding(.top, 18)
@@ -216,6 +222,21 @@ struct DeveloperLabView: View {
       ) {
         CommentsLabPresenter.present(outcome: "failure", latencyMs: 800)
       }
+    }
+    .clipShape(.rect(cornerRadius: 14, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+    }
+  }
+
+  private var appStorePromptCard: some View {
+    commentsRow(
+      icon: "apple.logo",
+      title: "Preview App Store prompt",
+      description: "Shows the TestFlight alert that opens the live App Store listing."
+    ) {
+      TestFlightAppStorePrompt.shared.presentFromKeyWindow(force: true)
     }
     .clipShape(.rect(cornerRadius: 14, style: .continuous))
     .overlay {

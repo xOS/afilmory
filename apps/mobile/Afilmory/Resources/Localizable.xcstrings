@@ -1115,6 +1115,40 @@
         }
       }
     },
+    "Afilmory is on the App Store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afilmory が App Store に公開されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afilmory가 App Store에 출시되었습니다"
+          }
+        },
+        "zh-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afilmory 已上架 App Store"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afilmory 已上架 App Store"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afilmory 已上架 App Store"
+          }
+        }
+      }
+    },
     "After this upload": {
       "localizations": {
         "ja": {
@@ -7711,6 +7745,40 @@
         }
       }
     },
+    "Open App Store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store を開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 열기"
+          }
+        },
+        "zh-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開 App Store"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 App Store"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開 App Store"
+          }
+        }
+      }
+    },
     "Open gallery on web": {
       "localizations": {
         "ja": {
@@ -12009,6 +12077,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "此 Apple ID 已在另一個工作空間訂閱。請切換回該工作空間，或改用其他 Apple ID。"
+          }
+        }
+      }
+    },
+    "This TestFlight build is for trying new versions. If you enjoy Afilmory, download it from the App Store — a rating there helps a lot.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは新しいバージョンを試すための TestFlight ビルドです。Afilmory を気に入っていただけたら、App Store からダウンロードや評価で応援してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 버전을 시험하는 TestFlight 빌드입니다. Afilmory가 마음에 드셨다면 App Store에서 다운로드하거나 평가해 주세요."
+          }
+        },
+        "zh-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是用來試用新版本的 TestFlight 構建。如果喜歡 Afilmory，到 App Store 下載或評分就是最好的支持。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是用来试用新版本的 TestFlight 构建。如果喜欢 Afilmory，去 App Store 下载或评分就是最好的支持。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是用來試用新版本的 TestFlight 構建。如果喜歡 Afilmory，到 App Store 下載或評分就是最好的支持。"
           }
         }
       }

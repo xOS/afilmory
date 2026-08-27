@@ -77,6 +77,7 @@ final class ApplicationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     }
     replaceRoot(with: next)
     applyPendingDeepLinkIfPossible()
+    presentTestFlightAppStorePromptIfNeeded()
   }
 
   private func makeVisitorController() -> UIViewController {
@@ -285,6 +286,13 @@ final class ApplicationCoordinator: NSObject, UNUserNotificationCenterDelegate {
 
   @objc private func appleCredentialWasRevoked() {
     AfilmorySessionStore.shared.clearSession()
+  }
+
+  private func presentTestFlightAppStorePromptIfNeeded() {
+    guard !(window.rootViewController is LoadingViewController),
+          let root = window.rootViewController
+    else { return }
+    TestFlightAppStorePrompt.shared.present(from: root)
   }
 
   private func presentSheet<Content: View>(_ content: Content) {
