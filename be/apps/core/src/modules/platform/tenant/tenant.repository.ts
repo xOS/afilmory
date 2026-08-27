@@ -83,7 +83,13 @@ export class TenantRepository {
     const db = this.dbAccessor.get()
     const { page, limit, search, status, sortBy = 'createdAt', sortDir = 'desc' } = options
 
-    const conditions = [notInArray(tenants.slug, RESERVED_TENANT_SLUGS)]
+    // `demo` is the App Review workspace, so root admins still need to manage its plan.
+    const conditions = [
+      notInArray(
+        tenants.slug,
+        RESERVED_TENANT_SLUGS.filter(slug => slug !== 'demo'),
+      ),
+    ]
 
     if (status) {
       conditions.push(eq(tenants.status, status))
