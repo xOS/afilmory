@@ -150,7 +150,7 @@ export class SuperAdminTenantController {
           kind: 'application_plan',
           sourceId: `superadmin:${params.tenantId}`,
           tenantId: params.tenantId,
-          value: dto.planId as BillingPlanId,
+          value: dto.planId === 'free' ? null : (dto.planId as BillingPlanId),
         })
         return { updated: true, planId: dto.planId }
       },
