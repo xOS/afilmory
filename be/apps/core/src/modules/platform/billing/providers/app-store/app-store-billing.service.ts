@@ -254,6 +254,7 @@ export class AppStoreBillingService {
     return {
       applied,
       duplicate: outcome.duplicate,
+      environment,
       originalTransactionId,
       projection: outcome.result,
       status,

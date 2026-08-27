@@ -1353,6 +1353,40 @@
         }
       }
     },
+    "App Store test transaction completed. This is a test environment, so your workspace plan was not changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store のテスト取引が完了しました。テスト環境のため、ワークスペースのプランは変更されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 테스트 거래가 완료되었습니다. 테스트 환경이므로 작업 공간 요금제는 변경되지 않습니다."
+          }
+        },
+        "zh-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 測試交易已完成。這是測試環境，因此工作區方案不會變更。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 测试交易已完成。这是测试环境，因此工作区套餐不会改变。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 測試交易已完成。這是測試環境，因此工作區方案不會變更。"
+          }
+        }
+      }
+    },
     "Applied": {
       "localizations": {
         "ja": {

@@ -6,6 +6,7 @@ enum AppStorePurchaseOutcome: Equatable {
   case cancelled
   case completed
   case pending
+  case testCompleted
 }
 
 enum AppStoreBillingError: Error, Equatable {
@@ -28,8 +29,8 @@ enum AppStoreOwnership {
 }
 
 struct LiveAppStoreAcknowledgementPort: AppStoreAcknowledgementPort {
-  func acknowledge(signedTransactionInfo: String) async throws -> String {
-    try await AppStoreBillingAPI.acknowledge(signedTransactionInfo: signedTransactionInfo).transactionId
+  func acknowledge(signedTransactionInfo: String) async throws -> AppStoreTransactionAcknowledgement {
+    try await AppStoreBillingAPI.acknowledge(signedTransactionInfo: signedTransactionInfo)
   }
 
   func finish(transactionId: String) async throws -> Bool {
@@ -46,6 +47,11 @@ struct LiveAppStoreAcknowledgementPort: AppStoreAcknowledgementPort {
 struct AppStoreReconciliationSummary: Equatable {
   let reconciled: Int
   let unlinkable: Int
+}
+
+struct AppStoreRestoreOutcome: Equatable {
+  let restored: Int
+  let tested: Int
 }
 
 final class AppStoreBillingService: Sendable {
@@ -88,17 +94,17 @@ final class AppStoreBillingService: Sendable {
         throw AppStoreBillingError.unverifiedTransaction
       }
       do {
-        try await acknowledger.acknowledge(
+        let acknowledgement = try await acknowledger.acknowledge(
           transactionId: String(transaction.id),
           signedTransactionInfo: verification.jwsRepresentation
         )
+        return acknowledgement.applied ? .completed : .testCompleted
       } catch {
         if AppStoreBillingFailure.isTerminal(error) {
           terminalTransactions.record(String(transaction.id))
         }
         throw error
       }
-      return .completed
     case .pending:
       return .pending
     case .userCancelled:
@@ -125,7 +131,7 @@ final class AppStoreBillingService: Sendable {
     return nil
   }
 
-  func restore(productIds: [String]) async throws -> Int {
+  func restore(productIds: [String]) async throws -> AppStoreRestoreOutcome {
     try await AppStore.sync()
     let allowedProductIds = Set(productIds)
     var signedTransactions: [String: String] = [:]
@@ -133,7 +139,7 @@ final class AppStoreBillingService: Sendable {
       guard case .verified(let transaction) = result, allowedProductIds.contains(transaction.productID) else { continue }
       signedTransactions[String(transaction.id)] = result.jwsRepresentation
     }
-    guard !signedTransactions.isEmpty else { return 0 }
+    guard !signedTransactions.isEmpty else { return AppStoreRestoreOutcome(restored: 0, tested: 0) }
 
     let response = try await AppStoreBillingAPI.restore(signedTransactions: Array(signedTransactions.values))
     let acceptedIds = Set(response.results.map(\.transactionId))
@@ -141,7 +147,10 @@ final class AppStoreBillingService: Sendable {
     for transactionId in signedTransactions.keys where acceptedIds.contains(transactionId) {
       _ = try await port.finish(transactionId: transactionId)
     }
-    return acceptedIds.count
+    return AppStoreRestoreOutcome(
+      restored: response.results.filter(\.applied).count,
+      tested: response.results.filter { !$0.applied }.count
+    )
   }
 
   // A transaction the server has permanently refused is never replayed: it stays unfinished so it
@@ -158,7 +167,7 @@ final class AppStoreBillingService: Sendable {
         continue
       }
       do {
-        try await acknowledger.acknowledge(
+        _ = try await acknowledger.acknowledge(
           transactionId: transactionId,
           signedTransactionInfo: result.jwsRepresentation
         )
@@ -181,7 +190,7 @@ final class AppStoreBillingService: Sendable {
       let transactionId = String(transaction.id)
       guard !terminalTransactions.contains(transactionId) else { continue }
       do {
-        try await acknowledger.acknowledge(
+        _ = try await acknowledger.acknowledge(
           transactionId: transactionId,
           signedTransactionInfo: result.jwsRepresentation
         )

@@ -5,17 +5,22 @@ import XCTest
 private actor RecordingPort: AppStoreAcknowledgementPort {
   private(set) var acknowledgedPayloads: [String] = []
   private(set) var finishedIds: [String] = []
-  private var acknowledgedId: String
+  private var acknowledgement: AppStoreTransactionAcknowledgement
   private var failure: Error?
   private let delay: Duration
 
-  init(acknowledgedId: String, delay: Duration = .zero, failure: Error? = nil) {
-    self.acknowledgedId = acknowledgedId
+  init(acknowledgedId: String, applied: Bool = true, delay: Duration = .zero, failure: Error? = nil) {
+    acknowledgement = AppStoreTransactionAcknowledgement(
+      applied: applied,
+      environment: applied ? "production" : "sandbox",
+      status: "active",
+      transactionId: acknowledgedId
+    )
     self.delay = delay
     self.failure = failure
   }
 
-  func acknowledge(signedTransactionInfo: String) async throws -> String {
+  func acknowledge(signedTransactionInfo: String) async throws -> AppStoreTransactionAcknowledgement {
     acknowledgedPayloads.append(signedTransactionInfo)
     if delay > .zero {
       try await Task.sleep(for: delay)
@@ -23,7 +28,7 @@ private actor RecordingPort: AppStoreAcknowledgementPort {
     if let failure {
       throw failure
     }
-    return acknowledgedId
+    return acknowledgement
   }
 
   func finish(transactionId: String) async throws -> Bool {
@@ -68,9 +73,28 @@ final class AppStoreTransactionAcknowledgerTests: XCTestCase {
     let port = RecordingPort(acknowledgedId: "2000000001")
     let acknowledger = AppStoreTransactionAcknowledger(port: port)
 
-    try await acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
+    let acknowledgement = try await acknowledger.acknowledge(
+      transactionId: "2000000001",
+      signedTransactionInfo: "jws"
+    )
 
     let finished = await port.finishedIds
+    XCTAssertTrue(acknowledgement.applied)
+    XCTAssertEqual(finished, ["2000000001"])
+  }
+
+  func testReturnsTheSandboxDecisionAfterFinishingTheTransaction() async throws {
+    let port = RecordingPort(acknowledgedId: "2000000001", applied: false)
+    let acknowledger = AppStoreTransactionAcknowledger(port: port)
+
+    let acknowledgement = try await acknowledger.acknowledge(
+      transactionId: "2000000001",
+      signedTransactionInfo: "jws"
+    )
+
+    let finished = await port.finishedIds
+    XCTAssertFalse(acknowledgement.applied)
+    XCTAssertEqual(acknowledgement.environment, "sandbox")
     XCTAssertEqual(finished, ["2000000001"])
   }
 
@@ -79,7 +103,7 @@ final class AppStoreTransactionAcknowledgerTests: XCTestCase {
     let acknowledger = AppStoreTransactionAcknowledger(port: port)
 
     do {
-      try await acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
+      _ = try await acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
       XCTFail("A mismatched acknowledgement must not resolve.")
     } catch {
       XCTAssertEqual(error as? AppStoreAcknowledgementError, .transactionMismatch)
@@ -94,7 +118,7 @@ final class AppStoreTransactionAcknowledgerTests: XCTestCase {
     let acknowledger = AppStoreTransactionAcknowledger(port: port)
 
     do {
-      try await acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
+      _ = try await acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
       XCTFail("A rejected acknowledgement must not resolve.")
     } catch {
       XCTAssertTrue(error is PortFailure)
@@ -108,8 +132,8 @@ final class AppStoreTransactionAcknowledgerTests: XCTestCase {
     let port = RecordingPort(acknowledgedId: "2000000001", delay: .milliseconds(50))
     let acknowledger = AppStoreTransactionAcknowledger(port: port)
 
-    async let first: Void = acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
-    async let second: Void = acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
+    async let first = acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
+    async let second = acknowledger.acknowledge(transactionId: "2000000001", signedTransactionInfo: "jws")
     _ = try await (first, second)
 
     let payloads = await port.acknowledgedPayloads

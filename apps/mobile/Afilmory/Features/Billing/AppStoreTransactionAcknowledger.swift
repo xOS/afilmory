@@ -1,7 +1,7 @@
 import Foundation
 
 protocol AppStoreAcknowledgementPort: Sendable {
-  func acknowledge(signedTransactionInfo: String) async throws -> String
+  func acknowledge(signedTransactionInfo: String) async throws -> AppStoreTransactionAcknowledgement
   func finish(transactionId: String) async throws -> Bool
 }
 
@@ -14,26 +14,30 @@ enum AppStoreAcknowledgementError: Error, Equatable {
 // can no longer be restored.
 actor AppStoreTransactionAcknowledger {
   private let port: AppStoreAcknowledgementPort
-  private var inFlight: [String: Task<Void, Error>] = [:]
+  private var inFlight: [String: Task<AppStoreTransactionAcknowledgement, Error>] = [:]
 
   init(port: AppStoreAcknowledgementPort) {
     self.port = port
   }
 
-  func acknowledge(transactionId: String, signedTransactionInfo: String) async throws {
+  func acknowledge(
+    transactionId: String,
+    signedTransactionInfo: String
+  ) async throws -> AppStoreTransactionAcknowledgement {
     if let existing = inFlight[transactionId] {
       return try await existing.value
     }
 
     let task = Task { [port] in
-      let acknowledgedId = try await port.acknowledge(signedTransactionInfo: signedTransactionInfo)
-      guard acknowledgedId == transactionId else {
+      let acknowledgement = try await port.acknowledge(signedTransactionInfo: signedTransactionInfo)
+      guard acknowledgement.transactionId == transactionId else {
         throw AppStoreAcknowledgementError.transactionMismatch
       }
       _ = try await port.finish(transactionId: transactionId)
+      return acknowledgement
     }
     inFlight[transactionId] = task
     defer { inFlight[transactionId] = nil }
-    try await task.value
+    return try await task.value
   }
 }

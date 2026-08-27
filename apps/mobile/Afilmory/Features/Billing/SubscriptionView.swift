@@ -146,6 +146,9 @@ struct SubscriptionView: View {
       case .success(.completed):
         message = String(localized: "Your subscription is active.")
         await entitlements.refresh()
+      case .success(.testCompleted):
+        message = String(localized: "App Store test transaction completed. This is a test environment, so your workspace plan was not changed.")
+        await entitlements.refresh()
       case .success(.pending):
         message = String(localized: "This purchase is waiting for approval.")
       case .success(.cancelled):
@@ -166,10 +169,14 @@ struct SubscriptionView: View {
     Task { @MainActor in
       message = nil
       switch await store.restore() {
-      case .success(let restored):
-        message = restored > 0
-          ? String(localized: "Restored \(restored) purchases.")
-          : String(localized: "No purchases were found to restore.")
+      case .success(let outcome):
+        if outcome.tested > 0 {
+          message = String(localized: "App Store test transaction completed. This is a test environment, so your workspace plan was not changed.")
+        } else {
+          message = outcome.restored > 0
+            ? String(localized: "Restored \(outcome.restored) purchases.")
+            : String(localized: "No purchases were found to restore.")
+        }
         await entitlements.refresh()
       case .failure:
         message = String(localized: "Purchases could not be restored. Please try again.")

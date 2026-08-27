@@ -23,7 +23,9 @@ struct AppStorePurchaseContext: Codable, Sendable {
   let productId: String
 }
 
-struct AppStoreTransactionAcknowledgement: Codable, Sendable {
+struct AppStoreTransactionAcknowledgement: Codable, Sendable, Equatable {
+  let applied: Bool
+  let environment: String
   let status: String?
   let transactionId: String
 }

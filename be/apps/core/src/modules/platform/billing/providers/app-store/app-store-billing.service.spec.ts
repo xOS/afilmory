@@ -66,6 +66,7 @@ describe('app store billing service', () => {
       }),
     ).resolves.toMatchObject({
       applied,
+      environment: environment.toLowerCase(),
       status: 'active',
       tenantId: 'tenant-1',
       transactionId: 'transaction-1',

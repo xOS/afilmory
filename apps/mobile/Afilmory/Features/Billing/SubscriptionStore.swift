@@ -88,16 +88,16 @@ final class SubscriptionStore: ObservableObject {
     }
   }
 
-  func restore() async -> Result<Int, Error> {
-    guard !restoring else { return .success(0) }
+  func restore() async -> Result<AppStoreRestoreOutcome, Error> {
+    guard !restoring else { return .success(AppStoreRestoreOutcome(restored: 0, tested: 0)) }
     restoring = true
     defer { restoring = false }
     do {
-      let restored = try await service.restore(productIds: offers.map(\.offer.externalProductId))
-      if restored > 0 {
+      let outcome = try await service.restore(productIds: offers.map(\.offer.externalProductId))
+      if outcome.restored > 0 {
         await load()
       }
-      return .success(restored)
+      return .success(outcome)
     } catch {
       return .failure(error)
     }
