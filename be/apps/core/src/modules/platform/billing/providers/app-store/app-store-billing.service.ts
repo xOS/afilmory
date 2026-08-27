@@ -167,9 +167,6 @@ export class AppStoreBillingService {
     if (!environment || !productId || !originalTransactionId || !transactionId || !appAccountToken) {
       throw new BillingError('APP_STORE_TRANSACTION_MISSING_REQUIRED_FIELDS')
     }
-    if (environment !== getAppStoreEnvironment()) {
-      throw new BillingError('APP_STORE_ENVIRONMENT_MISMATCH')
-    }
     const offer = await this.catalog.findOfferByProduct('app_store', environment, productId)
     if (!offer) {
       throw new BillingError('APP_STORE_PRODUCT_NOT_ALLOWLISTED')

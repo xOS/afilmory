@@ -108,5 +108,5 @@ submitting a build:
    (processing takes 5–30 min). Export compliance is pre-declared
    (`usesNonExemptEncryption: false`), so builds go live for internal testers
    without questions.
-4. Ship to external TestFlight testers first; submit for App Store review from
-   the ASC UI once stable.
+4. Keep TestFlight distribution internal only; do not add builds to external or public groups.
+   Submit for App Store review from the ASC UI after internal validation.

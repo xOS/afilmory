@@ -64,8 +64,8 @@ const PLAN_OVERRIDE_ENTRY_SCHEMA = z.object({
 const BILLING_PLAN_OVERRIDES_SCHEMA = z.record(z.string(), PLAN_OVERRIDE_ENTRY_SCHEMA).default({})
 
 const PLAN_PRODUCT_ENTRY_SCHEMA = z.object({
-  appStoreProductId: z.string().trim().min(1).optional(),
-  creemProductId: z.string().trim().min(1).optional(),
+  appStoreProductId: z.string().trim().min(1).nullable().optional(),
+  creemProductId: z.string().trim().min(1).nullable().optional(),
 })
 
 const BILLING_PLAN_PRODUCTS_SCHEMA = z.record(z.string(), PLAN_PRODUCT_ENTRY_SCHEMA).default({})
