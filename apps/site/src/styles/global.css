@@ -167,6 +167,46 @@ button {
   background: radial-gradient(circle, rgba(255, 255, 255, 0.04), transparent 60%);
 }
 
+.app-store-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.85rem 0.45rem 0.7rem;
+  border: 1px solid var(--color-line);
+  color: var(--color-fg);
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.app-store-badge:hover {
+  border-color: var(--color-fg);
+}
+
+.app-store-badge-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+}
+
+.app-store-badge-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  line-height: 1;
+}
+
+.app-store-badge-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+.app-store-badge-title {
+  font-size: 0.9375rem;
+  letter-spacing: 0.02em;
+}
+
 .nav-link-desktop {
   display: none;
 }

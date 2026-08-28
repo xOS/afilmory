@@ -57,32 +57,6 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
-.demo-app-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 12px;
-}
-
-.demo-app-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-
-.demo-app-action:hover {
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .demo-app-body {
   position: relative;
   flex: 1;
@@ -97,8 +71,16 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+
+.demo-masonry-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.demo-sticky-root .demo-masonry-scroll {
+  overflow: hidden;
 }
 
 .demo-masonry {
@@ -107,8 +89,6 @@
 
 .demo-tile {
   position: absolute;
-  top: 0;
-  left: 0;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;

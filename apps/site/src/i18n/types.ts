@@ -22,6 +22,8 @@ export interface Translations {
     login: string
     secondary: string
     note: string
+    appStoreEyebrow: string
+    appStore: string
   }
   demo: {
     label: string
@@ -101,6 +103,7 @@ export interface Translations {
     docs: string
     github: string
     selfHost: string
+    appStore: string
     copy: string
   }
 }

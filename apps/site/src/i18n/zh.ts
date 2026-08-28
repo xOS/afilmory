@@ -22,6 +22,8 @@ export const zh: Translations = {
     login: '登录',
     secondary: '先看它怎么展 →',
     note: 'SaaS 几分钟上线 · 也可自建',
+    appStoreEyebrow: '前往',
+    appStore: 'App Store',
   },
   demo: {
     label: 'Live exhibition',
@@ -114,6 +116,7 @@ export const zh: Translations = {
     docs: '文档',
     github: 'GitHub',
     selfHost: '自建',
+    appStore: 'App Store',
     copy: 'Afilmory',
   },
 }

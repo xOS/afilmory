@@ -29,10 +29,6 @@ function AppHeader({ count }: { count: number }) {
         <span className="demo-app-title">{DEMO_GALLERY.name}</span>
         <span className="demo-app-count">{count}</span>
       </div>
-      <div className="demo-app-actions" aria-hidden="true">
-        <span className="demo-app-action">⌘K</span>
-        <span className="demo-app-action">☰</span>
-      </div>
     </header>
   )
 }
@@ -48,7 +44,10 @@ function MasonryGrid({ onOpen }: { onOpen: (photo: DemoPhoto) => void }) {
     if (!el) {
       return
     }
-    const measure = () => setInnerWidth(el.clientWidth - MASONRY_GUTTER * 2)
+    const measure = () => {
+      const next = Math.round(el.clientWidth - MASONRY_GUTTER * 2)
+      setInnerWidth(prev => (prev === next ? prev : next))
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
@@ -84,7 +83,7 @@ function MasonryGrid({ onOpen }: { onOpen: (photo: DemoPhoto) => void }) {
               key={photo.id}
               type="button"
               className="demo-tile"
-              style={{ transform: `translate(${x}px, ${y}px)`, width, height }}
+              style={{ top: y, left: x, width, height }}
               onClick={() => onOpen(photo)}
             >
               <img className="demo-tile-img" src={photo.src} alt={photo.title} loading="lazy" />

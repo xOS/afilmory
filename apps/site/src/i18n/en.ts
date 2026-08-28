@@ -24,6 +24,8 @@ export const en: Translations = {
     login: 'Log in',
     secondary: 'See how it hangs →',
     note: 'SaaS live in minutes · self-host if you prefer',
+    appStoreEyebrow: 'Download on the',
+    appStore: 'App Store',
   },
   demo: {
     label: 'Live exhibition',
@@ -120,6 +122,7 @@ export const en: Translations = {
     docs: 'Docs',
     github: 'GitHub',
     selfHost: 'Self-host',
+    appStore: 'App Store',
     copy: 'Afilmory',
   },
 }
