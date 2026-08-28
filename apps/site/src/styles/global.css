@@ -207,6 +207,12 @@ button {
   letter-spacing: 0.02em;
 }
 
+.site-logo {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+}
+
 .nav-link-desktop {
   display: none;
 }

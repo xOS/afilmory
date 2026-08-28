@@ -58,8 +58,9 @@ export function LandingApp({ initialLocale }: LandingAppProps) {
     <>
       <header className="site-header fixed inset-x-0 top-0 z-50 border-b border-line bg-page-80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 md:px-8">
-          <a href="/" className="font-serif text-lg tracking-wide">
-            Afilmory
+          <a href="/" className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="" width={28} height={28} className="site-logo" />
+            <span className="font-serif text-lg tracking-wide">Afilmory</span>
           </a>
           <nav className="flex items-center gap-4 text-xs tracking-wide text-muted md:gap-6">
             <a href="#demo" className="nav-link-desktop hover:text-fg">
