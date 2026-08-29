@@ -58,8 +58,8 @@ export class PhotoController {
     // managed storage always delete from storage
     const deleteFromStorage = isManagedStorage ? true : deleteFromStorageRequested
 
-    await this.photoAssetService.deleteAssets(ids, { deleteFromStorage })
-    return { ids, deleted: true, deleteFromStorage }
+    const changes = await this.photoAssetService.deleteAssets(ids, { deleteFromStorage })
+    return { ids, deleted: true, deleteFromStorage, changes }
   }
 
   @UseInterceptors(PhotoUploadLimitInterceptor)

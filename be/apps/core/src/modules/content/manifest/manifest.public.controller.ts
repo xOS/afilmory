@@ -1,9 +1,14 @@
 import { BizException, ErrorCode } from '@core/errors'
 import { BypassResponseTransform } from '@core/interceptors/response-transform.decorator'
+import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
+import { createProgressSseResponse } from '@core/modules/shared/http/sse'
 import { Body, ContextParam, Controller, createZodSchemaDto, Get, Param, Post, Query } from '@tsuki-hono/common'
+import { EventEmitterService } from '@tsuki-hono/event-emitter'
 import type { Context } from 'hono'
 import { z } from 'zod'
 
+import { ManifestSyncService } from '../manifest-sync/manifest-sync.service'
+import { MANIFEST_REVISION_HEADER, revisionETag } from '../manifest-sync/manifest-sync.types'
 import { ManifestService } from './manifest.service'
 
 const GetPhotosByIdsSchema = z.object({
@@ -37,23 +42,40 @@ const SearchPhotosSchema = z.object({
   offset: z.number().int().nonnegative().optional(),
 })
 
+const GetChangesSchema = z.object({
+  after: z
+    .string()
+    .regex(/^\d+$/)
+    .transform(value => Number(value))
+    .optional(),
+})
+
 class GetPhotosByIdsDto extends createZodSchemaDto(GetPhotosByIdsSchema) {}
 class SearchPhotosDto extends createZodSchemaDto(SearchPhotosSchema) {}
+class GetChangesDto extends createZodSchemaDto(GetChangesSchema) {}
 
 @Controller('manifest')
 export class ManifestPublicController {
-  constructor(private readonly manifestService: ManifestService) {}
+  constructor(
+    private readonly manifestService: ManifestService,
+    private readonly manifestSyncService: ManifestSyncService,
+    private readonly eventEmitter: EventEmitterService,
+  ) {}
 
   @Get()
   @BypassResponseTransform()
   async getManifest(@ContextParam() context: Context): Promise<Response> {
-    const etag = await this.manifestService.getManifestETag()
+    const revision = await this.manifestService.getManifestRevision()
+    const etag = revisionETag(revision)
 
     const ifNoneMatch = context.req.header('if-none-match')
     if (ifNoneMatch && this.matchesEtag(ifNoneMatch, etag)) {
       return new Response(null, {
         status: 304,
-        headers: { etag },
+        headers: {
+          etag,
+          [MANIFEST_REVISION_HEADER]: String(revision),
+        },
       })
     }
 
@@ -63,6 +85,59 @@ export class ManifestPublicController {
       headers: {
         'content-type': 'application/json; charset=utf-8',
         etag,
+        [MANIFEST_REVISION_HEADER]: String(revision),
+      },
+    })
+  }
+
+  @Get('snapshot')
+  async getSnapshot() {
+    const [revision, manifest] = await Promise.all([
+      this.manifestService.getManifestRevision(),
+      this.manifestService.getManifest(),
+    ])
+    return { revision, manifest }
+  }
+
+  @Get('changes')
+  async getChanges(@Query() query: GetChangesDto) {
+    return await this.manifestSyncService.listChanges(query.after ?? 0)
+  }
+
+  @Get('events')
+  @BypassResponseTransform()
+  async streamEvents(@ContextParam() context: Context): Promise<Response> {
+    const tenantId = requireTenantContext().tenant.id
+
+    return createProgressSseResponse<{ type: 'revision', tenantId: string, revision: number }>({
+      context,
+      eventName: 'revision',
+      handler: async ({ sendEvent, abortSignal }) => {
+        const listener = ({ tenantId: changedTenantId, revision }: { tenantId: string, revision?: number }) => {
+          if (changedTenantId !== tenantId) {
+            return
+          }
+          void sendEvent({
+            type: 'revision',
+            tenantId,
+            revision: revision ?? 0,
+          })
+        }
+        this.eventEmitter.on('photo.manifest.changed', listener)
+        try {
+          const revision = await this.manifestService.getManifestRevision()
+          await sendEvent({ type: 'revision', tenantId, revision })
+          await new Promise<void>((resolve) => {
+            if (abortSignal.aborted) {
+              resolve()
+              return
+            }
+            abortSignal.addEventListener('abort', () => resolve(), { once: true })
+          })
+        }
+        finally {
+          this.eventEmitter.off('photo.manifest.changed', listener)
+        }
       },
     })
   }

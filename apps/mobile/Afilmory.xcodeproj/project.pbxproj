@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0036AB47AA345AEDC151E854 /* google-g.png in Resources */ = {isa = PBXBuildFile; fileRef = 25B5393D7A1A38FF74141B1C /* google-g.png */; };
+		76D823DDC359CAF2BDCEEA32 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 6AF472CC061F0A538031C03B /* GRDB */; };
 		8AF800F517A9D7C64EAE699A /* AfilmoryLocal.icon in Resources */ = {isa = PBXBuildFile; fileRef = 3983EB8B2EFD494138D3C9C5 /* AfilmoryLocal.icon */; };
 		AF274338BBFF344A7BAEBFE9 /* Afilmory.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2B40A13E3BF517C4D52948AA /* Afilmory.icon */; };
 		C1A991BD5A56277D4221B474 /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = 13DF510201D12CE06D3CE37B /* SDWebImage */; };
@@ -142,6 +143,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C1A991BD5A56277D4221B474 /* SDWebImage in Frameworks */,
+				76D823DDC359CAF2BDCEEA32 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,6 +260,7 @@
 			name = Afilmory;
 			packageProductDependencies = (
 				13DF510201D12CE06D3CE37B /* SDWebImage */,
+				6AF472CC061F0A538031C03B /* GRDB */,
 			);
 			productName = Afilmory;
 			productReference = E7C24D2808A5C15D8643768F /* Afilmory.app */;
@@ -317,6 +320,7 @@
 			mainGroup = A3AF475FD4E25C2AC4658B92;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				8452E412C433CF2D29D70CD6 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				937ECADF4805A3330B0552D9 /* XCRemoteSwiftPackageReference "SDWebImage" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -780,6 +784,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8452E412C433CF2D29D70CD6 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 7.6.1;
+			};
+		};
 		937ECADF4805A3330B0552D9 /* XCRemoteSwiftPackageReference "SDWebImage" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SDWebImage/SDWebImage.git";
@@ -795,6 +807,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 937ECADF4805A3330B0552D9 /* XCRemoteSwiftPackageReference "SDWebImage" */;
 			productName = SDWebImage;
+		};
+		6AF472CC061F0A538031C03B /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8452E412C433CF2D29D70CD6 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

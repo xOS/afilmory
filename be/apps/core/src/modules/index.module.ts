@@ -20,6 +20,7 @@ import { StorageSettingModule } from './configuration/storage-setting/storage-se
 import { SystemSettingModule } from './configuration/system-setting/system-setting.module'
 import { CommentModule } from './content/comment/comment.module'
 import { FeedModule } from './content/feed/feed.module'
+import { ManifestSyncModule } from './content/manifest-sync/manifest-sync.module'
 import { OgModule } from './content/og/og.module'
 import { PhotoModule } from './content/photo/photo.module'
 import { ReactionModule } from './content/reaction/reaction.module'
@@ -70,6 +71,7 @@ function createEventModuleOptions(redis: RedisAccessor) {
     SiteSettingModule,
     SystemSettingModule,
     SuperAdminModule,
+    ManifestSyncModule,
     PhotoModule,
     CommentModule,
     ReactionModule,

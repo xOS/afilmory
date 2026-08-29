@@ -16,6 +16,9 @@ packages:
   SDWebImage:
     url: https://github.com/SDWebImage/SDWebImage.git
     exactVersion: 5.21.7
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 7.6.1
 
 settings:
   base:
@@ -45,6 +48,8 @@ targets:
     dependencies:
       - package: SDWebImage
         product: SDWebImage
+      - package: GRDB
+        product: GRDB
       - target: AfilmoryShare
         embed: true
       - target: AfilmoryWidgets

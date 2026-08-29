@@ -1,24 +1,6 @@
 import Foundation
+import GRDB
 import Observation
-import SwiftData
-
-protocol ManifestTransport: Sendable {
-  func fetchManifest(slug: String, etag: String?) async throws -> ManifestFetchOutcome
-}
-
-struct LiveManifestTransport: ManifestTransport {
-  private let api: AfilmoryAPI
-
-  init(api: AfilmoryAPI = .shared) {
-    self.api = api
-  }
-
-  func fetchManifest(slug: String, etag: String?) async throws -> ManifestFetchOutcome {
-    let apiBaseURL = try ApiEnvironmentStore.shared.galleryAPIBaseURL(slug: slug)
-    let endpoint = APIEndpoint(baseURL: .explicit(apiBaseURL.absoluteString), path: "manifest")
-    return try await api.fetchManifest(endpoint, etag: etag)
-  }
-}
 
 enum PhotoFeedLoadState: Equatable, Sendable {
   case idle
@@ -28,7 +10,7 @@ enum PhotoFeedLoadState: Equatable, Sendable {
 }
 
 @Observable
-final class PhotoFeed {
+final class PhotoFeed: @unchecked Sendable {
   let key: PhotoFeedKey
   private(set) var photos: [GalleryPhoto] = []
   private(set) var studioPhotos: [StudioFeedPhoto] = []
@@ -90,18 +72,17 @@ final class PhotoFeedObservationToken {
 final class PhotoFeedStore {
   static let shared = PhotoFeedStore()
 
-  private let repository: PhotoCacheRepository
-  private let manifestTransport: ManifestTransport
+  private let repository: PhotoReplicaRepository
+  private let engine: PhotoSyncEngine
   private var feeds: [PhotoFeedKey: PhotoFeed] = [:]
-  private var loads: [PhotoFeedKey: Task<Void, Never>] = [:]
-  private var loadGenerations: [PhotoFeedKey: UUID] = [:]
+  private var observations: [PhotoFeedKey: any DatabaseCancellable] = [:]
 
   init(
-    repository: PhotoCacheRepository = SwiftDataPhotoCacheRepository(container: AfilmoryDatabase.shared),
-    manifestTransport: ManifestTransport = LiveManifestTransport()
+    repository: PhotoReplicaRepository = PhotoReplicaRepository(),
+    engine: PhotoSyncEngine = .shared
   ) {
     self.repository = repository
-    self.manifestTransport = manifestTransport
+    self.engine = engine
   }
 
   func feed(for key: PhotoFeedKey) -> PhotoFeed {
@@ -115,67 +96,90 @@ final class PhotoFeedStore {
 
   func load(_ key: PhotoFeedKey, force: Bool = false) {
     let feed = feed(for: key)
-    if !force, feed.loadState == .loaded || loads[key] != nil {
+    guard let slug = slug(for: key) else {
+      feed.update(photos: [], studioPhotos: [], state: .failed, error: "Missing workspace")
       return
     }
-    loads[key]?.cancel()
 
-    let cached: (photos: [GalleryPhoto], etag: String?)?
-    if case .manifest = key {
-      cached = repository.loadFeed(key)
-    } else {
-      cached = nil
-    }
-
-    if let cached {
-      feed.update(photos: cached.photos, state: .loaded)
-    } else {
+    bindObservation(key, slug: slug)
+    if let snapshot = try? currentSnapshot(key, slug: slug), !snapshot.photos.isEmpty || !snapshot.studio.isEmpty {
+      feed.update(photos: snapshot.photos, studioPhotos: snapshot.studio, state: .loaded)
+    } else if feed.loadState == .idle {
       feed.update(photos: feed.photos, studioPhotos: feed.studioPhotos, state: .loading)
     }
 
-    let generation = UUID()
-    loadGenerations[key] = generation
+    engine.ensureSynced(slug: slug, force: force, includeStudio: key == .studioLibrary)
+  }
 
-    loads[key] = Task { [weak self, weak feed] in
-      guard let self, let feed else { return }
-      do {
-        switch key {
-        case .manifest(let slug):
-          let origin = try ApiEnvironmentStore.shared.galleryOrigin(slug: slug)
-          let outcome = try await self.manifestTransport.fetchManifest(slug: slug, etag: cached?.etag)
-          guard !Task.isCancelled else { return }
-          switch outcome {
-          case .notModified:
-            await self.repository.touchFeed(key)
-          case .success(let data, let etag):
-            let photos = try ManifestDecoding.decode(data, galleryOrigin: origin)
-            guard !Task.isCancelled else { return }
-            feed.update(photos: photos, state: .loaded)
-            await self.repository.saveFeed(key, photos: photos, etag: etag)
-          }
-        case .studioLibrary:
-          let endpoint = APIEndpoint(baseURL: .tenant, path: "photos/assets")
-          let assets: [StudioAsset] = try await AfilmoryAPI.shared.request(endpoint)
-          let studioPhotos = StudioAssetDecoding.normalize(assets)
-          guard !Task.isCancelled else { return }
-          feed.update(photos: studioPhotos.map(\.photo), studioPhotos: studioPhotos, state: .loaded)
+  func applyCommitted(_ change: PhotoChange) {
+    guard let slug = slug(for: change) else { return }
+    engine.applyCommitted(change, slug: slug)
+    if feeds[.manifest(slug)] == nil, feeds[.studioLibrary] == nil {
+      return
+    }
+    if let home = feeds[.manifest(slug)], let photos = try? repository.publishedPhotos(for: slug) {
+      home.update(photos: photos, state: .loaded)
+    }
+    if let studio = feeds[.studioLibrary], let studioPhotos = try? repository.studioPhotos(for: slug) {
+      studio.update(photos: studioPhotos.map(\.photo), studioPhotos: studioPhotos, state: .loaded)
+    }
+  }
+
+  private func bindObservation(_ key: PhotoFeedKey, slug: String) {
+    if observations[key] != nil {
+      return
+    }
+    let feed = feed(for: key)
+    switch key {
+    case .manifest:
+      observations[key] = repository.observePublished(slug: slug) { photos in
+        Task { @MainActor in
+          feed.update(photos: photos, state: .loaded)
         }
-      } catch {
-        guard !Task.isCancelled else { return }
-        if cached != nil {
-          NSLog("[PhotoFeedStore] Manifest refresh failed for %@: %@", key.rawValue, error.localizedDescription)
-        } else {
+      }
+    case .studioLibrary:
+      observations[key] = repository.observeStudio(slug: slug) { studioPhotos in
+        Task { @MainActor in
           feed.update(
-            photos: feed.photos,
-            studioPhotos: feed.studioPhotos,
-            state: .failed,
-            error: error.localizedDescription
+            photos: studioPhotos.map(\.photo),
+            studioPhotos: studioPhotos,
+            state: .loaded
           )
         }
       }
-      guard self.loadGenerations[key] == generation else { return }
-      self.loads[key] = nil
-      self.loadGenerations[key] = nil
     }
+  }
+
+  private func currentSnapshot(_ key: PhotoFeedKey, slug: String) throws -> (photos: [GalleryPhoto], studio: [StudioFeedPhoto]) {
+    switch key {
+    case .manifest:
+      return (try repository.publishedPhotos(for: slug), [])
+    case .studioLibrary:
+      let studio = try repository.studioPhotos(for: slug)
+      return (studio.map(\.photo), studio)
+    }
+  }
+
+  private func slug(for key: PhotoFeedKey) -> String? {
+    switch key {
+    case .manifest(let slug):
+      slug
+    case .studioLibrary:
+      currentWorkspaceSlug()
+    }
+  }
+
+  private func slug(for change: PhotoChange) -> String? {
+    currentWorkspaceSlug() ?? feeds.keys.compactMap { key in
+      if case .manifest(let slug) = key { return slug }
+      return nil
+    }.first
+  }
+
+  private func currentWorkspaceSlug() -> String? {
+    if case .signedIn(let session) = AfilmorySessionStore.shared.current().state {
+      return session.activeWorkspace?.slug
+    }
+    return nil
   }
 }

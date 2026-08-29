@@ -12,6 +12,11 @@ private struct StudioDeleteBody: Encodable {
 
 private struct StudioDeleteResponse: Decodable {
   let deleted: Bool
+  let changes: [PhotoChange]?
+}
+
+private struct StudioTagResponse: Decodable {
+  let change: PhotoChange?
 }
 
 enum StudioLibraryDeletePolicy {
@@ -316,10 +321,15 @@ final class StudioLibraryController: UIViewController {
             method: .patch,
             body: try APIEndpoint.jsonBody(StudioTagsBody(tags: tags))
           )
-          let _: StudioAsset = try await AfilmoryAPI.shared.request(endpoint)
+            let response: StudioTagResponse = try await AfilmoryAPI.shared.request(endpoint)
+            if let change = response.change {
+              PhotoFeedStore.shared.applyCommitted(change)
+            }
         }
         self?.leaveSelection()
-        self?.reload()
+        if let slug = self?.gallerySlug {
+          PhotoSyncEngine.shared.ensureSynced(slug: slug, includeStudio: true)
+        }
       } catch {
         self?.showError(
           title: String(localized: "Unable to update tags"),
@@ -381,9 +391,14 @@ final class StudioLibraryController: UIViewController {
             StudioDeleteBody(deleteFromStorage: fromStorage, ids: ids)
           )
         )
-        let _: StudioDeleteResponse = try await AfilmoryAPI.shared.request(endpoint)
+        let response: StudioDeleteResponse = try await AfilmoryAPI.shared.request(endpoint)
+        for change in response.changes ?? [] {
+          PhotoFeedStore.shared.applyCommitted(change)
+        }
         self?.leaveSelection()
-        self?.reload()
+        if let slug = self?.gallerySlug {
+          PhotoSyncEngine.shared.ensureSynced(slug: slug, includeStudio: true)
+        }
       } catch {
         self?.showError(
           title: String(localized: "Unable to delete photos"),

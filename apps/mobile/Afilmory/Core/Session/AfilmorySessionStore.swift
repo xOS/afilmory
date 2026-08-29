@@ -171,7 +171,10 @@ final class AfilmorySessionStore: @unchecked Sendable {
     }
     ApiEnvironmentStore.shared.activateTenant(slug: nil)
     let repository = repository
-    Task { await repository.wipeAll() }
+    Task {
+      await repository.wipeAll()
+      await MainActor.run { PhotoSyncEngine.shared.wipeAll() }
+    }
     notify(observers, state: .signedOut)
   }
 
@@ -303,6 +306,7 @@ final class AfilmorySessionStore: @unchecked Sendable {
     }
     ApiEnvironmentStore.shared.activateTenant(slug: nil)
     await repository.wipeAll()
+    await MainActor.run { PhotoSyncEngine.shared.wipeAll() }
     completeRefresh(generation: generation, state: .signedOut)
   }
 

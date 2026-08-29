@@ -8,6 +8,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     CacheLifecycleCoordinator.shared.runOnce()
+    PhotoRevisionStream.shared.start()
     return true
   }
 

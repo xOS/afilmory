@@ -14,12 +14,12 @@ import {
 import { DbAccessor } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
 import { SystemSettingService } from '@core/modules/configuration/system-setting/system-setting.service'
+import { ManifestSyncService } from '@core/modules/content/manifest-sync/manifest-sync.service'
 import { PhotoStorageService } from '@core/modules/content/photo/storage/photo-storage.service'
 import { BILLING_USAGE_EVENT } from '@core/modules/platform/billing/usage/billing-usage.constants'
 import { BillingUsageService } from '@core/modules/platform/billing/usage/billing-usage.service'
 import { ROOT_TENANT_SLUG } from '@core/modules/platform/tenant/tenant.constants'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
-import { EventEmitterService } from '@tsuki-hono/event-emitter'
 import { eq } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
@@ -27,10 +27,10 @@ import { injectable } from 'tsyringe'
 export class DataManagementService {
   constructor(
     private readonly dbAccessor: DbAccessor,
-    private readonly eventEmitter: EventEmitterService,
     private readonly billingUsageService: BillingUsageService,
     private readonly systemSettingService: SystemSettingService,
     private readonly photoStorageService: PhotoStorageService,
+    private readonly manifestSyncService: ManifestSyncService,
   ) {}
 
   async clearPhotoAssetRecords(): Promise<{ deleted: number }> {
@@ -40,10 +40,10 @@ export class DataManagementService {
     const deletedRecords = await db
       .delete(photoAssets)
       .where(eq(photoAssets.tenantId, tenant.tenant.id))
-      .returning({ id: photoAssets.id })
+      .returning({ id: photoAssets.id, photoId: photoAssets.photoId })
 
     if (deletedRecords.length > 0) {
-      await this.eventEmitter.emit('photo.manifest.changed', { tenantId: tenant.tenant.id })
+      await this.manifestSyncService.recordDeletes(tenant.tenant.id, deletedRecords)
       await this.billingUsageService.recordEvent({
         eventType: BILLING_USAGE_EVENT.PHOTO_ASSET_DELETED,
         quantity: -deletedRecords.length,

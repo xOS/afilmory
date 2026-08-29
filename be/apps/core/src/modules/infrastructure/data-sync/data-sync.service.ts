@@ -6,6 +6,7 @@ import type { PhotoAssetConflictPayload, PhotoAssetConflictSnapshot, PhotoAssetM
 import { CURRENT_PHOTO_MANIFEST_VERSION, DATABASE_ONLY_PROVIDER, photoAssets, photoSyncRuns } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { BizException, ErrorCode } from '@core/errors'
+import { ManifestSyncService } from '@core/modules/content/manifest-sync/manifest-sync.service'
 import { PhotoBuilderService } from '@core/modules/content/photo/builder/photo-builder.service'
 import { PhotoStorageService } from '@core/modules/content/photo/storage/photo-storage.service'
 import { formatBytesToMb } from '@core/modules/content/photo/storage/storage.utils'
@@ -87,6 +88,7 @@ export class DataSyncService {
     private readonly billingPlanService: BillingPlanService,
     private readonly billingUsageService: BillingUsageService,
     private readonly galleryPushQueue: GalleryPushQueue,
+    private readonly manifestSyncService: ManifestSyncService,
   ) {}
 
   private async emitManifestChanged(tenantId: string): Promise<void> {
@@ -202,7 +204,7 @@ export class DataSyncService {
     if (!options.dryRun) {
       const mutated = actions.some(action => action.applied)
       if (mutated) {
-        await this.emitManifestChanged(tenant.tenant.id)
+        await this.manifestSyncService.recordAppliedActions(tenant.tenant.id, actions)
       }
       const insertedCount = actions.filter(action => action.type === 'insert' && action.applied).length
       if (insertedCount > 0) {
@@ -289,14 +291,14 @@ export class DataSyncService {
     if (options.strategy === ConflictResolutionStrategy.PREFER_STORAGE) {
       const action = await this.resolveByStorage(record, conflictPayload, options, dryRun, tenant.tenant.id, db)
       if (!dryRun && action.applied) {
-        await this.emitManifestChanged(tenant.tenant.id)
+        await this.manifestSyncService.recordAppliedActions(tenant.tenant.id, [action])
       }
       return action
     }
 
     const action = await this.resolveByDatabase(record, conflictPayload, dryRun, tenant.tenant.id, db)
     if (!dryRun && action.applied) {
-      await this.emitManifestChanged(tenant.tenant.id)
+      await this.manifestSyncService.recordAppliedActions(tenant.tenant.id, [action])
     }
     return action
   }

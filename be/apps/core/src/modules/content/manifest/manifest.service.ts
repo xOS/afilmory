@@ -8,9 +8,11 @@ import { CURRENT_PHOTO_MANIFEST_VERSION, photoAssets } from '@afilmory/db'
 import { DbAccessor } from '@core/database/database.provider'
 import { requireTenantContext } from '@core/modules/platform/tenant/tenant.context'
 import { createLogger } from '@tsuki-hono/common'
-import { and, count, eq, inArray, max } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { injectable } from 'tsyringe'
 
+import { ManifestSyncService } from '../manifest-sync/manifest-sync.service'
+import { revisionETag } from '../manifest-sync/manifest-sync.types'
 import { ensureCurrentPhotoAssetManifest } from './manifest-migration.helper'
 
 export function computeManifestETag(maxUpdatedAt: string | null, photoCount: number): string {
@@ -18,6 +20,10 @@ export function computeManifestETag(maxUpdatedAt: string | null, photoCount: num
     .update(`${maxUpdatedAt ?? ''}:${photoCount}`)
     .digest('hex')
   return `"${hash}"`
+}
+
+export function computeRevisionETag(revision: number): string {
+  return revisionETag(revision)
 }
 
 export interface AfilmorySearchQuery {
@@ -42,21 +48,17 @@ export interface AfilmorySearchResult {
 export class ManifestService {
   private readonly logger = createLogger('ManifestService')
 
-  constructor(private readonly dbAccessor: DbAccessor) {}
+  constructor(
+    private readonly dbAccessor: DbAccessor,
+    private readonly manifestSyncService: ManifestSyncService,
+  ) {}
+
+  async getManifestRevision(): Promise<number> {
+    return await this.manifestSyncService.getRevision()
+  }
 
   async getManifestETag(): Promise<string> {
-    const tenant = requireTenantContext()
-    const db = this.dbAccessor.get()
-
-    const [row] = await db
-      .select({
-        maxUpdatedAt: max(photoAssets.updatedAt),
-        photoCount: count(),
-      })
-      .from(photoAssets)
-      .where(and(eq(photoAssets.tenantId, tenant.tenant.id), inArray(photoAssets.syncStatus, ['synced', 'conflict'])))
-
-    return computeManifestETag(row?.maxUpdatedAt ?? null, row?.photoCount ?? 0)
+    return revisionETag(await this.getManifestRevision())
   }
 
   async getManifest(): Promise<AfilmoryManifest> {

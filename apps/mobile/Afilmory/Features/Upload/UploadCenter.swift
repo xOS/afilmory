@@ -468,6 +468,10 @@ final class UploadCenter: NSObject, @unchecked Sendable {
           let type = payload["type"] as? String
     else { return }
 
+    if type == "action" || type == "complete" {
+      Self.applyCommittedChanges(from: payload)
+    }
+
     switch type {
     case "start":
       updateJobLocked(jobId) { job in
@@ -512,6 +516,16 @@ final class UploadCenter: NSObject, @unchecked Sendable {
   private func refreshEntitlementsLocked() {
     guard jobs.allSatisfy({ $0.status == .done || $0.status == .failed || $0.status == .cancelled }) else { return }
     Task { @MainActor in await EntitlementStore.shared.refresh() }
+  }
+
+  private static func applyCommittedChanges(from payload: [String: Any]) {
+    let changes = PhotoChangeDecoding.changes(from: payload)
+    guard !changes.isEmpty else { return }
+    Task { @MainActor in
+      for change in changes {
+        PhotoFeedStore.shared.applyCommitted(change)
+      }
+    }
   }
 
   private func updateJobLocked(_ jobId: String, _ mutate: (inout UploadJobState) -> Void) {

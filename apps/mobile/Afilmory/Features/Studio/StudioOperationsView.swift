@@ -53,6 +53,11 @@ final class StudioOperationsViewModel: ObservableObject {
           runProgress = 1
         }
       }
+      if !dryRun, case .signedIn(let session) = AfilmorySessionStore.shared.current().state,
+         let slug = session.activeWorkspace?.slug
+      {
+        PhotoSyncEngine.shared.ensureSynced(slug: slug, force: true, includeStudio: true)
+      }
       await load()
       completionMessage = dryRun
         ? String(localized: "The comparison completed without applying changes.")
@@ -68,6 +73,11 @@ final class StudioOperationsViewModel: ObservableObject {
     defer { resolvingID = nil }
     do {
       try await NativeStudioAPI.resolveConflict(id: conflict.id, strategy: strategy)
+      if case .signedIn(let session) = AfilmorySessionStore.shared.current().state,
+         let slug = session.activeWorkspace?.slug
+      {
+        PhotoSyncEngine.shared.ensureSynced(slug: slug, force: true, includeStudio: true)
+      }
       await load()
     } catch {
       operationError = error

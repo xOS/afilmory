@@ -770,6 +770,54 @@ export const photoAssets = pgTable(
   ],
 )
 
+export type ManifestChangeOperation = 'upsert' | 'delete'
+
+export type ManifestChangePayload = {
+  operation: ManifestChangeOperation
+  photoId: string
+  assetId: string | null
+  published: boolean
+  photo: PhotoManifestItem | null
+  asset: {
+    id: string
+    photoId: string
+    storageKey: string
+    storageProvider: string
+    syncStatus: 'pending' | 'synced' | 'conflict'
+    size: number | null
+    createdAt: string
+    updatedAt: string
+    syncedAt: string
+    publicUrl: string | null
+  } | null
+}
+
+export const tenantManifestStates = pgTable('tenant_manifest_state', {
+  tenantId: text('tenant_id')
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: 'cascade' }),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+})
+
+export const tenantManifestChanges = pgTable(
+  'tenant_manifest_change',
+  {
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    revision: bigint('revision', { mode: 'number' }).notNull(),
+    operation: text('operation').$type<ManifestChangeOperation>().notNull(),
+    photoId: text('photo_id').notNull(),
+    payload: jsonb('payload').$type<ManifestChangePayload>().notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  t => [
+    unique('uq_tenant_manifest_change_revision').on(t.tenantId, t.revision),
+    index('idx_tenant_manifest_change_tenant_revision').on(t.tenantId, t.revision),
+  ],
+)
+
 export const photoSyncRuns = pgTable(
   'photo_sync_run',
   {
@@ -950,6 +998,8 @@ export const dbSchema = {
   managedStorageUsages,
   managedStorageFileReferences,
   photoAssets,
+  tenantManifestStates,
+  tenantManifestChanges,
   photoSyncRuns,
   billingUsageEvents,
   platformActivityEvents,
