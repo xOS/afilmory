@@ -102,7 +102,8 @@ final class ExploreDirectoryController: UIViewController {
       GalleryDetailController(
         slug: route.slug,
         title: route.title,
-        onRequestSignIn: onRequestSignIn
+        onRequestSignIn: onRequestSignIn,
+        focusPhotoID: route.photoID
       ),
       animated: viewIfLoaded?.window != nil
     )

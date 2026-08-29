@@ -92,7 +92,7 @@ final class GalleriesController: UIViewController, UIScrollViewDelegate, UISearc
   func openGallery(_ route: GalleryRouteRequest) {
     guard lastGalleryRouteRequestID != route.requestId else { return }
     lastGalleryRouteRequestID = route.requestId
-    pushGallery(slug: route.slug, title: route.title, focusPhotoID: nil)
+    pushGallery(slug: route.slug, title: route.title, focusPhotoID: route.photoID)
   }
 
   func selectExploreSegment() {

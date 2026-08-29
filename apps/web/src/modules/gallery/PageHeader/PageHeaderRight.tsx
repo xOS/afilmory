@@ -57,7 +57,7 @@ export const PageHeaderRight = () => {
           <ActionIconButton
             icon="i-mingcute-map-pin-line"
             title={t('action.map.explore')}
-            onClick={() => navigate('/explory')}
+            onClick={() => navigate('/map')}
           />
         )}
 

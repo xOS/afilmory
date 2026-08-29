@@ -4,6 +4,7 @@ struct GalleryRouteRequest: Decodable, Equatable, Sendable {
   let requestId: String
   let slug: String
   let title: String
+  var photoID: String?
 }
 
 enum AfilmoryDeepLink: Equatable, Sendable {
@@ -14,31 +15,48 @@ enum AfilmoryDeepLink: Equatable, Sendable {
   case studio(StudioHomeRoute?)
   case developerLab
 
+  private static let webHost = "afilmory.art"
+
   static func parse(
     _ url: URL,
     customScheme: String = AfilmoryBuildConfiguration.urlScheme
   ) -> AfilmoryDeepLink? {
     guard let scheme = url.scheme?.lowercased() else { return nil }
     let pathComponents: [String]
+    let tenantSlug: String?
     if scheme == customScheme.lowercased() {
+      tenantSlug = nil
       if let host = url.host?.trimmingToNil {
         pathComponents = [host] + url.pathComponents.filter { $0 != "/" }
       } else {
         pathComponents = url.pathComponents.filter { $0 != "/" }
       }
     } else if scheme == "https" || scheme == "http" {
-      guard let host = url.host?.lowercased(),
-            host == "afilmory.art" || host.hasSuffix(".afilmory.art")
-      else { return nil }
+      guard let host = url.host?.lowercased() else { return nil }
+      if host == webHost {
+        tenantSlug = nil
+      } else if host.hasSuffix(".\(webHost)") {
+        tenantSlug = webTenantSlug(fromHost: host)
+      } else {
+        return nil
+      }
       pathComponents = url.pathComponents.filter { $0 != "/" }
     } else {
       return nil
     }
 
-    guard let first = pathComponents.first?.lowercased() else { return .root }
+    guard let first = pathComponents.first?.lowercased() else {
+      guard let tenantSlug else { return .root }
+      return .explore(tenantRoute(slug: tenantSlug, photoID: nil))
+    }
     switch first {
     case "photos":
-      return pathComponents.count == 1 ? .photos : nil
+      if pathComponents.count == 1 { return .photos }
+      guard pathComponents.count == 2,
+            let tenantSlug,
+            let photoID = pathComponents[1].trimmingToNil
+      else { return nil }
+      return .explore(tenantRoute(slug: tenantSlug, photoID: photoID))
     case "map":
       return pathComponents.count == 1 ? .map : nil
     case "explore":
@@ -60,6 +78,21 @@ enum AfilmoryDeepLink: Equatable, Sendable {
     default:
       return nil
     }
+  }
+
+  private static func webTenantSlug(fromHost host: String) -> String? {
+    let prefix = String(host.dropLast(webHost.count + 1))
+    guard !prefix.isEmpty, !prefix.contains("."), prefix != "www" else { return nil }
+    return prefix
+  }
+
+  private static func tenantRoute(slug: String, photoID: String?) -> GalleryRouteRequest {
+    GalleryRouteRequest(
+      requestId: photoID.map { "route:\(slug)/photos/\($0)" } ?? "route:\(slug)",
+      slug: slug,
+      title: slug,
+      photoID: photoID
+    )
   }
 
   private static func galleryRoute(from url: URL) -> GalleryRouteRequest? {

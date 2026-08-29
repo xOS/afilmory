@@ -93,6 +93,46 @@ final class PushNotificationTests: XCTestCase {
     }
   }
 
+  func testTenantHomepageOpensItsGalleryInExplore() throws {
+    let url = try XCTUnwrap(URL(string: "https://innei.afilmory.art/"))
+
+    XCTAssertEqual(
+      AfilmoryDeepLink.parse(url, customScheme: "afilmory-local"),
+      .explore(GalleryRouteRequest(requestId: "route:innei", slug: "innei", title: "innei"))
+    )
+  }
+
+  func testTenantPhotoPermalinkFocusesThatPhoto() throws {
+    let url = try XCTUnwrap(URL(string: "https://innei.afilmory.art/photos/DSC_7132"))
+
+    XCTAssertEqual(
+      AfilmoryDeepLink.parse(url, customScheme: "afilmory-local"),
+      .explore(GalleryRouteRequest(
+        requestId: "route:innei/photos/DSC_7132",
+        slug: "innei",
+        title: "innei",
+        photoID: "DSC_7132"
+      ))
+    )
+  }
+
+  func testMarketingHostKeepsItsOwnRoutes() throws {
+    XCTAssertEqual(
+      AfilmoryDeepLink.parse(try XCTUnwrap(URL(string: "https://afilmory.art/")), customScheme: "afilmory-local"),
+      .root
+    )
+    XCTAssertNil(
+      AfilmoryDeepLink.parse(
+        try XCTUnwrap(URL(string: "https://afilmory.art/photos/DSC_7132")),
+        customScheme: "afilmory-local"
+      )
+    )
+    XCTAssertEqual(
+      AfilmoryDeepLink.parse(try XCTUnwrap(URL(string: "https://www.afilmory.art/")), customScheme: "afilmory-local"),
+      .root
+    )
+  }
+
   func testDeepLinksRejectUntrustedDomainsAndUnknownNestedRoutes() throws {
     let rejected = [
       "https://evilafilmory.art/explore",
