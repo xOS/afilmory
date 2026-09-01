@@ -6,9 +6,9 @@ final class PhotosHomeController: UIViewController {
 
   private let onRequestSignIn: () -> Void
   private let onRequestSignOut: () -> Void
-  private let onRequestWorkspaceSetup: () -> Void
   private let onRequestAccountSettings: () -> Void
   private let onRequestAccountDeletion: () -> Void
+  private let onRequestStudioLibrary: () -> Void
   private let masonryView: PhotoMasonryView
   private let emptyStateView = PageEmptyStateView()
   private var sessionObservation: AfilmorySessionObservationToken?
@@ -23,15 +23,15 @@ final class PhotosHomeController: UIViewController {
   init(
     onRequestSignIn: @escaping () -> Void,
     onRequestSignOut: @escaping () -> Void,
-    onRequestWorkspaceSetup: @escaping () -> Void,
     onRequestAccountSettings: @escaping () -> Void,
-    onRequestAccountDeletion: @escaping () -> Void
+    onRequestAccountDeletion: @escaping () -> Void,
+    onRequestStudioLibrary: @escaping () -> Void
   ) {
     self.onRequestSignIn = onRequestSignIn
     self.onRequestSignOut = onRequestSignOut
-    self.onRequestWorkspaceSetup = onRequestWorkspaceSetup
     self.onRequestAccountSettings = onRequestAccountSettings
     self.onRequestAccountDeletion = onRequestAccountDeletion
+    self.onRequestStudioLibrary = onRequestStudioLibrary
     masonryView = PhotoMasonryView(frame: .zero)
     super.init(nibName: nil, bundle: nil)
     configureMasonry()
@@ -132,7 +132,7 @@ final class PhotosHomeController: UIViewController {
       showSignedOut()
     case .signedIn(let session):
       self.session = session
-      guard let workspace = session.activeWorkspace, workspace.status == "active" else {
+      guard session.hasUsableWorkspace, let workspace = session.activeWorkspace else {
         gallerySlug = nil
         feedObservation?.cancel()
         feedObservation = nil
@@ -499,11 +499,8 @@ final class PhotosHomeController: UIViewController {
       PageEmptyStateContent(
         symbolName: "clock",
         title: String(localized: "Set up your workspace"),
-        subtitle: String(localized: "Create a workspace to publish and manage your gallery, or open account settings."),
-        primaryAction: PageEmptyStateAction(title: String(localized: "Create workspace")) { [weak self] in
-          self?.onRequestWorkspaceSetup()
-        },
-        secondaryAction: PageEmptyStateAction(title: String(localized: "Account settings")) { [weak self] in
+        subtitle: String(localized: "Finish creating a workspace to publish and manage your gallery."),
+        primaryAction: PageEmptyStateAction(title: String(localized: "Account settings")) { [weak self] in
           self?.onRequestAccountSettings()
         }
       )
@@ -525,12 +522,16 @@ final class PhotosHomeController: UIViewController {
   }
 
   private func showEmpty() {
-    emptyStateView.isHidden = true
-    var configuration = UIContentUnavailableConfiguration.empty()
-    configuration.image = UIImage(systemName: "photo.on.rectangle.angled")
-    configuration.text = String(localized: "No photos yet")
-    configuration.secondaryText = String(localized: "Upload photos from the web dashboard and they will appear here.")
-    contentUnavailableConfiguration = configuration
+    showEmptyState(
+      PageEmptyStateContent(
+        symbolName: "photo.on.rectangle.angled",
+        title: String(localized: "No photos yet"),
+        subtitle: String(localized: "Upload photos in Studio and they will appear here."),
+        primaryAction: PageEmptyStateAction(title: String(localized: "Upload photos")) { [weak self] in
+          self?.onRequestStudioLibrary()
+        }
+      )
+    )
   }
 
   private func showFilteredEmpty() {

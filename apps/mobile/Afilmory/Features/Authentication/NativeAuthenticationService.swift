@@ -56,14 +56,28 @@ private struct AppleExchangeBody: Encodable {
   let nonce: String
 }
 
+private struct WorkspaceSlugCheckBody: Encodable {
+  let slug: String
+}
+
+private struct WorkspaceSlugCheckResponse: Decodable {
+  let slug: String
+}
+
 private struct WorkspaceCreationBody: Encodable {
   struct Tenant: Encodable {
     let name: String
     let slug: String
   }
 
+  struct Setting: Encodable {
+    let key: String
+    let value: String
+  }
+
   let tenant: Tenant
   let useSessionAccount: Bool
+  let settings: [Setting]
 }
 
 private struct WorkspaceSwitchBody: Encodable {
@@ -449,14 +463,48 @@ final class NativeAuthenticationService {
     sessionStore.clearSession()
   }
 
-  func createWorkspace(name: String, slug: String) async throws {
+  func checkWorkspaceSlug(_ slug: String) async throws -> WorkspaceSlugCheck {
+    let cookie = sessionStore.current().cookie
+    do {
+      let response = try await client.request(
+        path: "tenant/check-slug",
+        method: "POST",
+        body: WorkspaceSlugCheckBody(slug: slug),
+        cookie: cookie
+      )
+      let payload = try client.decode(WorkspaceSlugCheckResponse.self, from: response.data)
+      let resolved = payload.slug.trimmingCharacters(in: .whitespacesAndNewlines)
+      return .available(resolved.isEmpty ? slug : resolved)
+    } catch NativeAuthError.server(let message) {
+      return .unavailable(message)
+    }
+  }
+
+  func resolveAvailableWorkspaceSlug(from name: String) async throws -> String? {
+    for candidate in WorkspaceSlugResolver.candidates(base: name) {
+      switch try await checkWorkspaceSlug(candidate) {
+      case .available(let slug):
+        return slug
+      case .unavailable:
+        continue
+      }
+    }
+    return nil
+  }
+
+  func createWorkspace(
+    name: String,
+    slug: String,
+    settings: [(key: String, value: String)] = []
+  ) async throws {
     guard let cookie = sessionStore.current().cookie else { throw NativeAuthError.missingSession }
     _ = try await client.request(
       path: "auth/sign-up/email",
       method: "POST",
       body: WorkspaceCreationBody(
         tenant: .init(name: name, slug: slug),
-        useSessionAccount: true
+        useSessionAccount: true,
+        settings: settings.map { .init(key: $0.key, value: $0.value) }
       ),
       cookie: cookie
     )

@@ -67,7 +67,7 @@ final class PhotoMapController: UIViewController {
       PhotoFilterStore.shared.deactivateGallery()
       apply(photos: [], state: .signedOut)
     case .signedIn(let session):
-      guard let workspace = session.activeWorkspace, workspace.status == "active" else {
+      guard session.hasUsableWorkspace, let workspace = session.activeWorkspace else {
         gallerySlug = nil
         feedObservation?.cancel()
         feedObservation = nil

@@ -29,6 +29,18 @@ struct AfilmoryRequestedMembership: Codable, Equatable, Sendable {
   let status: String
 }
 
+enum WorkspaceSetupMode: Equatable, Sendable {
+  case create
+  case waiting(name: String, slug: String)
+}
+
+enum AfilmoryRootPresentation: Equatable, Sendable {
+  case loading
+  case visitor
+  case workspaceSetup
+  case authenticatedTabs
+}
+
 struct AfilmorySession: Codable, Equatable, Sendable {
   let user: AfilmorySessionUser
   let activeWorkspace: AfilmorySessionWorkspace?
@@ -36,6 +48,18 @@ struct AfilmorySession: Codable, Equatable, Sendable {
   let requestedMembership: AfilmoryRequestedMembership?
   let memberships: [AfilmorySessionMembership]
   let activeMembership: AfilmorySessionMembership?
+
+  var hasUsableWorkspace: Bool {
+    activeWorkspace?.status == "active"
+  }
+
+  var workspaceSetupMode: WorkspaceSetupMode? {
+    guard !hasUsableWorkspace else { return nil }
+    if let workspace = activeWorkspace {
+      return .waiting(name: workspace.name, slug: workspace.slug)
+    }
+    return .create
+  }
 }
 
 struct AfilmorySessionResponse: Decodable, Sendable {
@@ -86,6 +110,30 @@ enum AfilmorySessionState: Equatable, Sendable {
   var session: AfilmorySession? {
     guard case .signedIn(let session) = self else { return nil }
     return session
+  }
+
+  var rootPresentation: AfilmoryRootPresentation {
+    switch self {
+    case .loading:
+      .loading
+    case .signedOut, .failed:
+      .visitor
+    case .signedIn(let session):
+      session.hasUsableWorkspace ? .authenticatedTabs : .workspaceSetup
+    }
+  }
+
+  var shouldApplyPendingDeepLink: Bool {
+    switch rootPresentation {
+    case .visitor, .authenticatedTabs:
+      true
+    case .loading, .workspaceSetup:
+      false
+    }
+  }
+
+  var shouldPresentTestFlightPrompt: Bool {
+    shouldApplyPendingDeepLink
   }
 }
 
