@@ -49,6 +49,17 @@ final class QuotaWallReasonTests: XCTestCase {
     XCTAssertNil(QuotaWallReason.parse(apiError: APIError.unauthorized))
   }
 
+  func testAFirstCustomDomainOfferUsesNotNow() {
+    XCTAssertEqual(
+      QuotaWallReason.customDomain(current: 0, limit: 0).secondaryActionTitle,
+      String(localized: "Not now")
+    )
+    XCTAssertEqual(
+      QuotaWallReason.customDomain(current: 1, limit: 1).secondaryActionTitle,
+      String(localized: "Remove an existing domain")
+    )
+  }
+
   func testEveryReasonHasTitleAndExplanation() {
     let reasons: [QuotaWallReason] = [
       .storage(usedBytes: 1, incomingBytes: 1, capacityBytes: 2),

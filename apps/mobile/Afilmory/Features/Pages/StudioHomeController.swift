@@ -7,6 +7,7 @@ enum StudioHomeRoute: String, CaseIterable, Sendable {
   case library = "/studio/library"
   case operations = "/studio/operations"
   case site = "/studio/site"
+  case domain = "/studio/domain"
 }
 
 enum StudioPhotoSyncStatus: String, Decodable, Sendable {
@@ -578,6 +579,13 @@ final class StudioHomeController: UITableViewController {
             symbol: "paintpalette",
             badge: nil,
             route: .site
+          ),
+          .navigation(
+            title: String(localized: "Custom domain"),
+            detail: String(localized: "DNS records, verification, and HTTPS"),
+            symbol: "globe",
+            badge: nil,
+            route: .domain
           ),
         ]
       ),

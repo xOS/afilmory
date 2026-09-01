@@ -1,6 +1,14 @@
 import Foundation
 import OSLog
 
+private struct StudioDomainRequestBody: Encodable {
+  let domain: String
+}
+
+private struct StudioDomainDeleteResponse: Decodable {
+  let deleted: Bool
+}
+
 private struct StudioConflictResolutionBody: Encodable {
   let dryRun: Bool
   let strategy: String
@@ -112,6 +120,43 @@ enum NativeStudioAPI {
       path: "site/settings",
       method: "POST",
       body: StudioSiteSettingsUpdateBody(entries: entries)
+    )
+  }
+
+  static func tenantDomains() async throws -> StudioDomainListing {
+    try await AfilmoryAPI.shared.request(
+      APIEndpoint(baseURL: .tenant, path: "tenant/domains")
+    )
+  }
+
+  static func requestDomain(_ domain: String) async throws -> StudioDomainMutationResponse {
+    try await AfilmoryAPI.shared.request(
+      APIEndpoint(
+        baseURL: .tenant,
+        path: "tenant/domains",
+        method: .post,
+        body: try APIEndpoint.jsonBody(StudioDomainRequestBody(domain: domain))
+      )
+    )
+  }
+
+  static func verifyDomain(id: String) async throws -> StudioDomainMutationResponse {
+    try await AfilmoryAPI.shared.request(
+      APIEndpoint(
+        baseURL: .tenant,
+        path: "tenant/domains/\(id)/verify",
+        method: .post
+      )
+    )
+  }
+
+  static func deleteDomain(id: String) async throws {
+    let _: StudioDomainDeleteResponse = try await AfilmoryAPI.shared.request(
+      APIEndpoint(
+        baseURL: .tenant,
+        path: "tenant/domains/\(id)",
+        method: .delete
+      )
     )
   }
 

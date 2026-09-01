@@ -82,7 +82,10 @@ extension QuotaWallReason {
   var secondaryActionTitle: String {
     switch self {
     case .libraryItems, .storage: String(localized: "Free up space instead")
-    case .customDomain: String(localized: "Remove an existing domain")
+    case .customDomain(let current, _):
+      current == 0
+        ? String(localized: "Not now")
+        : String(localized: "Remove an existing domain")
     case .monthlyProcess: String(localized: "Wait for next month's reset")
     case .syncObjectSize, .unknown, .uploadSize: String(localized: "Not now")
     }

@@ -84,6 +84,38 @@ private struct WorkspaceSwitchBody: Encodable {
   let tenantId: String
 }
 
+private struct WorkspaceDomainBody: Encodable {
+  let domain: String
+}
+
+private struct WorkspaceDomainRecord: Decodable {
+  let domain: String
+}
+
+private struct WorkspaceDomainListResponse: Decodable {
+  let domains: [WorkspaceDomainRecord]
+  let cnameTarget: String
+  let customDomainLimit: Int?
+}
+
+private struct WorkspaceDomainCreateResponse: Decodable {
+  let domain: WorkspaceDomainRecord
+  let cnameTarget: String
+}
+
+private struct WorkspaceCreationResponse: Decodable {
+  struct Tenant: Decodable {
+    let slug: String
+  }
+
+  let tenant: Tenant?
+}
+
+struct WorkspaceCreationSession: Sendable {
+  let cookie: String
+  let slug: String?
+}
+
 private struct AccountDeletionBody: Encodable {
   let proof: AccountDeletionProof
 }
@@ -119,14 +151,16 @@ final class NativeAuthHTTPClient: @unchecked Sendable {
     method: String,
     body: Body,
     cookie: String?,
-    headers: [String: String] = [:]
+    headers: [String: String] = [:],
+    baseURL: URL? = nil
   ) async throws -> NativeAuthHTTPResponse {
     try await execute(
       path: path,
       method: method,
       body: try encoder.encode(body),
       cookie: cookie,
-      headers: headers
+      headers: headers,
+      baseURL: baseURL
     )
   }
 
@@ -134,9 +168,17 @@ final class NativeAuthHTTPClient: @unchecked Sendable {
     path: String,
     method: String = "GET",
     cookie: String?,
-    headers: [String: String] = [:]
+    headers: [String: String] = [:],
+    baseURL: URL? = nil
   ) async throws -> NativeAuthHTTPResponse {
-    try await execute(path: path, method: method, body: nil, cookie: cookie, headers: headers)
+    try await execute(
+      path: path,
+      method: method,
+      body: nil,
+      cookie: cookie,
+      headers: headers,
+      baseURL: baseURL
+    )
   }
 
   func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
@@ -148,9 +190,10 @@ final class NativeAuthHTTPClient: @unchecked Sendable {
     method: String,
     body: Data?,
     cookie: String?,
-    headers: [String: String]
+    headers: [String: String],
+    baseURL: URL? = nil
   ) async throws -> NativeAuthHTTPResponse {
-    let base = ApiEnvironmentStore.shared.platformAPIBaseURL()
+    let base = baseURL ?? ApiEnvironmentStore.shared.platformAPIBaseURL()
     let url = base.appending(path: path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
     var request = URLRequest(url: url)
     request.httpMethod = method
@@ -497,8 +540,17 @@ final class NativeAuthenticationService {
     slug: String,
     settings: [(key: String, value: String)] = []
   ) async throws {
+    let created = try await submitWorkspaceCreation(name: name, slug: slug, settings: settings)
+    try await activateWorkspaceSession(cookie: created.cookie)
+  }
+
+  func submitWorkspaceCreation(
+    name: String,
+    slug: String,
+    settings: [(key: String, value: String)] = []
+  ) async throws -> WorkspaceCreationSession {
     guard let cookie = sessionStore.current().cookie else { throw NativeAuthError.missingSession }
-    _ = try await client.request(
+    let response = try await client.request(
       path: "auth/sign-up/email",
       method: "POST",
       body: WorkspaceCreationBody(
@@ -508,7 +560,60 @@ final class NativeAuthenticationService {
       ),
       cookie: cookie
     )
+    let tenant = try? client.decode(WorkspaceCreationResponse.self, from: response.data)
+    return WorkspaceCreationSession(
+      cookie: response.cookie ?? cookie,
+      slug: tenant?.tenant?.slug
+    )
+  }
+
+  func activateWorkspaceSession(cookie: String) async throws {
     try await registerValidated(cookie: cookie, requiresWorkspace: true)
+  }
+
+  func requestCustomDomain(
+    _ domain: String,
+    cookie: String,
+    tenantSlug: String
+  ) async throws -> WorkspaceCustomDomainRequest {
+    let baseURL = try ApiEnvironmentStore.shared.galleryAPIBaseURL(slug: tenantSlug)
+    let payload: WorkspaceDomainListResponse
+    do {
+      let listing = try await client.request(path: "tenant/domains", cookie: cookie, baseURL: baseURL)
+      payload = try client.decode(WorkspaceDomainListResponse.self, from: listing.data)
+    } catch {
+      return .needsUpgrade(.customDomain(current: 0, limit: 0))
+    }
+    switch WorkspaceCustomDomain.decision(
+      for: domain,
+      limit: payload.customDomainLimit,
+      used: payload.domains.count
+    ) {
+    case .skipped:
+      throw NativeAuthError.server(String(localized: "Enter a domain to continue."))
+    case .needsUpgrade(let current, let limit):
+      return .needsUpgrade(.customDomain(current: current, limit: limit))
+    case .request(let host):
+      do {
+        let response = try await client.request(
+          path: "tenant/domains",
+          method: "POST",
+          body: WorkspaceDomainBody(domain: host),
+          cookie: cookie,
+          baseURL: baseURL
+        )
+        let created = try client.decode(WorkspaceDomainCreateResponse.self, from: response.data)
+        let resolved = created.domain.domain.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .bound(
+          domain: resolved.isEmpty ? host : resolved,
+          cnameTarget: created.cnameTarget
+        )
+      } catch NativeAuthError.server {
+        return .needsUpgrade(
+          .customDomain(current: payload.domains.count, limit: payload.customDomainLimit ?? 0)
+        )
+      }
+    }
   }
 
   func switchWorkspace(tenantId: String) async throws {

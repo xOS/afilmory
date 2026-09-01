@@ -112,7 +112,16 @@ export class TenantController {
       this.tenantDomainService.listDomainsForTenant(),
       this.tenantDomainService.getCustomDomainLimitForCurrentTenant(),
     ])
-    return { domains, cnameTarget: this.tenantDomainService.getCnameTarget(), customDomainLimit }
+    return { domains, cnameTarget: this.peekCnameTarget(), customDomainLimit }
+  }
+
+  private peekCnameTarget(): string {
+    try {
+      return this.tenantDomainService.getCnameTarget()
+    }
+    catch {
+      return ''
+    }
   }
 
   @Post('/domains')

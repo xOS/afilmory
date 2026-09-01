@@ -79,6 +79,7 @@ final class PushNotificationTests: XCTestCase {
       ("afilmory-local:///explore", .explore(nil)),
       ("afilmory-local:///studio", .studio(nil)),
       ("afilmory-local:///studio/comments", .studio(.comments)),
+      ("afilmory-local:///studio/domain", .studio(.domain)),
       ("https://afilmory.art/explore", .explore(nil)),
       ("https://demo.afilmory.art/studio/library", .studio(.library)),
     ]

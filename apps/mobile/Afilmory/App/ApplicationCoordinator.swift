@@ -175,6 +175,8 @@ final class ApplicationCoordinator: NSObject, UNUserNotificationCenterDelegate {
       UIHostingController(rootView: StudioOperationsView())
     case .site:
       UIHostingController(rootView: StudioSiteView())
+    case .domain:
+      UIHostingController(rootView: StudioDomainView())
     case .library:
       preconditionFailure("The library route is handled above.")
     }
@@ -348,6 +350,7 @@ private extension StudioHomeRoute {
     case .library: String(localized: "Photo Library")
     case .operations: String(localized: "Operations")
     case .site: String(localized: "Site Settings")
+    case .domain: String(localized: "Custom domain")
     }
   }
 }

@@ -27,13 +27,24 @@ enum APIError: Error {
   }
 }
 
+extension APIError {
+  fileprivate static func serverMessage(from body: String?) -> String? {
+    guard let body, let data = body.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let message = object["message"] as? String
+    else { return nil }
+    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+}
+
 extension APIError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .unauthorized:
       "Authentication is required."
     case .http(let status, let body):
-      body ?? "The server returned HTTP \(status)."
+      Self.serverMessage(from: body) ?? body ?? "The server returned HTTP \(status)."
     case .transport(let error), .decoding(let error):
       error.localizedDescription
     case .cancelled:

@@ -201,3 +201,67 @@ struct StudioSiteSettingsUpdateBody: Encodable {
 
   let entries: [Entry]
 }
+
+enum StudioDomainStatus: String, Decodable, Equatable, Sendable {
+  case disabled
+  case pending
+  case verified
+}
+
+struct StudioTenantDomain: Decodable, Equatable, Identifiable, Sendable {
+  let id: String
+  let tenantId: String
+  let domain: String
+  let status: StudioDomainStatus
+  let cloudflareHostnameId: String?
+  let hostnameStatus: String?
+  let sslStatus: String?
+  let verificationErrors: [String]
+  let lastSyncedAt: String?
+  let verifiedAt: String?
+  let createdAt: String
+  let updatedAt: String
+
+  var canVerify: Bool { status == .pending }
+  var showsDNSInstructions: Bool { status != .verified }
+}
+
+struct StudioDomainListing: Decodable, Equatable, Sendable {
+  let cnameTarget: String
+  let customDomainLimit: Int?
+  let domains: [StudioTenantDomain]
+}
+
+struct StudioDomainMutationResponse: Decodable, Sendable {
+  let cnameTarget: String
+  let domain: StudioTenantDomain
+}
+
+enum StudioDomainAddDecision: Equatable, Sendable {
+  case empty
+  case invalid
+  case upgrade(QuotaWallReason)
+  case request(String)
+}
+
+enum StudioDomainPolicy {
+  static func needsUnlock(_ listing: StudioDomainListing) -> Bool {
+    listing.customDomainLimit == 0
+  }
+
+  static func addDecision(for raw: String, listing: StudioDomainListing) -> StudioDomainAddDecision {
+    let host = WorkspaceCustomDomain.normalize(raw)
+    guard !host.isEmpty else { return .empty }
+    guard WorkspaceCustomDomain.isValid(raw) else { return .invalid }
+    let alreadyBound = listing.domains.contains {
+      $0.domain.caseInsensitiveCompare(host) == .orderedSame
+    }
+    if listing.customDomainLimit == 0 {
+      return .upgrade(.customDomain(current: listing.domains.count, limit: 0))
+    }
+    if !alreadyBound, let limit = listing.customDomainLimit, listing.domains.count >= limit {
+      return .upgrade(.customDomain(current: listing.domains.count, limit: limit))
+    }
+    return .request(host)
+  }
+}
