@@ -60,7 +60,7 @@ enum JSONValue: Codable, Equatable, Sendable {
 }
 
 struct GalleryExif: Codable, Equatable, Sendable {
-  var values: [String: JSONValue]
+  let values: [String: JSONValue]
 
   init(values: [String: JSONValue] = [:]) {
     self.values = values
@@ -77,6 +77,63 @@ struct GalleryExif: Codable, Equatable, Sendable {
 
   subscript(_ key: String) -> JSONValue? {
     values[key]
+  }
+
+  init(responseValues: [String: JSONValue]) {
+    values = Self.normalizeResponseObject(responseValues)
+  }
+
+  private static let responseKeys: [String: String] = {
+    let canonicalKeys = [
+      "zone", "tz", "tzSource",
+      "Orientation", "Make", "Model", "Software", "Artist", "Copyright",
+      "ExposureTime", "FNumber", "ExposureProgram", "ISO", "ShutterSpeedValue",
+      "ApertureValue", "BrightnessValue", "ExposureCompensationSet",
+      "ExposureCompensationMode", "ExposureCompensationSetting", "ExposureCompensation",
+      "MaxApertureValue", "OffsetTime", "OffsetTimeOriginal", "OffsetTimeDigitized",
+      "LightSource", "Flash", "FocalLength", "FocalLengthIn35mmFormat", "LensMake",
+      "LensModel", "ColorSpace", "ExposureMode", "SceneCaptureType", "Aperture",
+      "ScaleFactor35efl", "ShutterSpeed", "LightValue", "DateTimeOriginal",
+      "DateTimeDigitized", "ImageWidth", "ImageHeight", "MeteringMode", "WhiteBalance",
+      "WBShiftAB", "WBShiftGM", "WhiteBalanceBias", "FlashMeteringMode", "SensingMethod",
+      "FocalPlaneXResolution", "FocalPlaneYResolution", "GPSAltitude", "GPSCoordinates",
+      "GPSAltitudeRef", "GPSLatitude", "GPSLatitudeRef", "GPSLongitude", "GPSLongitudeRef",
+      "FujiRecipe", "SonyRecipe", "MPImageType", "UniformResourceName", "Rating",
+      "MotionPhoto", "MotionPhotoVersion", "MotionPhotoPresentationTimestampUs",
+      "ContainerDirectory", "MicroVideo", "MicroVideoVersion", "MicroVideoOffset",
+      "MicroVideoPresentationTimestampUs", "Subject", "Keywords", "WeightedFlatSubject",
+      "HierarchicalSubject", "RegionInfo",
+      "FilmMode", "GrainEffectRoughness", "GrainEffectSize", "ColorChromeEffect",
+      "ColorChromeFxBlue", "WhiteBalanceFineTune", "DynamicRange", "HighlightTone",
+      "ShadowTone", "Saturation", "Sharpness", "NoiseReduction", "Clarity",
+      "ColorTemperature", "DevelopmentDynamicRange", "DynamicRangeSetting",
+      "CreativeStyle", "PictureEffect", "Hdr", "SoftSkinEffect",
+      "AppliedToDimensions", "RegionList", "Name", "Type", "Area", "W", "H", "Unit", "X", "Y",
+    ]
+    return APIResponseDecoding.keyMap(for: canonicalKeys)
+  }()
+
+  private static func normalizeResponseObject(_ object: [String: JSONValue]) -> [String: JSONValue] {
+    var normalized: [String: JSONValue] = [:]
+    normalized.reserveCapacity(object.count)
+    for (key, value) in object {
+      let canonicalKey = APIResponseDecoding.canonicalKey(key, using: responseKeys)
+      if key == canonicalKey || normalized[canonicalKey] == nil {
+        normalized[canonicalKey] = normalizeResponseValue(value)
+      }
+    }
+    return normalized
+  }
+
+  private static func normalizeResponseValue(_ value: JSONValue) -> JSONValue {
+    switch value {
+    case .array(let values):
+      .array(values.map(normalizeResponseValue))
+    case .object(let object):
+      .object(normalizeResponseObject(object))
+    default:
+      value
+    }
   }
 }
 

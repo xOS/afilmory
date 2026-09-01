@@ -4,6 +4,23 @@ struct ManifestEnvelope: Decodable, Sendable {
   let data: [ManifestPhoto]
 }
 
+struct ManifestExif: Decodable, Sendable {
+  let value: GalleryExif
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.singleValueContainer().decode([String: JSONValue].self)
+    value = GalleryExif(responseValues: values)
+  }
+}
+
+struct ManifestVideo: Decodable, Sendable {
+  let type: String
+  let videoUrl: String?
+  let offset: Double?
+  let size: Double?
+  let presentationTimestamp: Double?
+}
+
 struct ManifestPhoto: Decodable, Sendable {
   let id: String
   let title: String?
@@ -17,16 +34,16 @@ struct ManifestPhoto: Decodable, Sendable {
   let format: String?
   let size: Double?
   let dateTaken: String?
-  let video: JSONValue?
+  let video: ManifestVideo?
   let tags: [String]?
-  let exif: GalleryExif?
+  let exif: ManifestExif?
   let toneAnalysis: GalleryToneAnalysis?
   let location: GalleryLocation?
 }
 
 enum ManifestDecoding {
   static func decode(_ data: Data, galleryOrigin: URL) throws -> [GalleryPhoto] {
-    let envelope = try JSONDecoder().decode(ManifestEnvelope.self, from: data)
+    let envelope = try APIResponseDecoding.decode(ManifestEnvelope.self, from: data)
     return normalize(envelope.data, galleryOrigin: galleryOrigin)
   }
 
@@ -45,17 +62,7 @@ enum ManifestDecoding {
     guard let thumbnailUrl = photo.thumbnailUrl?.trimmingToNil else { return nil }
     let width = photo.width ?? 0
     let height = photo.height ?? 0
-    let make = photo.exif?["Make"]?.string?.trimmingToNil
-    let model = photo.exif?["Model"]?.string?.trimmingToNil
-    let camera: String?
-    if let make, let model {
-      camera = model.lowercased().hasPrefix(make.lowercased()) ? model : "\(make) \(model)"
-    } else {
-      camera = make ?? model
-    }
-    let lens = photo.exif?["LensModel"]?.string?.trimmingToNil
-    let ratingValue = photo.exif?["Rating"]?.number
-    let rating = ratingValue.map { min(5, max(0, Int($0.rounded()))) }
+    let exif = photo.exif?.value
 
     return GalleryPhoto(
       id: photo.id,
@@ -72,20 +79,53 @@ enum ManifestDecoding {
       dateTaken: photo.dateTaken,
       video: normalizeVideo(photo.video, baseURL: galleryOrigin),
       tags: photo.tags ?? [],
-      exif: photo.exif,
+      exif: exif,
       toneAnalysis: photo.toneAnalysis,
       location: photo.location,
-      camera: camera,
-      lens: lens,
-      rating: rating,
+      camera: camera(from: exif),
+      lens: lens(from: exif),
+      rating: rating(from: exif),
       city: photo.location?.city ?? photo.location?.locationName
     )
+  }
+
+  static func camera(from exif: GalleryExif?) -> String? {
+    let make = exif?["Make"]?.string?.trimmingToNil
+    let model = exif?["Model"]?.string?.trimmingToNil
+    if let make, let model {
+      return model.lowercased().hasPrefix(make.lowercased()) ? model : "\(make) \(model)"
+    }
+    return make ?? model
+  }
+
+  static func lens(from exif: GalleryExif?) -> String? {
+    exif?["LensModel"]?.string?.trimmingToNil
+  }
+
+  static func rating(from exif: GalleryExif?) -> Int? {
+    exif?["Rating"]?.number.map { min(5, max(0, Int($0.rounded()))) }
+  }
+
+  static func normalizeVideo(_ value: ManifestVideo?, baseURL: URL?) -> GalleryVideoSource? {
+    guard let value else { return nil }
+    if value.type == "live-photo",
+       let raw = value.videoUrl?.trimmingToNil,
+       let url = URL(string: raw, relativeTo: baseURL)?.absoluteURL,
+       url.scheme == "http" || url.scheme == "https"
+    {
+      return .livePhoto(videoUrl: url.absoluteString)
+    }
+    if value.type == "motion-photo", let offset = value.offset, offset >= 0 {
+      let size = value.size.flatMap { $0 >= 0 ? $0 : nil }
+      return .motionPhoto(offset: offset, size: size, presentationTimestamp: value.presentationTimestamp)
+    }
+    return nil
   }
 
   static func normalizeVideo(_ value: JSONValue?, baseURL: URL?) -> GalleryVideoSource? {
     guard let object = value?.object, let type = object["type"]?.string else { return nil }
     if type == "live-photo",
-       let raw = object["videoUrl"]?.string?.trimmingToNil,
+       let raw = (object["videoUrl"] ?? object["video_url"])?.string?.trimmingToNil,
        let url = URL(string: raw, relativeTo: baseURL)?.absoluteURL,
        url.scheme == "http" || url.scheme == "https"
     {

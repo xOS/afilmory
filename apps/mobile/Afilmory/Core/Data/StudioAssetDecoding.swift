@@ -26,7 +26,7 @@ struct StudioFeedPhoto: Codable, Equatable, Sendable {
 
 enum StudioAssetDecoding {
   static func decode(_ data: Data) throws -> [StudioAsset] {
-    try JSONDecoder().decode([StudioAsset].self, from: data)
+    try APIResponseDecoding.decode([StudioAsset].self, from: data)
   }
 
   static func normalize(_ assets: [StudioAsset]) -> [StudioFeedPhoto] {
@@ -49,7 +49,7 @@ enum StudioAssetDecoding {
     let height = sourceHeight.map { $0 > 0 ? $0 : 1 } ?? 1
     let sourceAspectRatio = source.number("aspectRatio")
     let aspectRatio = sourceAspectRatio.map { $0 > 0 ? $0 : width / height } ?? width / height
-    let exif = source.object("exif").map { GalleryExif(values: $0) }
+    let exif = source.object("exif").map { GalleryExif(responseValues: $0) }
     let location = source.object("location").map(GalleryLocation.init)
     let toneAnalysis = source.object("toneAnalysis").flatMap(GalleryToneAnalysis.init)
     let rating = source.number("rating").map(Int.init)

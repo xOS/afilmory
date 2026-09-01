@@ -48,7 +48,6 @@ final class AfilmoryAPI: @unchecked Sendable {
 
   private let session: URLSession
   private let sessionStore: AfilmorySessionStore
-  private let decoder: JSONDecoder
 
   init(
     session: URLSession? = nil,
@@ -56,8 +55,6 @@ final class AfilmoryAPI: @unchecked Sendable {
   ) {
     self.session = session ?? AfilmoryURLSessionFactory.cookieIsolated()
     self.sessionStore = sessionStore
-    decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
   }
 
   func request<Response: Decodable>(_ endpoint: APIEndpoint) async throws -> Response {
@@ -146,7 +143,7 @@ final class AfilmoryAPI: @unchecked Sendable {
     }
 
     do {
-      return try decoder.decode(Response.self, from: data)
+      return try APIResponseDecoding.decode(Response.self, from: data)
     } catch {
       throw APIError.decoding(error)
     }

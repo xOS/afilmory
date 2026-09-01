@@ -300,6 +300,7 @@ final class PhotoReplicaRepository: Sendable {
     let encoder = JSONEncoder()
     let payload = try encoder.encode(photo)
     let tags = try encoder.encode(photo.tags)
+    let coordinates = photo.coordinates
     try db.execute(
       sql: """
         INSERT INTO photos (
@@ -325,8 +326,8 @@ final class PhotoReplicaRepository: Sendable {
         assetId,
         published,
         photo.dateTaken,
-        photo.location?.latitude,
-        photo.location?.longitude,
+        coordinates?.latitude,
+        coordinates?.longitude,
         photo.rating,
         photo.camera,
         photo.lens,

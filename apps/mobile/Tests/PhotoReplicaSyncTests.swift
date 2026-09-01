@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Afilmory
 
 final class PhotoReplicaSyncTests: XCTestCase {
@@ -85,6 +86,72 @@ final class PhotoReplicaSyncTests: XCTestCase {
 
     XCTAssertNil(try repository.state(for: "acme"))
     XCTAssertTrue(try repository.publishedPhotos(for: "acme").isEmpty)
+  }
+
+  func testV2MigrationCanonicalizesPayloadAndRepairsProjections() throws {
+    let queue = try DatabaseQueue()
+    let migrator = PhotoReplicaMigrations.makeMigrator()
+    try migrator.migrate(queue, upTo: PhotoReplicaMigrations.initialSchema)
+
+    let legacyPhoto = GalleryPhoto(
+      id: "legacy",
+      title: "Legacy",
+      description: "",
+      originalUrl: "https://example.com/legacy.jpg",
+      thumbnailUrl: "https://example.com/legacy.jpg",
+      thumbHash: nil,
+      aspectRatio: 1,
+      width: 1,
+      height: 1,
+      format: "jpg",
+      size: 1,
+      dateTaken: nil,
+      video: nil,
+      tags: [],
+      exif: GalleryExif(values: [
+        "make": .string("FUJIFILM"),
+        "model": .string("X-T5"),
+        "lens_model": .string("17-70mm"),
+        "rating": .number(4),
+        "gps_latitude": .number(35.7109),
+        "gps_latitude_ref": .string("N"),
+        "gps_longitude": .number(139.7959),
+        "gps_longitude_ref": .string("W"),
+        "fuji_recipe": .object(["film_mode": .string("Classic Negative")]),
+      ]),
+      toneAnalysis: nil,
+      location: nil,
+      camera: nil,
+      lens: nil,
+      rating: nil,
+      city: nil
+    )
+    try queue.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO photos (
+            tenant_slug, photo_id, published, tags_json, payload, applied_revision
+          ) VALUES (?, ?, 1, '[]', ?, 0)
+          """,
+        arguments: ["acme", legacyPhoto.id, try JSONEncoder().encode(legacyPhoto)]
+      )
+    }
+
+    let store = PhotoReplicaStore(queue: queue)
+    let migratedPhoto = try XCTUnwrap(PhotoReplicaRepository(store: store).publishedPhotos(for: "acme").first)
+    let projection = try store.queue.read { db in
+      try Row.fetchOne(db, sql: "SELECT * FROM photos WHERE photo_id = 'legacy'")
+    }
+
+    XCTAssertEqual(migratedPhoto.exif?["GPSLatitude"]?.number, 35.7109)
+    XCTAssertEqual(migratedPhoto.exif?["GPSLongitude"]?.number, 139.7959)
+    XCTAssertEqual(migratedPhoto.exif?["FujiRecipe"]?.object?["FilmMode"]?.string, "Classic Negative")
+    XCTAssertNil(migratedPhoto.exif?.values["gps_latitude"])
+    XCTAssertEqual(migratedPhoto.camera, "FUJIFILM X-T5")
+    XCTAssertEqual(migratedPhoto.lens, "17-70mm")
+    XCTAssertEqual(migratedPhoto.rating, 4)
+    XCTAssertEqual(projection?["latitude"] as Double?, 35.7109)
+    XCTAssertEqual(projection?["longitude"] as Double?, -139.7959)
   }
 
   func testNestedUploadEventYieldsCommittedChange() {

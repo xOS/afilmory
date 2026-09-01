@@ -91,6 +91,7 @@ export class ManifestPublicController {
   }
 
   @Get('snapshot')
+  @BypassResponseTransform()
   async getSnapshot() {
     const [revision, manifest] = await Promise.all([
       this.manifestService.getManifestRevision(),
@@ -100,6 +101,7 @@ export class ManifestPublicController {
   }
 
   @Get('changes')
+  @BypassResponseTransform()
   async getChanges(@Query() query: GetChangesDto) {
     return await this.manifestSyncService.listChanges(query.after ?? 0)
   }

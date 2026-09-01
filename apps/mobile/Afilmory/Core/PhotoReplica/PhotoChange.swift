@@ -30,11 +30,11 @@ struct PhotoChange: Decodable, Sendable {
 }
 
 enum PhotoChangeDecoding {
-  static func decode(_ blob: Any, decoder: JSONDecoder = JSONDecoder()) -> PhotoChange? {
+  static func decode(_ blob: Any) -> PhotoChange? {
     guard JSONSerialization.isValidJSONObject(blob),
           let data = try? JSONSerialization.data(withJSONObject: blob)
     else { return nil }
-    return try? decoder.decode(PhotoChange.self, from: data)
+    return try? APIResponseDecoding.decode(PhotoChange.self, from: data)
   }
 
   static func changes(from event: [String: Any]) -> [PhotoChange] {

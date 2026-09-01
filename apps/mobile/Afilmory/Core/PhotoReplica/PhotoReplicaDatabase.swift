@@ -46,7 +46,7 @@ final class PhotoReplicaStore: Sendable {
 
   init(queue: DatabaseQueue) {
     self.queue = queue
-    try? migrator.migrate(queue)
+    try? PhotoReplicaMigrations.makeMigrator().migrate(queue)
   }
 
   func wipeAll() throws {
@@ -65,60 +65,4 @@ final class PhotoReplicaStore: Sendable {
     }
   }
 
-  private var migrator: DatabaseMigrator {
-    var migrator = DatabaseMigrator()
-    migrator.registerMigration("v1-replica") { db in
-      try db.execute(sql: """
-        CREATE TABLE replica_state (
-          tenant_slug TEXT PRIMARY KEY NOT NULL,
-          tenant_id TEXT,
-          contiguous_revision INTEGER NOT NULL,
-          needs_reconcile INTEGER NOT NULL DEFAULT 0,
-          last_synced_at TEXT
-        )
-        """)
-      try db.execute(sql: """
-        CREATE TABLE photos (
-          tenant_slug TEXT NOT NULL,
-          photo_id TEXT NOT NULL,
-          asset_id TEXT,
-          published INTEGER NOT NULL,
-          date_taken TEXT,
-          latitude REAL,
-          longitude REAL,
-          rating INTEGER,
-          camera TEXT,
-          lens TEXT,
-          tags_json TEXT NOT NULL,
-          payload BLOB NOT NULL,
-          applied_revision INTEGER NOT NULL,
-          PRIMARY KEY (tenant_slug, photo_id)
-        )
-        """)
-      try db.execute(sql: """
-        CREATE INDEX photos_published_date ON photos(tenant_slug, published, date_taken)
-        """)
-      try db.execute(sql: """
-        CREATE INDEX photos_map ON photos(tenant_slug, latitude, longitude)
-        """)
-      try db.execute(sql: """
-        CREATE TABLE studio_assets (
-          tenant_slug TEXT NOT NULL,
-          asset_id TEXT NOT NULL,
-          photo_id TEXT NOT NULL,
-          sync_status TEXT NOT NULL,
-          storage_provider TEXT NOT NULL,
-          storage_key TEXT NOT NULL,
-          size REAL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          synced_at TEXT NOT NULL,
-          public_url TEXT,
-          payload BLOB NOT NULL,
-          PRIMARY KEY (tenant_slug, asset_id)
-        )
-        """)
-    }
-    return migrator
-  }
 }
