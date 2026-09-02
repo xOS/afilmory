@@ -55,7 +55,7 @@ func resolvedGalleryTopOffsetAfterHeaderTransition(
 
 final class ExploreDirectoryController: UIViewController {
   private let onRequestSignIn: () -> Void
-  private let onOpenGallery: (String, String, String?) -> Void
+  private let onOpenGallery: (GalleryHeaderModel, String?) -> Void
   var onSubscriptionsChanged: () -> Void
   private let notificationPermissions = GalleryNotificationPermissionCoordinator()
   private let galleryDirectoryStore = GalleryDirectoryStore()
@@ -77,11 +77,10 @@ final class ExploreDirectoryController: UIViewController {
   private var searchDebounceTask: Task<Void, Never>?
   private var activeQuery = ""
   private var previousLayoutWidth: CGFloat = 0
-  private var lastGalleryRouteRequestID: String?
 
   init(
     onRequestSignIn: @escaping () -> Void,
-    onOpenGallery: @escaping (String, String, String?) -> Void,
+    onOpenGallery: @escaping (GalleryHeaderModel, String?) -> Void,
     onSubscriptionsChanged: @escaping () -> Void
   ) {
     self.onRequestSignIn = onRequestSignIn
@@ -95,22 +94,20 @@ final class ExploreDirectoryController: UIViewController {
     fatalError("init(coder:) is not supported")
   }
 
-  func openGallery(_ route: GalleryRouteRequest) {
-    guard lastGalleryRouteRequestID != route.requestId else { return }
-    lastGalleryRouteRequestID = route.requestId
-    navigationController?.pushViewController(
-      GalleryDetailController(
-        slug: route.slug,
-        title: route.title,
-        onRequestSignIn: onRequestSignIn,
-        focusPhotoID: route.photoID
-      ),
-      animated: viewIfLoaded?.window != nil
-    )
-  }
-
   func clearSearchQuery() {
     updateSearchQuery(nil)
+  }
+
+  func reloadSubscriptionState() {
+    var changed = false
+    for index in galleries.indices {
+      let subscribed = GallerySubscriptionStore.shared.isSubscribed(tenantId: galleries[index].id)
+      guard galleries[index].isSubscribed != subscribed else { continue }
+      galleries[index].isSubscribed = subscribed
+      changed = true
+    }
+    guard changed else { return }
+    refreshNotificationPresentation()
   }
 
   deinit {
@@ -357,6 +354,7 @@ final class ExploreDirectoryController: UIViewController {
 
     let previousValue = galleries[index].isSubscribed
     let targetValue = !previousValue
+    let header = GalleryHeaderModel(featured: galleries[index])
     galleries[index].isSubscribed = targetValue
     pendingSubscriptionTargets[galleryID] = targetValue
     refreshNotificationPresentation()
@@ -370,17 +368,19 @@ final class ExploreDirectoryController: UIViewController {
       }
 
       do {
-        let endpoint = targetValue
-          ? GallerySubscriptionAPI.subscribe(tenantId: galleryID)
-          : GallerySubscriptionAPI.unsubscribe(tenantId: galleryID)
-        let response: GallerySubscriptionMutationResponse = try await AfilmoryAPI.shared.request(endpoint)
+        if targetValue {
+          try await GallerySubscriptionStore.shared.subscribe(header)
+        } else {
+          try await GallerySubscriptionStore.shared.unsubscribe(tenantId: galleryID)
+        }
         try Task.checkCancellation()
+        let subscribed = GallerySubscriptionStore.shared.isSubscribed(tenantId: galleryID)
         guard sessionUserID == session.user.id,
               let currentIndex = galleries.firstIndex(where: { $0.id == galleryID })
         else { return }
-        galleries[currentIndex].isSubscribed = response.subscribed
+        galleries[currentIndex].isSubscribed = subscribed
         refreshNotificationPresentation()
-        if targetValue, response.subscribed {
+        if targetValue, subscribed {
           onSubscriptionsChanged()
           offerNotificationPermissionAfterSubscription()
         } else if !targetValue {
@@ -442,9 +442,8 @@ final class ExploreDirectoryController: UIViewController {
     refreshNotificationPresentation()
   }
 
-  private func offerNotificationPermissionAfterSubscription() {
+  func offerNotificationPermissionAfterSubscription() {
     guard !didOfferNotificationPermissionThisSession else { return }
-    didOfferNotificationPermissionThisSession = true
     notificationPermissionTask?.cancel()
     notificationPermissionTask = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -452,14 +451,15 @@ final class ExploreDirectoryController: UIViewController {
       guard !Task.isCancelled else { return }
       setNotificationPermissionState(state)
       guard state == .notDetermined else { return }
-      presentNotificationPermissionPrompt()
+      didOfferNotificationPermissionThisSession = presentNotificationPermissionPrompt()
     }
   }
 
-  private func presentNotificationPermissionPrompt() {
+  @discardableResult
+  private func presentNotificationPermissionPrompt() -> Bool {
     guard notificationPermissionState == .notDetermined,
-          presentedViewController == nil
-    else { return }
+          let presenter = notificationPromptPresenter
+    else { return false }
 
     let alert = UIAlertController(
       title: String(localized: "Stay up to date"),
@@ -480,7 +480,17 @@ final class ExploreDirectoryController: UIViewController {
     }
     alert.addAction(enableAction)
     alert.preferredAction = enableAction
-    present(alert, animated: true)
+    presenter.present(alert, animated: true)
+    return true
+  }
+
+  private var notificationPromptPresenter: UIViewController? {
+    var presenter: UIViewController = navigationController?.topViewController ?? self
+    guard presenter.viewIfLoaded?.window != nil else { return nil }
+    while let presented = presenter.presentedViewController {
+      presenter = presented
+    }
+    return presenter is UIAlertController ? nil : presenter
   }
 
   private func requestNotificationAuthorization() {
@@ -679,7 +689,7 @@ extension ExploreDirectoryController: UICollectionViewDataSource, UICollectionVi
     collectionView.deselectItem(at: indexPath, animated: true)
     guard galleries.indices.contains(indexPath.item) else { return }
     let gallery = galleries[indexPath.item]
-    onOpenGallery(gallery.slug, gallery.name, nil)
+    onOpenGallery(GalleryHeaderModel(featured: gallery), nil)
   }
 }
 

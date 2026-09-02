@@ -57,6 +57,12 @@ enum AfilmoryDeepLink: Equatable, Sendable {
             let photoID = pathComponents[1].trimmingToNil
       else { return nil }
       return .explore(tenantRoute(slug: tenantSlug, photoID: photoID))
+    case "photo":
+      guard pathComponents.count == 3,
+            let slug = pathComponents[1].trimmingToNil,
+            let photoID = pathComponents[2].trimmingToNil
+      else { return nil }
+      return .explore(tenantRoute(slug: slug, photoID: photoID))
     case "map":
       return pathComponents.count == 1 ? .map : nil
     case "explore":
@@ -88,7 +94,7 @@ enum AfilmoryDeepLink: Equatable, Sendable {
 
   private static func tenantRoute(slug: String, photoID: String?) -> GalleryRouteRequest {
     GalleryRouteRequest(
-      requestId: photoID.map { "route:\(slug)/photos/\($0)" } ?? "route:\(slug)",
+      requestId: UUID().uuidString,
       slug: slug,
       title: slug,
       photoID: photoID

@@ -4,6 +4,7 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   var onNativeScreenTraitsChange: ((Bool, Bool) -> Void)?
   var onNativeTransitionClose: (() -> Void)?
   var onNativeCommentsRequest: ((String, Int) -> Void)?
+  var onNativeOwnerActionsRequest: ((String, Int) -> [UIMenuElement])?
   var onNativeIndexChange: ((String, Int) -> Void)?
   var onNativeReactionRequest: ((String, Int, String, Int) -> Void)?
 
@@ -661,6 +662,11 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
   private func configureChrome() {
     navigationBar.onRequestClose = { [weak self] in self?.requestClose() }
 
+    navigationBar.ownerActionsProvider = { [weak self] in
+      guard let self, photos.indices.contains(currentIndex) else { return [] }
+      return onNativeOwnerActionsRequest?(photos[currentIndex].id, currentIndex) ?? []
+    }
+
     toolbar.onShare = { [weak self] in self?.shareCurrentPhoto() }
     toolbar.onInfo = { [weak self] in self?.toggleInfo() }
     toolbar.onComments = { [weak self] in self?.requestComments() }
@@ -900,14 +906,21 @@ final class PhotoDetailView: UIView, UIGestureRecognizerDelegate {
     onNativeReactionRequest?(photo.id, currentIndex, reaction, count)
   }
 
+  func setOwnerActionsEnabled(_ enabled: Bool) {
+    navigationBar.setOwnerActionsEnabled(enabled)
+  }
+
   private func shareCurrentPhoto() {
     guard photos.indices.contains(currentIndex),
           let presenter = nearestViewController
     else { return }
 
+    let photo = photos[currentIndex]
     PhotoShareActivity.present(
-      photoId: photos[currentIndex].id,
+      photoId: photo.id,
       gallerySlug: gallerySlug,
+      originalUrl: photo.originalUrl,
+      placeholderImage: viewer.currentTransitionImage(),
       from: presenter,
       barButtonItem: toolbar.shareBarButtonItem
     )
