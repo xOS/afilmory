@@ -25,7 +25,7 @@ export interface LandingAppProps {
 }
 
 export function LandingApp({ initialLocale }: LandingAppProps) {
-  const [locale, setLocale] = useState<Locale>(() => resolveLocale(initialLocale))
+  const [locale] = useState<Locale>(() => resolveLocale(initialLocale))
   const [createOpen, setCreateOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   const copy = useMemo(() => translate(locale), [locale])
@@ -42,23 +42,20 @@ export function LandingApp({ initialLocale }: LandingAppProps) {
 
   const switchLocale = () => {
     const next = otherLocale(locale)
-    setLocale(next)
     try {
       localStorage.setItem('afilmory-site-locale', next)
     }
     catch {
       /* ignore */
     }
-    const url = new URL(window.location.href)
-    url.searchParams.set('lang', next)
-    window.history.replaceState({}, '', url)
+    window.location.href = next === 'en' ? '/en/' : '/'
   }
 
   return (
     <>
       <header className="site-header fixed inset-x-0 top-0 z-50 border-b border-line bg-page-80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 md:px-8">
-          <a href="/" className="flex items-center gap-2.5">
+          <a href={locale === 'en' ? '/en/' : '/'} className="flex items-center gap-2.5">
             <img src="/logo.png" alt="" width={28} height={28} className="site-logo" />
             <span className="font-serif text-lg tracking-wide">Afilmory</span>
           </a>
@@ -134,10 +131,10 @@ export function LandingApp({ initialLocale }: LandingAppProps) {
             <p className="mt-2 text-xs text-dim">afilmory.art</p>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs tracking-wide text-muted">
-            <a href="/terms" className="hover:text-fg">
+            <a href={locale === 'en' ? '/en/terms/' : '/terms/'} className="hover:text-fg">
               {copy.footer.terms}
             </a>
-            <a href="/privacy" className="hover:text-fg">
+            <a href={locale === 'en' ? '/en/privacy/' : '/privacy/'} className="hover:text-fg">
               {copy.footer.privacy}
             </a>
             <a href={DOCS_URL} target="_blank" rel="noreferrer" className="hover:text-fg">
