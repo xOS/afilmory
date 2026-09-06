@@ -44,28 +44,34 @@ struct PhotoMapPreview: View {
   let latitude: Double
   let longitude: Double
   let accessibilityLabel: String
+  let onTap: () -> Void
 
   var body: some View {
-    ZStack {
-      PhotoMapViewRepresentable(latitude: latitude, longitude: longitude)
-        .allowsHitTesting(false)
+    Button(action: onTap) {
+      ZStack {
+        PhotoMapViewRepresentable(latitude: latitude, longitude: longitude)
+          .allowsHitTesting(false)
 
-      Circle()
-        .fill(Color.accentColor)
-        .frame(width: 10, height: 10)
-        .overlay {
-          Circle()
-            .stroke(Color.white.opacity(0.9), lineWidth: 2)
-        }
-        .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
+        Circle()
+          .fill(Color.accentColor)
+          .frame(width: 10, height: 10)
+          .overlay {
+            Circle()
+              .stroke(Color.white.opacity(0.9), lineWidth: 2)
+          }
+          .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+      .overlay {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
-    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-    }
+    .buttonStyle(.plain)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(accessibilityLabel)
+    .accessibilityHint(String(localized: "Open in Maps"))
   }
 }
 

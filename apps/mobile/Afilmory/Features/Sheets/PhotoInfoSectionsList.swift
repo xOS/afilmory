@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 struct PhotoInfoSectionsList: View {
   let info: PhotoInfoSheetModel
@@ -47,7 +48,10 @@ struct PhotoInfoSectionsList: View {
                 longitude: mapLocation.longitude,
                 accessibilityLabel: String(
                   localized: "Photo location, latitude \(mapLocation.latitude), longitude \(mapLocation.longitude)"
-                )
+                ),
+                onTap: {
+                  openPhotoLocationInMaps(mapLocation, name: info.place)
+                }
               )
               .frame(height: 160)
 
@@ -172,5 +176,20 @@ struct PhotoInfoSectionsList: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 16)
     .padding(.vertical, 11)
+  }
+
+  private func openPhotoLocationInMaps(_ mapLocation: PhotoInfoMapLocation, name: String?) {
+    let coordinate = CLLocationCoordinate2D(latitude: mapLocation.latitude, longitude: mapLocation.longitude)
+    guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+
+    let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+    if let name, !name.isEmpty {
+      mapItem.name = name
+    }
+    mapItem.openInMaps(launchOptions: [
+      MKLaunchOptionsMapSpanKey: NSValue(
+        mkCoordinateSpan: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+      )
+    ])
   }
 }
